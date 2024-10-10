@@ -9,6 +9,8 @@ fi
 # List of directories to stow
 directories=(
 	"kitty"
+	"nvim"
+	"tmux"
 )
 
 # Ask if user wants to stow all directories without asking
