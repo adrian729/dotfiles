@@ -9,6 +9,7 @@ if vim.fn.empty(vim.fn.glob(data_dir .. '/site/autoload/plug.vim')) == 1 then
   vim.cmd('autocmd VimEnter * PlugInstall --sync | source $MYVIMRC')
 end
 
+
 -----------------
 -- Add plugins --
 -----------------
@@ -26,12 +27,18 @@ Plug('junegunn/fzf', { ['dir'] = '~/.fzf', ['do'] = './install --all' })
 
 Plug('nvim-lua/plenary.nvim')
 
-Plug('nvim-telescope/telescope.nvim', { ['branch'] = '0.1.x' })
+Plug('nvim-telescope/telescope.nvim', { ['branch'] = '0.1.x' }) -- deps: nvim-lua/plenary.nvim
 
-Plug('nvim-treesitter/nvim-treesitter', { ['do'] = ':TSUpdate'})
+Plug('nvim-treesitter/nvim-treesitter', { ['do'] = ':TSUpdate' })
 Plug('theprimeagen/harpoon', { ['branch'] = 'harpoon2' })
 Plug('mbbill/undotree')
 Plug('tpope/vim-fugitive')
+
+-- LSP
+Plug('neovim/nvim-lspconfig')
+Plug('hrsh7th/nvim-cmp')
+Plug('hrsh7th/cmp-nvim-lsp')
+Plug('VonHeikemen/lsp-zero.nvim', { ['branch'] = 'v4.x' }) -- deps: neovim/nvim-lspconfig, hrsh7th/nvim-cmp, hrsh7th/cmp-nvim-lsp
 
 vim.call('plug#end')
 
