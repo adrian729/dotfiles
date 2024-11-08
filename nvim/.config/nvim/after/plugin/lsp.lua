@@ -20,7 +20,7 @@ vim.api.nvim_create_autocmd('LspAttach', {
   desc = 'LSP actions',
   callback = function(event)
     local opts = {buffer = event.buf}
-    
+
     -- TODO: add personal remaps
     vim.keymap.set('n', 'K', '<cmd>lua vim.lsp.buf.hover()<cr>', opts)
     vim.keymap.set('n', 'gd', '<cmd>lua vim.lsp.buf.definition()<cr>', opts)
@@ -35,6 +35,8 @@ vim.api.nvim_create_autocmd('LspAttach', {
   end,
 })
 
+-----------------------------------------------------------------------------------------------------------------------
+
 ----------------------
 -- Language Servers --
 ----------------------
@@ -42,8 +44,14 @@ vim.api.nvim_create_autocmd('LspAttach', {
 -- You'll find a list of language servers here:
 -- https://github.com/neovim/nvim-lspconfig/blob/master/doc/configs.md
 
+------------
+-- Python --
+------------
 require('lspconfig').pylsp.setup({})
 
+----------------
+-- JS/TS/JSON --
+----------------
 -- Install via npm: npm i -g vscode-langservers-extracted
 require('lspconfig').eslint.setup({
     on_attach = function(client, bufnr)
@@ -55,10 +63,49 @@ require('lspconfig').eslint.setup({
 })
 -- Install via npm: npm install -g typescript typescript-language-server
 require('lspconfig').ts_ls.setup({})
-
 -- Install via npm: npm i -g vscode-langservers-extracted
 require('lspconfig').jsonls.setup({})
 
+---------
+-- Lua --
+---------
+-- Follow some of the instructions to install: https://github.com/neovim/nvim-lspconfig/blob/master/doc/configs.md#lua_ls
+local lua_settings = {
+      runtime = {
+        version = 'LuaJIT'
+      },
+      -- Make the server aware of Neovim runtime files
+      workspace = {
+        checkThirdParty = false,
+        library = {
+          vim.env.VIMRUNTIME
+        }
+      },
+      diagnostics = {
+        -- Get the language server to recognize the `vim` global
+        globals = {
+          'vim',
+          'require'
+        },
+    },
+}
+require('lspconfig').lua_ls.setup({
+  on_init = function(client)
+    if client.workspace_folders then
+      local path = client.workspace_folders[1].name
+      if vim.uv.fs_stat(path..'/.luarc.json') or vim.uv.fs_stat(path..'/.luarc.jsonc') then
+        return
+      end
+    end
+    client.config.settings.Lua = vim.tbl_deep_extend('force', client.config.settings.Lua, lua_settings)
+  end,
+  settings = {
+    Lua = lua_settings
+  }
+})
+
+
+-----------------------------------------------------------------------------------------------------------------------
 
 ---------
 -- CMP --
