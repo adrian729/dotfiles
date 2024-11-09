@@ -4,9 +4,11 @@
 
 local data_dir = vim.fn.stdpath('data')
 if vim.fn.empty(vim.fn.glob(data_dir .. '/site/autoload/plug.vim')) == 1 then
-  vim.cmd('silent !curl -fLo ' .. data_dir .. '/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim')
-  vim.o.runtimepath = vim.o.runtimepath
-  vim.cmd('autocmd VimEnter * PlugInstall --sync | source $MYVIMRC')
+    vim.cmd('silent !curl -fLo ' ..
+        data_dir ..
+        '/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim')
+    vim.o.runtimepath = vim.o.runtimepath
+    vim.cmd('autocmd VimEnter * PlugInstall --sync | source $MYVIMRC')
 end
 
 
@@ -35,10 +37,14 @@ Plug('mbbill/undotree')
 Plug('tpope/vim-fugitive')
 
 -- LSP
+Plug('williamboman/mason.nvim')
+Plug('williamboman/mason-lspconfig.nvim') -- deps: nvim-lspconfig, mason.nvim
 Plug('neovim/nvim-lspconfig')
 Plug('hrsh7th/nvim-cmp')
 Plug('hrsh7th/cmp-nvim-lsp')
 Plug('VonHeikemen/lsp-zero.nvim', { ['branch'] = 'v4.x' }) -- deps: neovim/nvim-lspconfig, hrsh7th/nvim-cmp, hrsh7th/cmp-nvim-lsp
+-- CMP
+Plug('L3MON4D3/LuaSnip', { ['tag'] = 'v2.*', ['do'] = 'make install_jsregexp' })
+Plug('saadparwaiz1/cmp_luasnip')
 
 vim.call('plug#end')
-
