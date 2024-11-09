@@ -11,6 +11,7 @@ directories=(
 	"kitty"
 	"nvim"
 	"tmux"
+    "zsh"
 )
 
 # Ask if user wants to stow all directories without asking
