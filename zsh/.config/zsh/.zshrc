@@ -87,7 +87,6 @@ plugins=(
 
 source $ZSH/oh-my-zsh.sh
 
-
 # You may need to manually set your language environment
 export LANG=en_US.UTF-8
 
@@ -104,9 +103,7 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"                   # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" # This loads nvm bash_completion
 
-
 # export MANPATH="/usr/local/man:$MANPATH"
-
 
 # Preferred editor for local and remote sessions
 if [[ -n $SSH_CONNECTION ]]; then
@@ -115,19 +112,19 @@ else
 export EDITOR='nvim'
 fi
 
-# Compilation flags
-# export ARCHFLAGS="-arch $(uname -m)"
-
 prepend_path /opt/homebrew/bin
 prepend_path /home/linuxbrew/.linuxbrew
+
+########### TO REMOVE AND ADD SOMEHOW LOCAL CONFIGS ###
 # TODO: filter path and check how to add some local configs not in dotfiles
 prepend_path /home/adrian/.local/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/adrian/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin:/home/adrian/daedalus/tools/linux_devbox:/home/adrian/.fzf/bin:/home/adrian/daedalus/tools/linux_devbox
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 # TODO: this should go into local bash/zsh profile
 export PATH=$PATH:~/daedalus/tools/linux_devbox
+########### EBD TO REMOVE AND ADD SOMEHOW LOCAL CONFIGS ###
 
 if [ -f "$(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
-source "$(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+  source "$(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
 elif [ -f "$ZSH_CUSTOM/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
-source "$ZSH_CUSTOM/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
+  source "$ZSH_CUSTOM/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
 fi
