@@ -25,8 +25,9 @@ vim.call('plug#begin')
 Plug('catppuccin/nvim', { ['as'] = 'catppuccin' })
 
 -- Post-update hook: run a shell command after installing or updating the plugin
-Plug('junegunn/fzf', { ['dir'] = '~/.fzf', ['do'] = './install --all' })
-
+-- Plug('junegunn/fzf', { ['dir'] = '~/.fzf', ['do'] = './install --all' })
+Plug('junegunn/fzf', { ['do'] = '-> fzf#install()' })
+Plug('junegunn/fzf.vim')
 Plug('nvim-lua/plenary.nvim')
 
 Plug('nvim-telescope/telescope.nvim', { ['branch'] = '0.1.x' }) -- deps: nvim-lua/plenary.nvim

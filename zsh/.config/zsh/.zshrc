@@ -45,11 +45,11 @@ ZSH_THEME="half-life"
 
 # Uncomment one of the following lines to change the auto-update behavior
 # zstyle ':omz:update' mode disabled  # disable automatic updates
-# zstyle ':omz:update' mode auto      # update automatically without asking
+zstyle ':omz:update' mode auto      # update automatically without asking
 # zstyle ':omz:update' mode reminder  # just remind me to update when it's time
 
 # Uncomment the following line to change how often to auto-update (in days).
-# zstyle ':omz:update' frequency 13
+zstyle ':omz:update' frequency 7 
 
 # Uncomment the following line if pasting URLs and other text is messed up.
 # DISABLE_MAGIC_FUNCTIONS="true"
@@ -77,6 +77,62 @@ ZSH_CUSTOM="$HOME/.config/zsh"
 
 source $ZSH/oh-my-zsh.sh
 
+# homebrew
+prepend_path /opt/homebrew/bin
+prepend_path /home/linuxbrew/.linuxbrew
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+# homebrew end
+
+# autojump
+[ -f "$(brew --prefix)/etc/profile.d/autojump.sh" ] && . "$(brew --prefix)/etc/profile.d/autojump.sh"
+# autojump end
+
+
+# Preferred editor for local and remote sessions
+if [[ -n $SSH_CONNECTION ]]; then
+  export EDITOR='vim'
+else
+  export EDITOR='nvim'
+fi
+
+#########
+# TOOLS #
+#########
+
+# nvm
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"                   # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" # This loads nvm bash_completion
+# nvm end
+
+# pnpm
+if [[ "$IS_MAC" == 'true' ]]; then
+  export PNPM_HOME="~/Library/pnpm"
+fi
+if [[ "$IS_LINUX" == 'true' ]]; then
+  export PNPM_HOME="~/.local/share/pnpm"
+fi
+case ":$PATH:" in
+    *":$PNPM_HOME:"*) ;;
+    *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
+# pnpm end
+
+# Set up fzf key bindings and fuzzy completion
+source <(fzf --zsh)
+
+#############
+# ADD LOCAL #
+#############
+
+if [ -f $HOME/local/.local_profile ]; then
+    . $HOME/local/.local_profile 
+fi
+
+#######################
+# OH-MY-ZSH & PLUGINS #
+#######################
+
 plugins=(
   git
   autojump
@@ -89,42 +145,10 @@ source $ZSH/oh-my-zsh.sh
 
 # You may need to manually set your language environment
 export LANG=en_US.UTF-8
-
-#########
-# TOOLS #
-#########
-# eval "$(fzf --zsh)"
-source <(fzf --zsh)
-
-#######
-# NVM #
-#######
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"                   # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" # This loads nvm bash_completion
-
-# export MANPATH="/usr/local/man:$MANPATH"
-
-# Preferred editor for local and remote sessions
-if [[ -n $SSH_CONNECTION ]]; then
-export EDITOR='vim'
-else
-export EDITOR='nvim'
-fi
-
-prepend_path /opt/homebrew/bin
-prepend_path /home/linuxbrew/.linuxbrew
-
-########### TO REMOVE AND ADD SOMEHOW LOCAL CONFIGS ###
-# TODO: filter path and check how to add some local configs not in dotfiles
-prepend_path /home/adrian/.local/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/adrian/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin:/home/adrian/daedalus/tools/linux_devbox:/home/adrian/.fzf/bin:/home/adrian/daedalus/tools/linux_devbox
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-# TODO: this should go into local bash/zsh profile
-export PATH=$PATH:~/daedalus/tools/linux_devbox
-########### EBD TO REMOVE AND ADD SOMEHOW LOCAL CONFIGS ###
-
+# zsh-autosuggestions
 if [ -f "$(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
   source "$(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
 elif [ -f "$ZSH_CUSTOM/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
   source "$ZSH_CUSTOM/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
 fi
+# zsh-autosuggestions end

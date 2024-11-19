@@ -29,9 +29,8 @@ if [ -d "$HOME/.local/bin" ] ; then
     PATH="$HOME/.local/bin:$PATH"
 fi
 
-: <<'END'
+# TODO: add real local example/move things to ~/local/.local_profile
 if [ -f "$HOME/local/.bashrc" ];
-. "$HOME/local/.bashrc" 
-[[ -e "$HOME/local/.bashrc" ]] && emulate sh -c "$HOME/local/.bashrc"
+    . "$HOME/local/.bashrc" 
+    [[ -e "$HOME/local/.bashrc" ]] && emulate sh -c "$HOME/local/.bashrc"
 fi
-END
