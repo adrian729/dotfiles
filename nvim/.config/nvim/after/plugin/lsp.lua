@@ -229,6 +229,7 @@ end
 require('mason').setup({})
 require('mason-lspconfig').setup({
     ensure_installed = {
+        'bashls',      -- npm i -g bash-language-server
         'lua_ls',      -- to install: https://github.com/neovim/nvim-lspconfig/blob/master/doc/configs.md#lua_ls
         'pylsp',       -- sudo apt-get install python3-pylsp
         'eslint',      -- npm i -g vscode-langservers-extracted
@@ -279,6 +280,7 @@ require('lspconfig').marksman.setup({})
 ---------
 
 local cmp = require('cmp')
+require('luasnip.loaders.from_vscode').lazy_load()
 
 cmp.setup({
     sources = {

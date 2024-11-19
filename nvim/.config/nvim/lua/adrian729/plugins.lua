@@ -46,5 +46,6 @@ Plug('VonHeikemen/lsp-zero.nvim', { ['branch'] = 'v4.x' }) -- deps: neovim/nvim-
 -- CMP
 Plug('L3MON4D3/LuaSnip', { ['tag'] = 'v2.*', ['do'] = 'make install_jsregexp' })
 Plug('saadparwaiz1/cmp_luasnip')
+Plug('rafamadriz/friendly-snippets')
 
 vim.call('plug#end')
