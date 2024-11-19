@@ -2,6 +2,6 @@
 .config/zsh/.zsh_history
 .config/zsh/.zsh_sessions/
 
-plugins/*
-!plugins/.keep
+.config/zsh/plugins/*
+!.config/zsh/plugins/.keep
 
