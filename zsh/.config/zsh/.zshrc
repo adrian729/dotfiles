@@ -1,13 +1,10 @@
-if test -n "$KITTY_INSTALLATION_DIR"; then
-    export KITTY_SHELL_INTEGRATION="enabled"
-    autoload -Uz -- "$KITTY_INSTALLATION_DIR"/shell-integration/zsh/kitty-integration
-    kitty-integration
-    unfunction kitty-integration
-fi
+#########
+# UTILS #
+#########
 
+# OS
 IS_MAC=false
 IS_LINUX=false
-
 case "$(uname -s)" in
   Darwin*)
     IS_MAC=true
@@ -17,6 +14,7 @@ case "$(uname -s)" in
     ;;
 esac
 
+# PATH
 prepend_path() {
   if [ -d "$1" ]; then
     export PATH="$1:$PATH"
@@ -29,53 +27,46 @@ append_path() {
   fi
 }
 
+prepend_path_file() {
+  if [ -f "$1" ]; then
+    export PATH="$1:$PATH"
+  fi
+}
+# Profiling
+timezsh() {
+  shell=${1-$SHELL}
+  for i in $(seq 1 10); do /usr/bin/time $shell -i -c exit; done
+}
+
+##########
+# CONFIG #
+##########
+
+# Preferred editor for local and remote sessions
+if [[ -n $SSH_CONNECTION ]]; then
+  export EDITOR='vim'
+else
+  export EDITOR='nvim'
+fi
+
+# You may need to manually set your language environment
+export LANG=en_US.UTF-8
+
+# history
+setopt HIST_IGNORE_SPACE
+setopt SHARE_HISTORY
+HISTSIZE=1000
+HISTFILESIZE=5000
+SAVEHIST=5000
+
+################
+# PATH & TOOLS #
+################
+
 # If you come from bash you might have to change your $PATH.
-prepend_path $HOME/bin:$HOME/.local/bin:/usr/local/bin
-
-# Path to your Oh My Zsh installation.
-export ZSH="$HOME/.oh-my-zsh"
-
-# See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
-ZSH_THEME="half-life"
-
-# CASE_SENSITIVE="true"
-
-# Case-sensitive completion must be off. _ and - will be interchangeable.
-# HYPHEN_INSENSITIVE="true"
-
-# Uncomment one of the following lines to change the auto-update behavior
-# zstyle ':omz:update' mode disabled  # disable automatic updates
-zstyle ':omz:update' mode auto      # update automatically without asking
-# zstyle ':omz:update' mode reminder  # just remind me to update when it's time
-
-# Uncomment the following line to change how often to auto-update (in days).
-zstyle ':omz:update' frequency 7 
-
-# Uncomment the following line if pasting URLs and other text is messed up.
-# DISABLE_MAGIC_FUNCTIONS="true"
-
-# Uncomment the following line to disable auto-setting terminal title.
-# DISABLE_AUTO_TITLE="true"
-
-ENABLE_CORRECTION="true"
-ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE="fg=#808080,bg=#111111,italics,underline"
-
-# Uncomment the following line if you want to disable marking untracked files
-# under VCS as dirty. This makes repository status check for large repositories
-# much, much faster.
-# DISABLE_UNTRACKED_FILES_DIRTY="true"
-
-# Uncomment the following line if you want to change the command execution time
-# stamp shown in the history command output.
-# You can set one of the optional three formats:
-# "mm/dd/yyyy"|"dd.mm.yyyy"|"yyyy-mm-dd"
-# or set a custom format using the strftime function format specifications,
-# see 'man strftime' for details.
-# HIST_STAMPS="mm/dd/yyyy"
-
-ZSH_CUSTOM="$HOME/.config/zsh"
-
-source $ZSH/oh-my-zsh.sh
+prepend_path $HOME/bin
+prepend_path /usr/local/bin
+prepend_path $HOME/.local/bin
 
 # homebrew
 prepend_path /opt/homebrew/bin
@@ -87,68 +78,73 @@ eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 [ -f "$(brew --prefix)/etc/profile.d/autojump.sh" ] && . "$(brew --prefix)/etc/profile.d/autojump.sh"
 # autojump end
 
-
-# Preferred editor for local and remote sessions
-if [[ -n $SSH_CONNECTION ]]; then
-  export EDITOR='vim'
-else
-  export EDITOR='nvim'
-fi
-
-#########
-# TOOLS #
-#########
+# luarocks - https://luarocks.org/ for how to install, TODO: some script to install all config reqs
+prepend_path_file /usr/bin/luarocks
+prepend_path_file /usr/local/bin/luarocks
+prepend_path /usr/local/etc/luarocks
+prepend_path /usr/local/share/lua
+prepend_path /usr/local/share/lua/5.4
+prepend_path /usr/local/lib/lua/5.4
+# luarocks end
 
 # nvm
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"                   # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" # This loads nvm bash_completion
+# export NVM_DIR="$HOME/.nvm"
+#export NVM_LAZY_LOAD=true
+#export NVM_COMPLETION=true
+#[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"                   # This loads nvm
+#[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" # This loads nvm bash_completion
 # nvm end
 
 # pnpm
-if [[ "$IS_MAC" == 'true' ]]; then
-  export PNPM_HOME="~/Library/pnpm"
-fi
-if [[ "$IS_LINUX" == 'true' ]]; then
-  export PNPM_HOME="~/.local/share/pnpm"
-fi
-case ":$PATH:" in
-    *":$PNPM_HOME:"*) ;;
-    *) export PATH="$PNPM_HOME:$PATH" ;;
-esac
+#if [[ "$IS_MAC" == 'true' ]]; then
+#  export PNPM_HOME="~/Library/pnpm"
+#fi
+#if [[ "$IS_LINUX" == 'true' ]]; then
+#  export PNPM_HOME="~/.local/share/pnpm"
+#fi
+#case ":$PATH:" in
+#    *":$PNPM_HOME:"*) ;;
+#    *) export PATH="$PNPM_HOME:$PATH" ;;
+#esac
 # pnpm end
 
-# Set up fzf key bindings and fuzzy completion
+# fzf
 source <(fzf --zsh)
-
-#############
-# ADD LOCAL #
-#############
-
-if [ -f $HOME/local/.local_profile ]; then
-    . $HOME/local/.local_profile 
-fi
+# fzf end
 
 #######################
 # OH-MY-ZSH & PLUGINS #
 #######################
-
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME="half-life"
+ZSH_CUSTOM="$HOME/.config/zsh"
 plugins=(
-  git
-  autojump
-  zsh-syntax-highlighting
-  zsh-autosuggestions
-  poetry
+    git
+    autojump
+    zsh-syntax-highlighting
+    zsh-autosuggestions
+    poetry
 )
 
 source $ZSH/oh-my-zsh.sh
 
-# You may need to manually set your language environment
-export LANG=en_US.UTF-8
+zstyle ':omz:update' mode auto      # update automatically without asking
+zstyle ':omz:update' frequency 7 
+
 # zsh-autosuggestions
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE="fg=#808080,bg=#111111,italics,underline"
+HYPHEN_INSENSITIVE="true"
 if [ -f "$(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
   source "$(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
 elif [ -f "$ZSH_CUSTOM/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
   source "$ZSH_CUSTOM/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
 fi
 # zsh-autosuggestions end
+
+####################
+# ADD LOCAL CONFIG #
+####################
+if [ -f $HOME/local/.local_profile ]; then
+    . $HOME/local/.local_profile 
+fi
+

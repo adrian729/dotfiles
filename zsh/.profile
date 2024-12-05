@@ -6,7 +6,7 @@
 
 # the default umask is set in /etc/profile; for setting the umask
 # for ssh logins, install and configure the libpam-umask package.
-#umask 022
+# umask 022
 
 export EDITOR="nvim"
 export ZDOTDIR="$HOME/.config/zsh"
@@ -19,18 +19,3 @@ if [ -n "$BASH_VERSION" ]; then
     fi
 fi
 
-# set PATH so it includes user's private bin if it exists
-if [ -d "$HOME/bin" ] ; then
-    PATH="$HOME/bin:/usr/local/bin:$PATH"
-fi
-
-# set PATH so it includes user's private bin if it exists
-if [ -d "$HOME/.local/bin" ] ; then
-    PATH="$HOME/.local/bin:$PATH"
-fi
-
-# TODO: add real local example/move things to ~/local/.local_profile
-if [ -f "$HOME/local/.bashrc" ];
-    . "$HOME/local/.bashrc" 
-    [[ -e "$HOME/local/.bashrc" ]] && emulate sh -c "$HOME/local/.bashrc"
-fi
