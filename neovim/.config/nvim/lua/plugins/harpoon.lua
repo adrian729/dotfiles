@@ -1,55 +1,82 @@
+-- TODO: if change telescope for fzf-lua, check integration.
 return {
-  {
-    "ThePrimeagen/harpoon",
-    branch = "harpoon2",
-    name = "harpoon",
-    dependencies = { 
-	    "nvim-lua/plenary.nvim",	
-	    "nvim-telescope/telescope.nvim",
-    },
-    opts = {}, -- REQUIRED
-    config = function()
-      local harpoon = require("harpoon")
+	{
+		"theprimeagen/harpoon",
+		branch = "harpoon2",
+		lazy = true,
+		dependencies = { "nvim-lua/plenary.nvim" },
+		keys = function()
+			local harpoon = require("harpoon")
+			-- REQUIRED
+			harpoon:setup({})
+			-- REQUIRED
 
-      -- REQUIRED
-      harpoon:setup({})
-      -- DERIUQER
+			return {
+				{
+					"<leader>a",
+					function() harpoon:list():add() end,
+					desc = "harpoon add file"
+				}, {
+				"<C-e>h",
+				function()
+					harpoon.ui:toggle_quick_menu(harpoon:list())
+				end,
+				desc = "harpoon quick menu"
+			},
+				{
+					"<C-h>",
+					function() harpoon:list():select(1) end,
+					desc = "harpoon to file 1"
+				},
+				{
+					"<C-j>",
+					function() harpoon:list():select(2) end,
+					desc = "harpoon to file 2"
+				},
+				{
+					"<C-k>",
+					function() harpoon:list():select(3) end,
+					desc = "harpoon to file 3"
+				},
+				{
+					"<C-l>",
+					function() harpoon:list():select(4) end,
+					desc = "harpoon to file 4"
+				}, -- Toggle prev & next buffers stored within harpoon list
+				{
+					"<C-S-P>",
+					function() harpoon:list():prev() end,
+					desc = "harpoon to prev file"
+				},
+				-- TODO: check because this seems to clash with kitty(?) new window
+				{
+					"<C-S-N>",
+					function() harpoon:list():next() end,
+					desc = "harpoon to next file"
+				}, -- Telescope integration
+				{
+					"<C-e>t",
+					function()
+						local conf = require("telescope.config").values
+						local function toggle_telescope(harpoon_files)
+							local file_paths = {}
+							for _, item in ipairs(harpoon_files.items) do
+								table.insert(file_paths, item.value)
+							end
 
-      vim.keymap.set("n", "<leader>a", function() harpoon:list():add() end)
-      vim.keymap.set("n", "<C-e>h", function() harpoon.ui:toggle_quick_menu(harpoon:list()) end)
-
-      vim.keymap.set("n", "<C-h>", function() harpoon:list():select(1) end)
-      vim.keymap.set("n", "<C-j>", function() harpoon:list():select(2) end)
-      vim.keymap.set("n", "<C-k>", function() harpoon:list():select(3) end)
-      vim.keymap.set("n", "<C-l>", function() harpoon:list():select(4) end)
-
-      -- Toggle previous & next buffers stored within Harpoon list
-      vim.keymap.set("n", "<C-S-P>", function() harpoon:list():prev() end)
-      vim.keymap.set("n", "<C-S-N>", function() harpoon:list():next() end)
-
-      -- basic telescope configuration
-      local conf = require("telescope.config").values
-      local function toggle_telescope(harpoon_files)
-        local file_paths = {}
-        for _, item in ipairs(harpoon_files.items) do
-          table.insert(file_paths, item.value)
-        end
-
-        require("telescope.pickers").new({}, {
-          prompt_title = "Harpoon",
-          finder = require("telescope.finders").new_table({
-            results = file_paths,
-          }),
-          previewer = conf.file_previewer({}),
-          sorter = conf.generic_sorter({}),
-        }):find()
-      end
-
-      vim.keymap.set(
-        "n", "<C-e>t",
-        function() toggle_telescope(harpoon:list()) end,
-        { desc = "Open harpoon window" }
-      )
-    end,
-  },
+							require("telescope.pickers").new({}, {
+								prompt_title = "Harpoon",
+								finder = require("telescope.finders").new_table(
+									{ results = file_paths }),
+								previewer = conf.file_previewer({}),
+								sorter = conf.generic_sorter({})
+							}):find()
+						end
+						toggle_telescope(harpoon:list())
+					end,
+					desc = "Open telescope harpoon window"
+				}
+			}
+		end
+	}
 }

@@ -1,17 +1,37 @@
 return {
-  {
-    'nvim-telescope/telescope.nvim',
-    name = 'telescope',
-    tag = '0.1.8',
-    dependencies = { 'nvim-lua/plenary.nvim' },
-    config = function()
-      local builtin = require('telescope.builtin')
-      vim.keymap.set('n', '<leader>ff', builtin.find_files, { desc = 'Telescope search files' })
-      vim.keymap.set('n', '<leader>fg', builtin.git_files, { desc = 'Telescope git search files' })
-      -- Pre-requisite: install [ripgrep](https://github.com/BurntSushi/ripgrep?tab=readme-ov-file#installation)
-      vim.keymap.set('n', '<leader>ps', function()
-        builtin.grep_string({ search = vim.fn.input("Grep > ") });
-      end, { desc = 'Telescope project search' })
-    end,
-  },
+	{ "nvim-lua/plenary.nvim" }, {
+	'nvim-telescope/telescope.nvim',
+	tag = '0.1.8',
+	dependencies = { 'nvim-lua/plenary.nvim' },
+	keys = {
+		{
+			"<leader>ff",
+			"<cmd>Telescope find_files<cr>",
+			desc = "Telescope find files"
+		},
+		{
+			"<leader>fg",
+			"<cmd>Telescope git_files<cr>",
+			desc = "Telescope git files"
+		},
+		-- Pre-requisite: install [ripgrep](https://github.com/BurntSushi/ripgrep?tab=readme-ov-file#installation)
+		{
+			"<leader>ps",
+			function()
+				require("telescope.builtin").grep_string({
+					search = vim.fn.input("Grep > ")
+				});
+			end,
+			desc = "Telescope project search"
+		}, {
+		"<leader>fp",
+		function()
+			require("telescope.builtin").find_files({
+				cwd = require("lazy.core.config").options.root
+			})
+		end,
+		desc = "Find Plugin File"
+	}
+	}
+}
 }
