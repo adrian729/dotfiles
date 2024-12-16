@@ -6,6 +6,11 @@ return {
     dependencies = { 'nvim-lua/plenary.nvim' },
     keys = {
       {
+        "<leader>rf",
+        "<cmd>Telescope resume<cr>",
+        desc = "Telescope resume"
+      },
+      {
         "<leader>ff",
         "<cmd>Telescope find_files<cr>",
         desc = "Telescope find files"

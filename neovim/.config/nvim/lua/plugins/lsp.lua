@@ -35,10 +35,26 @@ return {
     dependencies = { "L3MON4D3/LuaSnip", "hrsh7th/nvim-cmp" },
   },
   {
-    "hrsh7th/nvim-cmp",
+    "hrsh7th/cmp-nvim-lsp",
   },
   {
-    "hrsh7th/cmp-nvim-lsp",
+    "hrsh7th/cmp-buffer",
+  },
+  {
+    "hrsh7th/cmp-path",
+  },
+  {
+    "hrsh7th/cmp-cmdline",
+  },
+  {
+    "hrsh7th/nvim-cmp",
+    dependencies = {
+      "hrsh7th/cmp-nvim-lsp",
+      "hrsh7th/cmp-buffer",
+      "hrsh7th/cmp-path",
+      "hrsh7th/cmp-cmdline",
+      "saadparwaiz1/cmp_luasnip",
+    },
   },
   {
     "VonHeikemen/lsp-zero.nvim",
@@ -265,16 +281,17 @@ return {
         <Ctrl-p>: Go to the previous item in the completion menu, or trigger completion menu.
       --]]
       local cmp = require("cmp")
-      return {
+      cmp.setup({
         sources = {
           {
             name = 'nvim_lsp',
-            option = {
-              markdown_oxide = {
-                keyword_pattern = [[\(\k\| \|\/\|#\)\+]]
-              }
-            }
-          }, { name = 'buffer' }, { name = 'luasnip' }
+          },
+          {
+            name = 'buffer',
+          },
+          {
+            name = 'luasnip'
+          }
         },
         mapping = cmp.mapping.preset.insert({
           -- Navigate between completion items
@@ -349,7 +366,26 @@ return {
           autocomplete = false,
           completeopt = 'menu,menuone,noinsert'
         }
-      }
+      })
+
+      -- Use buffer source for `/` and `?` (if you enabled `native_menu`, this won't work anymore).
+      cmp.setup.cmdline({ '/', '?' }, {
+        mapping = cmp.mapping.preset.cmdline(),
+        sources = {
+          { name = 'buffer' }
+        }
+      })
+
+      -- Use cmdline & path source for ':' (if you enabled `native_menu`, this won't work anymore).
+      cmp.setup.cmdline(':', {
+        mapping = cmp.mapping.preset.cmdline(),
+        sources = cmp.config.sources({
+          { name = 'path' }
+        }, {
+          { name = 'cmdline' }
+        }),
+        matching = { disallow_symbol_nonprefix_matching = false }
+      })
     end,
   },
 }
