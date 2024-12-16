@@ -63,6 +63,15 @@ SAVEHIST=5000
 # PATH & TOOLS #
 ################
 
+# Albert
+# Bind Albert to zsh
+# TODO: add Albert to path, check if installed, etc...
+albert_toggle() { echo -n toggle | nc -U ~/.cache/albert/ipc_socket > /dev/null; }
+zle -N albert_toggle
+bindkey '^ ' albert_toggle
+# bindkey -M '^ ' 'sh -c "echo -n toggle | nc -U ~/.cache/albert/ipc_socket"'
+#treblA
+
 # If you come from bash you might have to change your $PATH.
 prepend_path $HOME/bin
 prepend_path /usr/local/bin
