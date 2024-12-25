@@ -125,7 +125,9 @@ source <(fzf --zsh)
 # OH-MY-ZSH & PLUGINS #
 #######################
 export ZSH="$HOME/.oh-my-zsh"
+# theme
 ZSH_THEME="half-life"
+# emeht
 ZSH_CUSTOM="$HOME/.config/zsh"
 plugins=(
     git
