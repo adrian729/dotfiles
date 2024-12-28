@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+# This is just a test to see how we will use the ready-tmux script in tmux-sessionizer or by itself
+tmux neww -n foofoo

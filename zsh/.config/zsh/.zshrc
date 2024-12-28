@@ -76,6 +76,8 @@ bindkey '^ ' albert_toggle
 prepend_path $HOME/bin
 prepend_path /usr/local/bin
 prepend_path $HOME/.local/bin
+# Local scripts
+prepend_path $HOME/.local/scripts
 
 # homebrew
 prepend_path /opt/homebrew/bin
@@ -118,7 +120,8 @@ prepend_path /usr/local/lib/lua/5.4
 # pnpm end
 
 # fzf
-source <(fzf --zsh)
+# source <(fzf --zsh)
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 # fzf end
 
 #######################
