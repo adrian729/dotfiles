@@ -15,6 +15,36 @@ vim.g.mapleader = " "
 -- Normal mode --
 -----------------
 
+map("n", "<leader>cll",
+  function()
+    local lazy = require 'lazy'
+    local l_opts = { wait = false, show = false }
+    lazy.update(l_opts)
+    lazy.sync(l_opts)
+    print 'Lazy update and sync done!'
+  end,
+  { desc = "Lazy Update and Sync" }
+)
+map("n", "<leader>clu",
+  function()
+    local lazy = require 'lazy'
+    local l_opts = { wait = false, show = false }
+    lazy.update(l_opts)
+    print 'Lazy update done!'
+  end,
+  { desc = "Lazy Update" }
+)
+
+map("n", "<leader>cls",
+  function()
+    local lazy = require 'lazy'
+    local l_opts = { wait = false, show = false }
+    lazy.sync(l_opts)
+    print 'Lazy sync done!'
+  end,
+  { desc = "Lazy Sync" }
+)
+
 -- Explorer
 map("n", "<leader>ee", vim.cmd.Ex, { desc = "Open file explorer" })
 map("n", "<leader>es", "<cmd>Sex!<CR>", { desc = "Open file explorer - split" })

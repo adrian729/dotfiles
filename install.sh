@@ -9,10 +9,10 @@ fi
 # List of directories to stow
 directories=(
 	"kitty"
-#	"nvim"
-    "neovim"
+  "ghostty"
+	"nvim"
 	"tmux"
-    "zsh"
+  "zsh"
 )
 
 # Ask if user wants to stow all directories without asking

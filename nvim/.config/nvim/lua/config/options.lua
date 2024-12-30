@@ -3,7 +3,7 @@ local opt = vim.opt
 -- Hint: use `:h <option>` to figure out the meaning if needed
 opt.clipboard = 'unnamedplus' -- use system clipboard
 opt.completeopt = { 'menu', 'menuone', 'noselect' }
-opt.mouse = 'a'               -- allow the mouse to be used in Nvim
+-- opt.mouse = 'a'               -- allow the mouse to be used in Nvim
 
 -- Tab
 opt.tabstop = 2      -- number of visual spaces per TAB

@@ -6,6 +6,16 @@ return {
     dependencies = { 'nvim-lua/plenary.nvim' },
     keys = {
       {
+        "<leader>fl",
+        "<cmd>Telescope<cr>",
+        desc = "Telescope options list"
+      },
+      {
+        "<leader>ft",
+        "<cmd>Telescope treesitter<cr>",
+        desc = "Telescope treesitter"
+      },
+      {
         "<leader>rf",
         "<cmd>Telescope resume<cr>",
         desc = "Telescope resume"
@@ -33,6 +43,11 @@ return {
         desc = "Telescope project search"
       },
       {
+        "<leader>fs",
+        "<cmd>Telescope current_buffer_fuzzy_find<cr>",
+        desc = "Telescope current buffer fzf"
+      },
+      {
         "<leader>fp",
         function()
           require("telescope.builtin").find_files({
@@ -40,7 +55,17 @@ return {
           })
         end,
         desc = "Find Plugin File"
-      }
+      },
+      {
+        "<leader>fk",
+        "<cmd>Telescope keymaps<cr>",
+        desc = "Telescope normal keymaps"
+      },
+      {
+        "<leader>fhl",
+        "<cmd>Telescope highlights<cr>",
+        desc = "List available highlights"
+      },
     }
   }
 }
