@@ -98,6 +98,10 @@ prepend_path /usr/local/share/lua/5.4
 prepend_path /usr/local/lib/lua/5.4
 # luarocks end
 
+# rust
+prepend_path $HOME/.cargo/bin
+# tsur
+
 # nvm
 # export NVM_DIR="$HOME/.nvm"
 #export NVM_LAZY_LOAD=true

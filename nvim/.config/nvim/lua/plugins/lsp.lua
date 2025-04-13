@@ -87,16 +87,17 @@ local M = {
         -- https://github.com/neovim/nvim-lspconfig/blob/master/doc/configs.md
         -- MASON LSPs: https://github.com/williamboman/mason-lspconfig.nvim?tab=readme-ov-file#available-lsp-servers
         ensure_installed = {
-          'bashls',  -- npm i -g bash-language-server
-          'lua_ls',  -- to install: https://github.com/neovim/nvim-lspconfig/blob/master/doc/configs.md#lua_ls
-          'pylsp',   -- sudo apt-get install python3-pylsp
-          'eslint',  -- npm i -g vscode-langservers-extracted
-          'ts_ls',   -- npm install -g typescript typescript-language-server
-          'jsonls',  -- npm i -g vscode-langservers-extracted
-          'html',    -- npm i -g vscode-langservers-extracted
-          'cssls',   -- npm i -g vscode-langservers-extracted
+          'bashls',      -- npm i -g bash-language-server
+          'lua_ls',      -- to install: https://github.com/neovim/nvim-lspconfig/blob/master/doc/configs.md#lua_ls
+          -- 'rust_analyzer', -- to install: follow https://rust-analyzer.github.io/manual.html#installation // 'mrcjkb/rustaceanvim' already takes care of rust analyzer config, if we remove the plugin enable rust here
+          'pylsp',       -- sudo apt-get install python3-pylsp
+          'eslint',      -- npm i -g vscode-langservers-extracted
+          'ts_ls',       -- npm install -g typescript typescript-language-server
+          'jsonls',      -- npm i -g vscode-langservers-extracted
+          'html',        -- npm i -g vscode-langservers-extracted
+          'cssls',       -- npm i -g vscode-langservers-extracted
           'tailwindcss', -- npm install -g @tailwindcss/language-server
-          'marksman' -- brew install marksman (or sudo snap install marksman)
+          'marksman'     -- brew install marksman (or sudo snap install marksman)
         },
         handlers = {
           -- default lsp handler
@@ -155,10 +156,44 @@ local M = {
               }
             })
           end,
+          --[[
+          rust_analyzer = function()
+            require('lspconfig').rust_analyzer.setup({
+              on_attach = function(_client, bufnr)
+                vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
+
+                -- Set updatetime for CursorHold
+                -- 300ms of no cursor movement to trigger CursorHold
+                vim.opt.updatetime = 100
+
+                -- Show diagnostic popup on cursor hover
+                local diag_float_grp = vim.api.nvim_create_augroup("DiagnosticFloat", { clear = true })
+                vim.api.nvim_create_autocmd("CursorHold", {
+                  callback = function()
+                    vim.diagnostic.open_float(nil, { focusable = false })
+                  end,
+                  group = diag_float_grp,
+                })
+
+                -- Goto previous/next diagnostic warning/error
+                vim.keymap.set("n", "g[", vim.diagnostic.goto_prev, keymap_opts)
+                vim.keymap.set("n", "g]", vim.diagnostic.goto_next, keymap_opts)
+              end,
+              settings = {
+                ['rust-analyzer'] = {
+                  -- enable clippy on save
+                  checkOnSave = {
+                    command = "clippy",
+                  },
+                }
+              }
+            })
+          end,
+          --]]
           eslint = function()
             require('lspconfig').eslint.setup({
               capabilities = capabilities,
-              on_attach = function(client, bufnr)
+              on_attach = function(_client, bufnr)
                 vim.api.nvim_create_autocmd("BufWritePre", {
                   buffer = bufnr,
                   command = "EslintFixAll"

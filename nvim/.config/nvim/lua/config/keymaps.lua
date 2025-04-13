@@ -56,6 +56,9 @@ map("n", "<leader>ts", "<cmd>!tmux neww tmux-sessionizer<CR>", { silent = true }
 -- chmod
 map("n", "<leader>cx", "<cmd>!chmod +x %<CR>", { silent = true })
 
+-- TESTING
+map("n", "<leader>tf", "<cmd>PlenaryBustedFile %<CR>", { desc = "Test current File" })
+
 -- Hint: see `:h vim.map.set()`
 -- Better window navigation
 --map('n', '<C-h>', '<C-w>h', opts)

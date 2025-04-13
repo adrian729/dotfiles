@@ -7,5 +7,5 @@
 
 tmux split-pane -v
 tmux select-pane -t 1
-tmux resize-pane -D 10
+tmux resize-pane -D 12
 nvim .

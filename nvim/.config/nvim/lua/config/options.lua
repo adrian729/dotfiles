@@ -1,5 +1,8 @@
 local opt = vim.opt
 
+-- "fix jumping around when source file"
+opt.signcolumn = "yes:1"
+
 -- Hint: use `:h <option>` to figure out the meaning if needed
 opt.clipboard = 'unnamedplus' -- use system clipboard
 opt.completeopt = { 'menu', 'menuone', 'noselect' }

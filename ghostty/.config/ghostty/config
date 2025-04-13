@@ -1,2 +1,10 @@
 theme = catppuccin-mocha
 
+# TODO check what options are available to add bg image and tint/opacity..
+# Custom background
+# background_image = red.png
+# never-knows-best.png, pink-girl.png, red.png, TakkunFLCL.png
+# background_image_layout = centered
+## background_opacity 0.9
+# background_tint = 0.97
+

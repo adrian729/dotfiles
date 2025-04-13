@@ -3,11 +3,14 @@ return {
     "folke/lazy.nvim",
     version = false,
   },
-  { "nvim-lua/plenary.nvim" },
+  {
+    "nvim-lua/plenary.nvim",
+    lazy = true,
+  },
   { 'nvim-tree/nvim-web-devicons' },
   {
     'echasnovski/mini.icons',
-    version = '*'
+    version = '*',
   },
   {
     "folke/which-key.nvim",

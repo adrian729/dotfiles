@@ -10,3 +10,6 @@ alias l='ls -CF'
 
 # TODO: check if there is something to stash or not do stash pop
 alias gitstashpull='git stash && git pull && git stash pop'
+
+# Update kitty
+alias kittyupdate='curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin'
