@@ -11,6 +11,8 @@
 export EDITOR="nvim"
 export ZDOTDIR="$HOME/.config/zsh"
 
+if [ -f ~/.zshrc ]; then source ~/.zshrc fi
+
 # if running bash
 if [ -n "$BASH_VERSION" ]; then
     # include .bashrc if it exists
@@ -19,3 +21,4 @@ if [ -n "$BASH_VERSION" ]; then
     fi
 fi
 
+. "$HOME/.cargo/env"

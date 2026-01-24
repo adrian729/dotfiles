@@ -66,10 +66,12 @@ SAVEHIST=5000
 # Albert
 # Bind Albert to zsh
 # TODO: add Albert to path, check if installed, etc...
-albert_toggle() { echo -n toggle | nc -U ~/.cache/albert/ipc_socket > /dev/null; }
-zle -N albert_toggle
-bindkey '^ ' albert_toggle
-# bindkey -M '^ ' 'sh -c "echo -n toggle | nc -U ~/.cache/albert/ipc_socket"'
+if [ $IS_LINUX = true ]; then
+  albert_toggle() { echo -n toggle | nc -U ~/.cache/albert/ipc_socket > /dev/null; }
+  zle -N albert_toggle
+  bindkey '^ ' albert_toggle
+  # bindkey -M '^ ' 'sh -c "echo -n toggle | nc -U ~/.cache/albert/ipc_socket"'
+fi
 #treblA
 
 # If you come from bash you might have to change your $PATH.
@@ -80,9 +82,12 @@ prepend_path $HOME/.local/bin
 prepend_path $HOME/.local/scripts
 
 # homebrew
-prepend_path /opt/homebrew/bin
-prepend_path /home/linuxbrew/.linuxbrew
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+if [ $IS_LINUX = true ]; then
+  prepend_path /home/linuxbrew/.linuxbrew
+  eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+elif [ $IS_MAC = true ]; then
+  prepend_path /opt/homebrew/bin
+fi
 # homebrew end
 
 # autojump
@@ -99,15 +104,22 @@ prepend_path /usr/local/lib/lua/5.4
 # luarocks end
 
 # nvm
-# export NVM_DIR="$HOME/.nvm"
-#export NVM_LAZY_LOAD=true
-#export NVM_COMPLETION=true
-#[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"                   # This loads nvm
-#[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" # This loads nvm bash_completion
+export NVM_LAZY_LOAD=true
+export NVM_COMPLETION=true
+export NVM_BREW_DIR="$(brew --prefix)/opt/nvm"
+if [ -d $NVM_BREW_DIR ]; then
+  [ -s "$NVM_BREW_DIR/nvm.sh" ] && \. "$NVM_BREW_DIR/nvm.sh"  # This loads nvm
+  [ -s "$NVM_BREW_DIR/bash_completion" ] && \. "$NVM_BREW_DIR/bash_completion" # This loads nvm bash_completion
+  [ -s "$NVM_BREW_DIR/etc/bash_completion.d/nvm" ] && \. "$NVM_BREW_DIR/etc/bash_completion.d/nvm"  # This loads nvm bash_completion
+else
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"                   # This loads nvm
+  [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" # This loads nvm bash_completion
+fi
 # nvm end
 
 # pnpm
-#if [[ "$IS_MAC" == 'true' ]]; then
+# if [[ "$IS_MAC" == 'true' ]]; then
 #  export PNPM_HOME="~/Library/pnpm"
 #fi
 #if [[ "$IS_LINUX" == 'true' ]]; then
@@ -162,3 +174,4 @@ if [ -f $HOME/local/.local_profile ]; then
     . $HOME/local/.local_profile 
 fi
 
+source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
