@@ -1,5 +1,5 @@
 -- explorer
-vim.keymap.set("n", "<leader>ee", vim.cmd.Ex)
+vim.keymap.set("n", "<leader>ee", vim.cmd.Ex, { desc = "Open file explorer" })
 
 -- select
 local select = require("nvim-treesitter-textobjects.select").select_textobject
@@ -18,3 +18,4 @@ end)
 vim.keymap.set({ "x", "o" }, "as", function()
     select("@local.scope", "locals")
 end)
+

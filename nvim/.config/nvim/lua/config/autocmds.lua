@@ -9,3 +9,4 @@ vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter", "WinNew", "VimResized" }, 
     vim.opt.scrolloff = math.floor(win_height / 3)
   end,
 })
+
