@@ -1,63 +1,85 @@
-local M = {
-	"nvim-treesitter/nvim-treesitter",
-	version = false, -- last release is way too old and doesn't work on Windows
-	build = function()
-		require("nvim-treesitter.install").update({ with_sync = true })()
-	end,
-	event = { "VeryLazy" },
-	lazy = vim.fn.argc(-1) == 0, -- load treesitter early when opening a file from the cmdline
-	init = function(plugin)
-		-- PERF: add nvim-treesitter queries to the rtp and it's custom query predicates early
-		-- This is needed because a bunch of plugins no longer `require("nvim-treesitter")`, which
-		-- no longer trigger the **nvim-treesitter** module to be loaded in time.
-		-- Luckily, the only things that those plugins need are the custom queries, which we make available
-		-- during startup.
-		require("lazy.core.loader").add_to_rtp(plugin)
-		require("nvim-treesitter.query_predicates")
-	end,
-	cmd = { "TSUpdateSync", "TSUpdate", "TSInstall" },
-	keys = {
-		{ "<c-space>", desc = "Increment Selection" },
-		{ "<bs>",      desc = "Decrement Selection", mode = "x" },
-	},
-	opts_extend = { "ensure_installed" },
-	---@type TSConfig
-	---@diagnostic disable-next-line: missing-fields
-	opts = {
-		vim.lsp.protocol.make_client_capabilities(),
-		-- A list of parser names, or "all" (the listed parsers MUST always be installed)
-		ensure_installed = {
-			"javascript",
-			"typescript",
-			"c",
-			"lua",
-			"vim",
-			"vimdoc",
-			"query",
-			"markdown",
-			"markdown_inline"
-		},
-		-- Install parsers synchronously (only applied to `ensure_installed`)
-		sync_install = false,
-		-- Automatically install missing parsers when entering buffer
-		-- Recommendation: set to false if you don't have `tree-sitter` CLI installed locally
-		auto_install = true,
-		-- List of parsers to ignore installing (or "all")
-		ignore_install = {},
-		highlight = {
-			enable = true,
-			-- Setting this to true will run `:h syntax` and tree-sitter at the same time.
-			-- Set this to `true` if you depend on 'syntax' being enabled (like for indentation).
-			-- Using this option may slow down your editor, and you may see some duplicate highlights.
-			-- Instead of true it can also be a list of languages
-			additional_vim_regex_highlighting = false,
-		},
-		indent = { enable = true },
-	},
-	---@param opts TSConfig
-	config = function(_, opts)
-		require("nvim-treesitter.configs").setup(opts)
-	end,
+local parsers = {
+    "lua",
+    "rust",
 }
 
-return { M }
+return {
+    {
+        "nvim-treesitter/nvim-treesitter",
+        branch = "main",
+        lazy = false,
+        build = ":TSUpdate",
+        config = function()
+            local ts = require("nvim-treesitter")
+            ts.install(parsers)
+
+            local patterns = {}
+            for _, parser in ipairs(parsers) do
+                local parser_patterns = vim.treesitter.language.get_filetypes(parser)
+                for _, pp in pairs(parser_patterns) do
+                    table.insert(patterns, pp)
+                end
+            end
+            vim.api.nvim_create_autocmd("FileType", {
+                pattern = patterns,
+                callback = function()
+                    vim.treesitter.start()
+                    -- vim.wo[0][0].foldexpr = "v:lua.vim.treesitter.foldexpr()"
+                    -- vim.wo[0][0].foldmethod = "expr"
+                    vim.bo.indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+                end,
+            })
+        end,
+    },
+    {
+        "MeanderingProgrammer/treesitter-modules.nvim",
+        dependencies = { "nvim-treesitter/nvim-treesitter" },
+        opts = {
+            incremental_selection = {
+                enable = true,
+                disable = false,
+                keymaps = {
+                    init_selection = "<leader>ss",
+                    node_incremental = "<leader>ss",
+                    scope_incremental = "<leader>sc",
+                    node_decremental = "<leader>sd",
+                },
+                indent = {
+                    enable = true,
+                    disable = false,
+                },
+            },
+        },
+    },
+    {
+        "nvim-treesitter/nvim-treesitter-textobjects",
+        branch = "main",
+        keys = {
+            { "af", mode = { "x", "o" } },
+            { "if", mode = { "x", "o" } },
+            { "ac", mode = { "x", "o" } },
+            { "ic", mode = { "x", "o" } },
+            { "as", mode = { "x", "o" } },
+        },
+        init = function()
+            -- Disable entire built-in ftplugin mappings to avoid conflicts.
+            -- See https://github.com/neovim/neovim/tree/master/runtime/ftplugin for built-in ftplugins.
+            vim.g.no_plugin_maps = true
+        end,
+        config = function()
+            require("nvim-treesitter-textobjects").setup({
+                select = {
+                    lookahead = true,
+
+                    selection_modes = {
+                        ["@parameter.outer"] = "v",
+                        ["@function.outer"] = "v",
+                        ["@class.outer"] = "v",
+                    },
+
+                    include_surrounding_whitespace = false,
+                },
+            })
+        end,
+    },
+}
