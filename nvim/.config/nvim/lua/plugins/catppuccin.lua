@@ -1,13 +1,13 @@
 return {
-    {
-        "catppuccin/nvim",
-        lazy = false,
-        priority = 1000,
-        opts = {
-            flavour = "mocha",
-        },
-        config = function()
-            vim.cmd.colorscheme("catppuccin")
-        end,
-    },
+	{
+		"catppuccin/nvim",
+		lazy = false,
+		priority = 1000,
+		opts = {
+			flavour = "mocha",
+		},
+		config = function()
+			vim.cmd.colorscheme("catppuccin")
+		end,
+	},
 }
