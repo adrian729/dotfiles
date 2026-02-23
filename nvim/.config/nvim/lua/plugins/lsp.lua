@@ -35,11 +35,34 @@ return {
 				},
 			})
 
+			vim.lsp.config("marksman", {
+				settings = {
+					marksman = {
+						markdown = {
+							gfm_heading_ids = true,
+						},
+					},
+				},
+			})
+
+			vim.api.nvim_create_autocmd("FileType", {
+				pattern = { "markdown" },
+				callback = function()
+					vim.fn.jobstart({ "prettierd", "start" }, { detach = true })
+				end,
+			})
+
+			vim.api.nvim_create_user_command("PrettierRestart", function()
+				vim.fn.jobstart({ "prettierd", "restart" })
+				print("Prettierd daemon restarted!")
+			end, {})
+
 			vim.lsp.enable({
 				"lua_ls",
 				"clangd",
 				"rust_analyzer",
 				"pyright",
+				"marksman",
 			})
 		end,
 	},
@@ -63,10 +86,17 @@ return {
 
 					return { "black", "autopep8", stop_after_first = true }
 				end,
+				markdown = { "prettierd", "prettier", stop_after_first = true },
+			},
+			formatters = {
+				prettier = {
+					args = { "--stdin-filepath", "$FILENAME", "--prose-wrap", "always", "--parser", "markdown" },
+				},
 			},
 			format_on_save = function(bufnr)
 				local slow_format_filetypes = {
 					python = true,
+					markdown = true,
 				}
 
 				local ft = vim.bo[bufnr].filetype
