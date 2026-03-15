@@ -47,15 +47,46 @@ return {
 
 			vim.api.nvim_create_autocmd("FileType", {
 				pattern = { "markdown" },
-				callback = function()
+				callback = function(args)
 					vim.fn.jobstart({ "prettierd", "start" }, { detach = true })
+
+					local opts = { buffer = args.buf, silent = true }
+
+					vim.keymap.set("n", "gO", function()
+						require("telescope.builtin").lsp_document_symbols({
+							prompt_title = "Table of Contents",
+							sorting_strategy = "ascending",
+							layout_config = {
+								vertical = {
+									mirror = false,
+									prompt_position = "top",
+								},
+							},
+						})
+					end, vim.tbl_extend("force", opts, { desc = "Document symbols (Telescope)" }))
+
+					vim.opt_local.foldmethod = "expr"
+					vim.opt_local.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+					vim.opt_local.foldtext = ""
+					vim.opt_local.foldlevel = 99
+
+					vim.opt_local.conceallevel = 2
+					vim.opt_local.concealcursor = ""
+					pcall(vim.treesitter.start, args.buf)
+
+					vim.opt_local.wrap = true
+					vim.opt_local.linebreak = true
+					vim.opt_local.breakindent = true
+
+					vim.keymap.set("n", "]]", function()
+						vim.fn.search("^#\\+\\s\\+", "W")
+					end, vim.tbl_extend("force", opts, { desc = "Next Markdown Header" }))
+
+					vim.keymap.set("n", "[[", function()
+						vim.fn.search("^#\\+\\s\\+", "bW")
+					end, vim.tbl_extend("force", opts, { desc = "Previous Markdown Header" }))
 				end,
 			})
-
-			vim.api.nvim_create_user_command("PrettierRestart", function()
-				vim.fn.jobstart({ "prettierd", "restart" })
-				print("Prettierd daemon restarted!")
-			end, {})
 
 			vim.lsp.enable({
 				"lua_ls",

@@ -105,3 +105,13 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- <leader>ss - node_inc
 -- <leader>sc - scope_inc
 -- <leader>sd - node_dec
+-- ------------------------------------------------------------------
+-- lsp.lua markdown
+-- ------------------------------------------------------------------
+-- gO - overwrite - TOC
+-- ]] - next header
+-- [[ - prev header
+-- ------------------------------------------------------------------
+-- markdown.lua
+-- ------------------------------------------------------------------
+-- <leader>mp - toggle markdown preview (browser)

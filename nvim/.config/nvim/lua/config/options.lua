@@ -11,6 +11,7 @@ opt.cursorline = true
 opt.splitbelow = true
 opt.splitright = true
 opt.wrap = false
+opt.updatetime = 250
 -- Tab
 opt.expandtab = true
 opt.tabstop = 4

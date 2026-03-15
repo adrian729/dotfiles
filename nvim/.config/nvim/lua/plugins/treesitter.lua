@@ -1,6 +1,9 @@
 local parsers = {
 	"lua",
 	"rust",
+	"html",
+	"markdown",
+	"markdown_inline",
 }
 
 return {
