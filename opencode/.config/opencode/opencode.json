@@ -1,7 +1,12 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "server": {
+    "port": 42069
+  },
   "lsp": {
     "lua-ls": {
+      "command": ["lua-language-server"], 
+      "extensions": [".lua"],
       "initialization": {
         "runtime": {
           "version": "LuaJIT"
@@ -15,5 +20,8 @@
       "command": ["marksman"],
       "extensions": [".md", ".markdown"]
     }
-  }
+  },
+  "plugin": [
+    "opencode-antigravity-auth@latest"
+  ]
 }
