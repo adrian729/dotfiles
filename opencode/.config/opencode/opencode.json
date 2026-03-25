@@ -1,27 +1,55 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "opencode-antigravity-auth@latest"
+  ],
   "server": {
     "port": 42069
   },
+  "provider": {
+    "google": {
+      "models": {
+        "antigravity-claude-opus-4-6-thinking": {
+          "name": "Claude Opus 4.6 Thinking (Antigravity)",
+          "limit": {
+            "context": 200000,
+            "output": 64000
+          },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"]
+          },
+          "variants": {
+            "low": {},
+            "max": {}
+          }
+        },
+        "antigravity-gemini-3.1-pro": {
+          "name": "Gemini 3.1 Pro (Antigravity)",
+          "limit": {
+            "context": 2000000,
+            "output": 8192
+          },
+          "modalities": {
+            "input": ["text", "image", "pdf", "video"],
+            "output": ["text"]
+          }
+        }
+      }
+    }
+  },
   "lsp": {
     "lua-ls": {
-      "command": ["lua-language-server"], 
+      "command": ["lua-language-server"],
       "extensions": [".lua"],
       "initialization": {
-        "runtime": {
-          "version": "LuaJIT"
-        },
-        "workspace": {
-          "checkThirdParty": false
-        }
+        "runtime": { "version": "LuaJIT" },
+        "workspace": { "checkThirdParty": false }
       }
     },
     "marksman": {
       "command": ["marksman"],
       "extensions": [".md", ".markdown"]
     }
-  },
-  "plugin": [
-    "opencode-antigravity-auth@latest"
-  ]
+  }
 }
