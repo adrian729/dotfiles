@@ -47,5 +47,15 @@ for dir in "${directories[@]}"; do
 	echo ""
 done
 
+# Run install.sh scripts in each directory if they exist
+echo "Running install scripts..."
+for dir in "${directories[@]}"; do
+	if [ -f "$dir/install.sh" ]; then
+		echo "🔧 Running $dir/install.sh..."
+		bash "$dir/install.sh"
+		echo ""
+	fi
+done
+
 echo ""
-echo "🥳 Stowing complete!"
+echo "🥳 Setup complete!"
