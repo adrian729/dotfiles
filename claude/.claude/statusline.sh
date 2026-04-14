@@ -46,8 +46,10 @@ to_epoch() {
     local raw="$1"
     if [ -z "$raw" ] || [ "$raw" = "0" ] || [ "$raw" = "null" ]; then echo 0; return; fi
     if [[ "$raw" =~ ^[0-9]+$ ]]; then echo "$raw"; return; fi
-    # ISO 8601 string — parse with date on macOS
-    date -j -f "%Y-%m-%dT%H:%M:%S" "${raw:0:19}" "+%s" 2>/dev/null || echo 0
+    # ISO 8601 string — macOS uses -j -f, Linux uses -d
+    if date -j -f "%Y-%m-%dT%H:%M:%S" "${raw:0:19}" "+%s" 2>/dev/null; then :
+    elif date -d "${raw:0:19}" "+%s" 2>/dev/null; then :
+    else echo 0; fi
 }
 
 HOURS_RESET=$(to_epoch "$HOURS_RESET_RAW")
@@ -74,7 +76,8 @@ NOW=$(date +%s)
 H_RESET_STR=""
 H_RESET_COLOR="$GRAY"
 if [ "$HOURS_RESET" -gt 0 ] 2>/dev/null; then
-    H_RESET_TIME=$(date -r "$HOURS_RESET" "+%-I%p" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    H_RESET_TIME=$(date -r "$HOURS_RESET" "+%-I%p" 2>/dev/null || date -d "@$HOURS_RESET" "+%-I%p" 2>/dev/null)
+    H_RESET_TIME=$(echo "$H_RESET_TIME" | tr '[:upper:]' '[:lower:]')
     H_RESET_STR=" ${H_RESET_TIME}"
     if [ "${HOURS:-0}" -ge 40 ] 2>/dev/null; then
         H_REMAINING=$(( HOURS_RESET - NOW ))

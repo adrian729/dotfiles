@@ -1,5 +1,7 @@
 {
-  "model": "opus[1m]",
+  "permissions": {
+    "allow": ["Read"]
+  },
   "statusLine": {
     "type": "command",
     "command": "~/.claude/statusline.sh"
@@ -7,5 +9,5 @@
   "enabledPlugins": {
     "pyright-lsp@claude-plugins-official": true
   },
-  "effortLevel": "high"
+  "effortLevel": "medium"
 }
