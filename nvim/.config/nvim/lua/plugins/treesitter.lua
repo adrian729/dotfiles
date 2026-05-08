@@ -18,17 +18,17 @@ return {
 
 			local patterns = {}
 			for _, parser in ipairs(parsers) do
-				local parser_patterns = vim.treesitter.language.get_filetypes(parser)
-				for _, pp in pairs(parser_patterns) do
-					table.insert(patterns, pp)
+				local ok, parser_patterns = pcall(vim.treesitter.language.get_filetypes, parser)
+				if ok then
+					for _, pp in pairs(parser_patterns) do
+						table.insert(patterns, pp)
+					end
 				end
 			end
 			vim.api.nvim_create_autocmd("FileType", {
 				pattern = patterns,
 				callback = function()
 					vim.treesitter.start()
-					-- vim.wo[0][0].foldexpr = "v:lua.vim.treesitter.foldexpr()"
-					-- vim.wo[0][0].foldmethod = "expr"
 					vim.bo.indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
 				end,
 			})
@@ -81,6 +81,14 @@ return {
 					include_surrounding_whitespace = false,
 				},
 			})
+		end,
+	},
+	{
+		"rayliwell/tree-sitter-rstml",
+		dependencies = { "nvim-treesitter/nvim-treesitter" },
+		build = ":TSUpdate",
+		config = function()
+			require("tree-sitter-rstml").setup()
 		end,
 	},
 }

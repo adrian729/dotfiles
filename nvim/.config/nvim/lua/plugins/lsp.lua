@@ -35,6 +35,30 @@ return {
 				},
 			})
 
+			vim.lsp.config("rust_analyzer", {
+				settings = {
+					["rust-analyzer"] = {
+						procMacro = {
+							enable = true,
+							ignored = {
+								["async-trait"] = { "async_trait" },
+								["napi-derive"] = { "napi" },
+								["async-recursion"] = { "async_recursion" },
+							},
+						},
+						cargo = {
+							buildScripts = {
+								enable = true,
+							},
+						},
+						-- This helps with html! macro diagnostics
+						diagnostics = {
+							disabled = { "unresolved-proc-macro" },
+						},
+					},
+				},
+			})
+
 			vim.lsp.config("marksman", {
 				settings = {
 					marksman = {
@@ -104,6 +128,7 @@ return {
 		opts = {
 			formatters_by_ft = {
 				lua = { "stylua" },
+				rust = { "yew_fmt" },
 				python = function(bufnr)
 					local function is_available(name)
 						return require("conform").get_formatter_info(name, bufnr).available
@@ -120,6 +145,11 @@ return {
 				markdown = { "prettierd", "prettier", stop_after_first = true },
 			},
 			formatters = {
+				yew_fmt = {
+					command = "yew-fmt",
+					args = { "--emit", "stdout" },
+					stdin = true,
+				},
 				prettier = {
 					args = { "--stdin-filepath", "$FILENAME", "--prose-wrap", "always", "--parser", "markdown" },
 				},
