@@ -51,7 +51,7 @@ return {
 								enable = true,
 							},
 						},
-						-- This helps with html! macro diagnostics
+						-- This helps with view! (leptos) macro diagnostics
 						diagnostics = {
 							disabled = { "unresolved-proc-macro" },
 						},
@@ -128,7 +128,7 @@ return {
 		opts = {
 			formatters_by_ft = {
 				lua = { "stylua" },
-				rust = { "yew_fmt" },
+				rust = { "leptosfmt" },
 				python = function(bufnr)
 					local function is_available(name)
 						return require("conform").get_formatter_info(name, bufnr).available
@@ -145,11 +145,6 @@ return {
 				markdown = { "prettierd", "prettier", stop_after_first = true },
 			},
 			formatters = {
-				yew_fmt = {
-					command = "yew-fmt",
-					args = { "--emit", "stdout" },
-					stdin = true,
-				},
 				prettier = {
 					args = { "--stdin-filepath", "$FILENAME", "--prose-wrap", "always", "--parser", "markdown" },
 				},
