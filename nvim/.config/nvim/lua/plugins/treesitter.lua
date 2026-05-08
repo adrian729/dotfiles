@@ -1,6 +1,7 @@
 local parsers = {
 	"lua",
 	"rust",
+	"rust_with_rstml",
 	"html",
 	"markdown",
 	"markdown_inline",
@@ -13,6 +14,8 @@ return {
 		lazy = false,
 		build = ":TSUpdate",
 		config = function()
+			require("tree-sitter-rstml").init()
+
 			local ts = require("nvim-treesitter")
 			ts.install(parsers)
 
