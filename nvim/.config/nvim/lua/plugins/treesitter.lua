@@ -1,7 +1,7 @@
 local parsers = {
 	"lua",
 	"rust",
-	"rust_with_rstml",
+	"rstml",
 	"html",
 	"markdown",
 	"markdown_inline",
@@ -13,8 +13,39 @@ return {
 		branch = "main",
 		lazy = false,
 		build = ":TSUpdate",
+		dependencies = {
+			{
+				"rayliwell/tree-sitter-rstml",
+				build = ":TSUpdate",
+				config = function()
+					require("tree-sitter-rstml").setup()
+					-- Revert the filetype takeover so normal 'rust' is used
+					-- Injections used to add rstml behaviour
+					vim.treesitter.language.register("rust", { "rust" })
+				end,
+			},
+		},
 		config = function()
-			require("tree-sitter-rstml").init()
+			-- Register rstml manually so it doesn't get skipped
+			local function register_rstml()
+				---@diagnostic disable: inject-field, missing-fields
+				require("nvim-treesitter.parsers").rstml = {
+					install_info = {
+						url = "https://github.com/rayliwell/tree-sitter-rstml",
+						branch = "main",
+						files = { "src/parser.c", "src/scanner.c" },
+						location = "rstml",
+					},
+				}
+				---@diagnostic enable: inject-field, missing-fields
+			end
+			-- Must register before installing parsers
+			register_rstml()
+			-- attach to TSUpdate for nvim-treesitter reloading parsers table
+			vim.api.nvim_create_autocmd("User", {
+				pattern = "TSUpdate",
+				callback = register_rstml,
+			})
 
 			local ts = require("nvim-treesitter")
 			ts.install(parsers)
@@ -84,14 +115,6 @@ return {
 					include_surrounding_whitespace = false,
 				},
 			})
-		end,
-	},
-	{
-		"rayliwell/tree-sitter-rstml",
-		dependencies = { "nvim-treesitter/nvim-treesitter" },
-		build = ":TSUpdate",
-		config = function()
-			require("tree-sitter-rstml").setup()
 		end,
 	},
 }
