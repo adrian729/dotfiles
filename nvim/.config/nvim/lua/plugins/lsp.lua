@@ -51,6 +51,9 @@ return {
 								enable = true,
 							},
 						},
+						rustfmt = {
+							overrideCommand = { "leptosfmt", "--stdin", "--rustfmt" },
+						},
 						-- This helps with view! (leptos) macro diagnostics
 						diagnostics = {
 							disabled = { "unresolved-proc-macro" },
@@ -128,7 +131,6 @@ return {
 		opts = {
 			formatters_by_ft = {
 				lua = { "stylua" },
-				rust = { "leptosfmt" },
 				python = function(bufnr)
 					local function is_available(name)
 						return require("conform").get_formatter_info(name, bufnr).available
