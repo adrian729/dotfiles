@@ -51,9 +51,6 @@ return {
 								enable = true,
 							},
 						},
-						rustfmt = {
-							overrideCommand = { "leptosfmt", "--stdin", "--rustfmt" },
-						},
 						-- This helps with view! (leptos) macro diagnostics
 						diagnostics = {
 							disabled = { "unresolved-proc-macro" },
@@ -131,6 +128,22 @@ return {
 		opts = {
 			formatters_by_ft = {
 				lua = { "stylua" },
+				rust = function(bufnr)
+					local root = vim.fs.root(bufnr, { "Cargo.toml" })
+					if root then
+						local f = io.open(root .. "/Cargo.toml", "r")
+						if f then
+							for line in f:lines() do
+								if line:match("^%s*leptos%s*[%.=]") then
+									f:close()
+									return { "leptosfmt" }
+								end
+							end
+							f:close()
+						end
+					end
+					return { "rustfmt" }
+				end,
 				python = function(bufnr)
 					local function is_available(name)
 						return require("conform").get_formatter_info(name, bufnr).available
@@ -149,6 +162,9 @@ return {
 			formatters = {
 				prettier = {
 					args = { "--stdin-filepath", "$FILENAME", "--prose-wrap", "always", "--parser", "markdown" },
+				},
+				leptosfmt = {
+					prepend_args = { "--rustfmt" },
 				},
 			},
 			format_on_save = function(bufnr)
