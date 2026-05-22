@@ -47,13 +47,20 @@ return {
 							},
 						},
 						cargo = {
-							buildScripts = {
-								enable = true,
-							},
+							buildScripts = { enable = true },
+							targetDir = true,
 						},
 						-- This helps with view! (leptos) macro diagnostics
 						diagnostics = {
 							disabled = { "unresolved-proc-macro" },
+						},
+						check = {
+							command = "clippy",
+						},
+						numThreads = 4,
+						cachePriming = { enable = false },
+						files = {
+							excludeDirs = { "target", "node_modules", ".direnv", ".venv" },
 						},
 					},
 				},
@@ -116,6 +123,7 @@ return {
 				"lua_ls",
 				"clangd",
 				"rust_analyzer",
+				"wgsl_analyzer",
 				"pyright",
 				"marksman",
 			})

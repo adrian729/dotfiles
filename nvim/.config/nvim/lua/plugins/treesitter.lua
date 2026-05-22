@@ -5,6 +5,9 @@ local parsers = {
 	"html",
 	"markdown",
 	"markdown_inline",
+	"ron",
+	"wgsl",
+	"toml",
 }
 
 return {
