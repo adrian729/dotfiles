@@ -88,7 +88,9 @@ map("n", "[d", function()
 	vim.diagnostic.jump({ count = -1, float = true })
 end, { desc = "Prev Diagnostic" })
 map("n", "<leader>uh", function()
-	vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled())
+	local enabled = not vim.lsp.inlay_hint.is_enabled()
+	print("toggle inlay_hint: " .. tostring(enabled))
+	vim.lsp.inlay_hint.enable(enabled)
 end, { desc = "Toggle inlay hints" })
 -- ------------------------------------------------------------------
 -- help
