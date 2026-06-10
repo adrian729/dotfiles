@@ -4,9 +4,12 @@
       "Read",
       "Grep",
       "Glob"
+    ],
+    "deny": [
+      "Bash(git push*)"
     ]
   },
-  "model": "opus[1m]",
+  "model": "claude-fable-5[1m]",
   "statusLine": {
     "type": "command",
     "command": "~/.claude/statusline.sh"
@@ -18,5 +21,6 @@
   },
   "effortLevel": "high",
   "theme": "dark-ansi",
-  "editorMode": "vim"
+  "editorMode": "vim",
+  "skipAutoPermissionPrompt": true
 }
