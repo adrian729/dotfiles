@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# git-wt — run a git command inside a claude-wt session worktree from anywhere
+# in the repo: `git-wt feature-auth status` == `git -C <repo>/.claude/worktrees/feature-auth status`.
+# On PATH it also works as a git subcommand: `git wt feature-auth status`.
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage:
+  git-wt <name> <git args...>  Run git in session worktree <name>, e.g.:
+                                 git-wt feature-auth status --short
+                                 git-wt feature-auth diff
+                                 git-wt feature-auth log --oneline main..HEAD
+  git-wt -h, --help            Show this help.
+
+Worktrees live under <repo>/.claude/worktrees/ (list them: claude-wt -l).
+EOF
+}
+
+die() {
+  echo "git-wt: $*" >&2
+  exit 1
+}
+
+case "${1:-}" in
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  "" | -*)
+    usage >&2
+    exit 1
+    ;;
+esac
+[ $# -ge 2 ] || {
+  usage >&2
+  exit 1
+}
+
+common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+  die "not inside a git repository"
+root=$(dirname "$common")
+
+name=$1
+shift
+wt_dir="$root/.claude/worktrees/$name"
+[ -d "$wt_dir" ] || die "no worktree named '$name' (see claude-wt -l)"
+# A live worktree always has a .git *file*; in a leftover folder without one,
+# `git -C` would fall through and silently report on the main checkout.
+[ -f "$wt_dir/.git" ] || die "'$name' exists but is not a worktree (try: git worktree prune)"
+
+exec git -C "$wt_dir" "$@"

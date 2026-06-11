@@ -26,6 +26,9 @@ cd my-repo && claude --worktree feature-auth
 cd my-repo && claude --worktree bugfix-login
 ```
 
+First time in a repo: run plain `claude` once and accept the trust dialog —
+`--worktree` refuses to start before that.
+
 Each session gets its own folder and branch (`worktree-<name>`), branched
 from the remote's default branch (usually `main`). Name worktrees after
 tasks and attribution reads itself — every session's commits land on its

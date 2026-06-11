@@ -76,8 +76,10 @@ copy_worktreeinclude() {
   [ -f "$root/.worktreeinclude" ] || return 0
   git -C "$root" ls-files -o -i --exclude-from="$root/.worktreeinclude" -z |
     while IFS= read -r -d '' f; do
+      case "$f" in */) continue ;; esac # embedded git repos list as 'dir/'
       mkdir -p "$wt_dir/$(dirname "$f")"
-      cp "$root/$f" "$wt_dir/$f"
+      cp "$root/$f" "$wt_dir/$f" ||
+        echo "claude-wt: warning: could not copy $f into the worktree" >&2
     done
 }
 
@@ -90,12 +92,19 @@ has_session() {
   ls "$HOME/.claude/projects/$encoded"/*.jsonl >/dev/null 2>&1
 }
 
+# Capture the previous pane/window state so reset_color restores it instead
+# of forcing defaults — resetting to "default" would wipe the tint of an
+# outer claude-wt session, and rename-window disables tmux's automatic-rename
+# for the window permanently.
 apply_color() {
   local name=$1 tint=$2
   [ -n "$tint" ] || return 0
   if [ -n "${TMUX:-}" ]; then
-    tmux select-pane -P "bg=$tint"
-    tmux rename-window "$name"
+    prev_pane_bg=$(tmux display -p '#{pane_bg}' 2>/dev/null || true)
+    prev_win_name=$(tmux display -p '#{window_name}' 2>/dev/null || true)
+    prev_autorename=$(tmux show -wv automatic-rename 2>/dev/null || true)
+    tmux select-pane -P "bg=$tint" 2>/dev/null || true
+    tmux rename-window "$name" 2>/dev/null || true
   else
     printf '\033]11;%s\007' "$tint"
   fi
@@ -103,7 +112,14 @@ apply_color() {
 
 reset_color() {
   if [ -n "${TMUX:-}" ]; then
-    tmux select-pane -P default
+    tmux select-pane -P "bg=${prev_pane_bg:-default}" 2>/dev/null || true
+    [ -n "${prev_win_name:-}" ] &&
+      tmux rename-window "$prev_win_name" 2>/dev/null || true
+    if [ -n "${prev_autorename:-}" ]; then
+      tmux set -w automatic-rename "$prev_autorename" 2>/dev/null || true
+    else
+      tmux set -wu automatic-rename 2>/dev/null || true
+    fi
   else
     printf '\033]111\007'
   fi
@@ -132,7 +148,7 @@ offer_push_pr() {
   dirty=$(git status --porcelain | wc -l | tr -d ' ')
   [ "$dirty" -gt 0 ] && echo "  note: $dirty uncommitted file(s) will stay local"
   printf 'Push and open/update draft PR? [Y/n] '
-  read -r ans
+  read -r ans || ans=n # EOF (non-interactive stdin) → don't push
   case "$ans" in
     n | N | no | NO)
       echo "Not pushed — resume with: claude-wt $name"
@@ -156,40 +172,45 @@ offer_push_pr() {
 }
 
 cmd_list() {
-  local root=$1 prefix path branch name color dirty
+  local root=$1 prefix path branch name color dirty line
   prefix="$root/.claude/worktrees/"
   printf '%-20s %-20s %-8s %s\n' NAME BRANCH COLOR STATE
   git -C "$root" worktree list --porcelain | while IFS= read -r line; do
     case "$line" in
-      "worktree "*) path=${line#worktree } ;;
-      "branch refs/heads/"*)
-        branch=${line#branch refs/heads/}
-        case "$path" in
-          "$prefix"*)
-            name=${path#"$prefix"}
-            color=$(git -C "$root" config --get "claude-wt.$name.color" 2>/dev/null || echo -)
-            if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then
-              dirty=dirty
-            else
-              dirty=clean
-            fi
-            printf '%-20s %-20s %-8s %s\n' "$name" "$branch" "$color" "$dirty"
-            ;;
-        esac
+      "worktree "*)
+        path=${line#worktree }
+        continue
+        ;;
+      "branch refs/heads/"*) branch=${line#branch refs/heads/} ;;
+      detached) branch="(detached)" ;;
+      *) continue ;;
+    esac
+    case "$path" in
+      "$prefix"*)
+        name=${path#"$prefix"}
+        color=$(git -C "$root" config --get "claude-wt.$name.color" 2>/dev/null || echo -)
+        if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then
+          dirty=dirty
+        else
+          dirty=clean
+        fi
+        printf '%-20s %-20s %-8s %s\n' "$name" "$branch" "$color" "$dirty"
         ;;
     esac
   done
 }
 
 cmd_done() {
-  local root=$1 name=$2 wt_dir ans state=""
+  local root=$1 name=$2 wt_dir ans state="" parent
   wt_dir="$root/.claude/worktrees/$name"
   [ -d "$wt_dir" ] || die "no worktree named '$name' (see claude-wt -l)"
+  [ -f "$wt_dir/.git" ] ||
+    die "'$name' exists but is not a worktree (try: git worktree prune)"
   if [ -n "$(git -C "$wt_dir" status --porcelain)" ]; then
     echo "Worktree '$name' has uncommitted changes:"
     git -C "$wt_dir" status --short
     printf 'Remove anyway and DISCARD these changes? [y/N] '
-    read -r ans
+    read -r ans || ans=n # EOF → abort, keep the worktree
     case "$ans" in
       y | Y | yes | YES) git -C "$root" worktree remove --force "$wt_dir" ;;
       *) die "aborted" ;;
@@ -198,13 +219,19 @@ cmd_done() {
     git -C "$root" worktree remove "$wt_dir"
   fi
   git -C "$root" config --unset "claude-wt.$name.color" 2>/dev/null || true
+  # Slashed names (feat/x) leave empty parent dirs behind — remove them up to
+  # the worktrees root so they can't shadow future session names.
+  parent=$(dirname "$wt_dir")
+  while [ "$parent" != "$root/.claude/worktrees" ] && rmdir "$parent" 2>/dev/null; do
+    parent=$(dirname "$parent")
+  done
   echo "Removed worktree '$name'."
   if command -v gh >/dev/null 2>&1; then
     state=$(cd "$root" && gh pr view "$name" --json state -q .state 2>/dev/null || true)
   fi
   if [ "$state" = "MERGED" ]; then
     printf "Its PR is merged — delete local branch '%s' too? [Y/n] " "$name"
-    read -r ans
+    read -r ans || ans=n # EOF → keep the branch
     case "$ans" in
       n | N | no | NO) echo "Branch kept." ;;
       *) git -C "$root" branch -D "$name" ;;
@@ -252,6 +279,11 @@ cmd_start() {
     fi
     copy_worktreeinclude "$root" "$wt_dir"
     created=1
+  elif [ ! -f "$wt_dir/.git" ]; then
+    # Without this guard a leftover folder here (e.g. the empty parent a
+    # slashed name leaves behind) would start an UN-isolated session running
+    # directly on the main checkout.
+    die "'$name' exists but is not a worktree (leftover folder? try: git worktree prune, or pick another name)"
   fi
 
   if [ -n "$color" ]; then
@@ -282,14 +314,22 @@ case "${1:-}" in
     exit 0
     ;;
   -l | --list)
-    cmd_list "$(main_root)"
+    [ $# -eq 1 ] || {
+      usage >&2
+      exit 1
+    }
+    # Assign first: die inside "$(main_root)" used as an argument runs in a
+    # subshell and would NOT stop the script; a failing assignment does.
+    root=$(main_root)
+    cmd_list "$root"
     ;;
   -d | --done)
     [ $# -eq 2 ] || {
       usage >&2
       exit 1
     }
-    cmd_done "$(main_root)" "$2"
+    root=$(main_root)
+    cmd_done "$root" "$2"
     ;;
   "" | -*)
     usage >&2
@@ -300,6 +340,7 @@ case "${1:-}" in
       usage >&2
       exit 1
     }
-    cmd_start "$(main_root)" "$1" "${2:-}"
+    root=$(main_root)
+    cmd_start "$root" "$1" "${2:-}"
     ;;
 esac
