@@ -15,7 +15,9 @@ git-wt <name> <git args...> # run git in that session's worktree
 
 ## Setup (one-time)
 
-Works on macOS and Linux. The script is plain bash — nothing to build.
+Works on macOS and Linux. The scripts are plain bash — nothing to build.
+In a hurry? `./standalone_quick_setup.sh` (ships in the same folder as this
+guide) tries to do all of the below automagically.
 
 ### 1. Dependencies
 

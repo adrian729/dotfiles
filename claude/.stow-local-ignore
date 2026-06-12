@@ -1,3 +1,5 @@
 ^/worktree-guide\.md
 ^/claude-wt-guide\.md
+^/claude-wt-quickstart\.md
+^/standalone_quick_setup\.sh
 ^/install\.sh
