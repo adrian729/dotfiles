@@ -1,3 +1,18 @@
+-- Prefer the Homebrew/Linuxbrew LLVM binary; fall back to PATH. Absolute path so
+-- it resolves even when nvim is launched with a minimal (GUI) PATH.
+local function llvm_bin(name)
+	for _, dir in ipairs({
+		"/opt/homebrew/opt/llvm/bin", -- macOS Homebrew
+		"/home/linuxbrew/.linuxbrew/opt/llvm/bin", -- Linux Linuxbrew
+	}) do
+		local p = dir .. "/" .. name
+		if vim.uv.fs_stat(p) then
+			return p
+		end
+	end
+	return name
+end
+
 return {
 	{
 		"neovim/nvim-lspconfig",
@@ -77,11 +92,8 @@ return {
 			})
 
 			local function clangd_cmd()
-				-- Prefer Homebrew LLVM clangd; fall back to whatever is on PATH (system v17).
-				local brew = "/opt/homebrew/opt/llvm/bin/clangd"
-				local bin = vim.uv.fs_stat(brew) and brew or "clangd"
 				return {
-					bin,
+					llvm_bin("clangd"),
 					"--background-index",
 					"--clang-tidy",
 					"--header-insertion=iwyu",
@@ -199,7 +211,7 @@ return {
 					prepend_args = { "--rustfmt" },
 				},
 				["clang-format"] = {
-					command = "/opt/homebrew/opt/llvm/bin/clang-format",
+					command = llvm_bin("clang-format"),
 				},
 			},
 			format_on_save = function(bufnr)
