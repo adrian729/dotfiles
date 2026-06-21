@@ -1,0 +1,6 @@
+# fallback flags for files with no compile_commands.json (e.g. single-file
+# exercises) so clangd doesn't flag valid C++23 as errors; a project's compile
+# database overrides this
+CompileFlags:
+  Add:
+    - -std=c++23

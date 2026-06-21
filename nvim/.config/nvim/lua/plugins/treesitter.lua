@@ -8,6 +8,10 @@ local parsers = {
 	"ron",
 	"wgsl",
 	"toml",
+	"c",
+	"cpp",
+	"cmake",
+	"make",
 }
 
 return {

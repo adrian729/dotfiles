@@ -76,6 +76,28 @@ return {
 				},
 			})
 
+			local function clangd_cmd()
+				-- Prefer Homebrew LLVM clangd; fall back to whatever is on PATH (system v17).
+				local brew = "/opt/homebrew/opt/llvm/bin/clangd"
+				local bin = vim.uv.fs_stat(brew) and brew or "clangd"
+				return {
+					bin,
+					"--background-index",
+					"--clang-tidy",
+					"--header-insertion=iwyu",
+					"--completion-style=detailed",
+					"--function-arg-placeholders=1",
+					"--fallback-style=llvm",
+				}
+			end
+
+			vim.lsp.config("clangd", {
+				cmd = clangd_cmd(),
+				init_options = {
+					clangdFileStatus = true,
+				},
+			})
+
 			vim.api.nvim_create_autocmd("FileType", {
 				pattern = { "markdown" },
 				callback = function(args)
@@ -166,6 +188,8 @@ return {
 					return { "black", "autopep8", stop_after_first = true }
 				end,
 				markdown = { "prettierd", "prettier", stop_after_first = true },
+				c = { "clang-format" },
+				cpp = { "clang-format" },
 			},
 			formatters = {
 				prettier = {
@@ -173,6 +197,9 @@ return {
 				},
 				leptosfmt = {
 					prepend_args = { "--rustfmt" },
+				},
+				["clang-format"] = {
+					command = "/opt/homebrew/opt/llvm/bin/clang-format",
 				},
 			},
 			format_on_save = function(bufnr)

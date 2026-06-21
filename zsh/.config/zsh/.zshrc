@@ -90,6 +90,16 @@ elif [ $IS_MAC = true ]; then
 fi
 # homebrew end
 
+# c++ / llvm
+# keg-only; append so clang-format/clang-tidy/lldb-dap are on PATH, after the
+# system bin so the system clang++/gcc stays the default compiler
+if [ $IS_LINUX = true ]; then
+  append_path /home/linuxbrew/.linuxbrew/opt/llvm/bin
+elif [ $IS_MAC = true ]; then
+  append_path /opt/homebrew/opt/llvm/bin
+fi
+# c++ / llvm end
+
 # autojump
 [ -f "$(brew --prefix)/etc/profile.d/autojump.sh" ] && . "$(brew --prefix)/etc/profile.d/autojump.sh"
 # autojump end

@@ -13,6 +13,7 @@ directories=(
   "kitty"
   "ghostty"
   "nvim"
+  "clangd"
   "tmux"
   "zsh"
 )
