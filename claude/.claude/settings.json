@@ -23,5 +23,6 @@
   "skipWorkflowUsageWarning": true,
   "theme": "dark-ansi",
   "editorMode": "vim",
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "autoMemoryEnabled": false
 }

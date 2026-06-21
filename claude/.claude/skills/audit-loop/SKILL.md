@@ -2,10 +2,12 @@
 name: audit-loop
 description: >-
   Iteratively audit work — find issues, fix the safe ones, re-audit, and repeat until
-  two consecutive clean passes (or a max-iterations cap). Use when the user says "audit
-  loop", "run an audit loop", asks to audit / harden / double-check recent work, or names
-  a target to audit. Can split the audit across parallel subagents.
-argument-hint: "[target] [--max N] [--split: part-a, part-b, ...]"
+  two consecutive clean passes (or an iteration cap the user gives). Use ONLY when the
+  user asks for a repeating/looping audit — e.g. "audit loop", "run an audit loop", "keep
+  auditing until it's clean", "audit and fix until two clean passes", "iteratively audit".
+  Do NOT trigger on a one-shot "audit", "review", "harden", or "double-check" request with
+  no looping intent — those are /code-review or /security-review. The user can ask, in
+  plain language, to split the audit across parallel subagents and/or cap the iterations.
 ---
 
 # Audit Loop
@@ -14,15 +16,20 @@ A convergent audit: repeatedly find issues, fix the safe ones, and re-audit unti
 work is genuinely clean. Default to running it hands-off and reporting at the end.
 
 ## 1. Determine the target
-- If the user named a target (in `$ARGUMENTS` or their message), audit exactly that.
+- If the user named a target in their request, audit exactly that.
 - Otherwise audit whatever we were just working on this session — the most recent
   analysis, plan, implementation, or set of updates. Infer it from recent context.
 - State the target in one line before starting.
 
-## 2. Parse options
-- `--max N` — hard cap on iterations. Absent → no cap; rely on convergence.
-- `--split` (optionally with a comma-separated list of parts) — run as parallel
-  subagents, one per part (see §6).
+## 2. Read the request for options
+This skill is triggered by a natural-language prompt — there are no flags. Infer these
+from how the user phrased it (recognize the intent, not exact keywords):
+- **Iteration cap** — if the user puts a number on it ("max 5", "cap at 3 passes", "at
+  most 4 rounds", "stop after N"), use that as a hard cap. Otherwise no cap; rely on
+  convergence.
+- **Split across subagents** — if the user asks to split it up, spawn/use subagents,
+  parallelize, or divide the work across agents (any such phrasing), run as parallel
+  subagents (see §6). They may name the parts; if not, propose a decomposition.
 
 ## 3. Pick audit dimensions (adapt to the target)
 - **Code / implementation** → correctness & bugs, security, edge cases, missing/weak
@@ -49,7 +56,7 @@ Repeat:
 4. If no issues are found: `clean_streak += 1`.
 5. **Stop** when EITHER:
    - `clean_streak == 2` — two consecutive clean passes (never stop on one), OR
-   - `--max` was set and `iteration == max`.
+   - the user gave an iteration cap and `iteration == cap`.
 
 Why two clean passes: a fix in iteration N can introduce a new issue caught in N+1, so a
 single clean pass isn't proof of convergence.
@@ -71,14 +78,14 @@ End with:
 - **Needs your attention**: every deferred fix, called out clearly with its reason.
 
 ## 6. Split mode (subagents)
-When `--split` is requested:
+When the user asks to split the audit across subagents:
 1. Partition the work into **non-overlapping** parts — the parts the user named, or a
    decomposition you propose and state. Each part must own a distinct set of files so
    parallel fixes cannot collide in the shared working tree.
 2. Spawn one code-capable subagent per part. Give each subagent THIS procedure (§3–§5)
-   scoped strictly to its part, including the same `--max`. Each subagent runs its own
-   loop to convergence and returns a structured sub-report (target, per-iteration
-   issues/fixes/skips, outcome).
+   scoped strictly to its part, including the same iteration cap (if any). Each subagent
+   runs its own loop to convergence and returns a structured sub-report (target,
+   per-iteration issues/fixes/skips, outcome).
 3. Run them in parallel (single message, multiple Agent calls).
 4. If scopes can't be cleanly separated (parts share files), say so and either
    re-partition or fall back to a single-context loop — never let two subagents edit the
