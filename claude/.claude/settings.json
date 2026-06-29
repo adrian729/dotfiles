@@ -19,10 +19,10 @@
     "rust-analyzer-lsp@claude-plugins-official": true,
     "lua-lsp@claude-plugins-official": true
   },
-  "effortLevel": "xhigh",
+  "effortLevel": "high",
+  "autoMemoryEnabled": false,
   "skipWorkflowUsageWarning": true,
   "theme": "dark-ansi",
   "editorMode": "vim",
-  "skipAutoPermissionPrompt": true,
-  "autoMemoryEnabled": false
+  "skipAutoPermissionPrompt": true
 }
