@@ -3,3 +3,4 @@
 ^/claude-wt-quickstart\.md
 ^/standalone_quick_setup\.sh
 ^/install\.sh
+settings\.local\.json

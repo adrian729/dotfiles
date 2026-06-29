@@ -27,15 +27,21 @@ for dir in "${directories[@]}"; do
 	if [ -d "$dir" ]; then
 		if [[ "$stow_all" =~ ^[Yy]$ ]]; then
 			echo "🔗 Stowing $dir..."
-			stow "$dir"
-			echo "✅ $dir stowed successfully!"
+			if stow "$dir"; then
+				echo "✅ $dir stowed successfully!"
+			else
+				echo "❌ Failed to stow $dir (see warnings above)."
+			fi
 		else
 			read -p "Do you want to stow $dir? (y/n): " choice
 			case "$choice" in
 			y | Y)
 				echo "🔗 Stowing $dir..."
-				stow "$dir"
-				echo "✅ $dir stowed successfully!"
+				if stow "$dir"; then
+					echo "✅ $dir stowed successfully!"
+				else
+					echo "❌ Failed to stow $dir (see warnings above)."
+				fi
 				;;
 			*)
 				echo "⏭️ Skipping $dir."
