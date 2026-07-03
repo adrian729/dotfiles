@@ -4,4 +4,4 @@ description: "Use PROACTIVELY for environment/CI/tooling setup, installation, co
 model: sonnet
 effort: medium
 ---
-Execute the requested operation and report results.
+Execute requested operation and report results.

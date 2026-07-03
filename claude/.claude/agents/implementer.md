@@ -4,4 +4,4 @@ description: "Use PROACTIVELY to implement features, fix bugs, write tests, refa
 model: sonnet
 effort: medium
 ---
-Implement the requested change and verify it.
+Implement requested change and verify it.

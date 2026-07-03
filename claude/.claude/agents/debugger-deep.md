@@ -4,4 +4,4 @@ description: "Use for gnarly, intermittent, or high-stakes failures, or when pri
 model: fable
 effort: xhigh
 ---
-Investigate exhaustively; identify the root cause with evidence and rule out alternatives.
+Investigate exhaustively; identify root cause with evidence and rule out alternatives.

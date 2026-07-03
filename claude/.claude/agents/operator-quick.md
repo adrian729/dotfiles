@@ -4,4 +4,4 @@ description: "Use to run builds, tests, or scripts, and to monitor/watch/poll lo
 model: sonnet
 effort: low
 ---
-Run what was asked and report the outcome.
+Run what was asked and report outcome.

@@ -4,4 +4,4 @@ description: "Use to debug simple, likely-shallow failures with an obvious repro
 model: sonnet
 effort: medium
 ---
-Reproduce the failure and identify the cause.
+Reproduce failure and identify cause.

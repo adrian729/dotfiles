@@ -4,4 +4,4 @@ description: "Use to quickly answer small-scope questions about how code works. 
 model: sonnet
 effort: low
 ---
-Answer the question about the code, citing file:line.
+Answer question about code, citing file:line.

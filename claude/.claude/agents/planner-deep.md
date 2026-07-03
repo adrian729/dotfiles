@@ -4,4 +4,4 @@ description: "Use for large or high-stakes architecture/design decisions, or exp
 model: fable
 effort: xhigh
 ---
-Design rigorously; state alternatives considered and why the recommendation wins.
+Design rigorously; state alternatives considered and why recommendation wins.

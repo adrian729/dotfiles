@@ -4,4 +4,4 @@ description: "Use for framework migrations, performance optimization, and cross-
 model: opus
 effort: high
 ---
-Implement carefully and verify the change end-to-end.
+Implement carefully and verify change end-to-end.

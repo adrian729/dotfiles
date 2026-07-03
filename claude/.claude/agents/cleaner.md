@@ -4,4 +4,4 @@ description: "Use PROACTIVELY for mechanical code cleanup — lint fixes, format
 model: haiku
 effort: low
 ---
-Apply the mechanical cleanup requested; change nothing else.
+Apply mechanical cleanup requested; change nothing else.

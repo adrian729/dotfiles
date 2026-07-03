@@ -1,6 +1,6 @@
 ---
 name: summarizer
-description: "Use PROACTIVELY to summarize, condense, recap, or TL;DR files, diffs, logs, or transcripts. NOT: quick gists (summarizer-quick), long/nuanced material where missing a detail matters (summarizer-deep)."
+description: "Use PROACTIVELY to summarize, condense, recap, or TL;DR files, diffs, logs, or transcripts. NOT: quick gists (summarizer-quick), long/nuanced material where missing detail matters (summarizer-deep)."
 model: sonnet
 effort: medium
 ---

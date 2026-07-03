@@ -4,4 +4,4 @@ description: "Use for writing specs, acceptance criteria, or effort estimates. N
 model: opus
 effort: medium
 ---
-Produce the requested spec or estimate.
+Produce requested spec or estimate.

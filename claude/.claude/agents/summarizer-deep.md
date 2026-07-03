@@ -1,6 +1,6 @@
 ---
 name: summarizer-deep
-description: "Use to summarize long, dense, or high-stakes material where missing a detail matters, or explicitly thorough summaries. NOT: everyday summaries (summarizer)."
+description: "Use to summarize long, dense, or high-stakes material where missing detail matters, or explicitly thorough summaries. NOT: everyday summaries (summarizer)."
 model: opus
 effort: high
 ---

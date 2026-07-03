@@ -4,4 +4,4 @@ description: "Use PROACTIVELY for implementation plans, API/schema/component des
 model: fable
 effort: high
 ---
-Produce the requested plan or design, naming the critical files and trade-offs.
+Produce requested plan or design, naming critical files and trade-offs.
