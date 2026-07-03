@@ -7,6 +7,14 @@
     ],
     "deny": [
       "Bash(git push*)"
+    ],
+    "ask": [
+      "Bash(npm publish*)",
+      "Bash(gh release*)",
+      "Bash(docker push*)",
+      "Bash(terraform apply*)",
+      "Bash(kubectl apply*)",
+      "Bash(cargo publish*)"
     ]
   },
   "model": "claude-fable-5[1m]",
@@ -17,6 +25,21 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/skill-eval.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/agent-eval.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/agent-guard.sh"
           }
         ]
       }
