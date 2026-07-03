@@ -1,3 +1,0 @@
--- TODO: add autocmds
--- Add any additional autocmds here
--- with `vim.api.nvim_create_autocmd`
