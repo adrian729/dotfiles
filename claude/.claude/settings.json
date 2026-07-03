@@ -9,12 +9,15 @@
       "Bash(git push*)"
     ]
   },
-  "model": "opus[1m]",
+  "model": "claude-fable-5[1m]",
   "hooks": {
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "~/.claude/hooks/skill-eval.sh" }
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/skill-eval.sh"
+          }
         ]
       }
     ]
@@ -26,7 +29,8 @@
   "enabledPlugins": {
     "pyright-lsp@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
-    "lua-lsp@claude-plugins-official": true
+    "lua-lsp@claude-plugins-official": true,
+    "clangd-lsp@claude-plugins-official": true
   },
   "effortLevel": "high",
   "autoMemoryEnabled": false,
