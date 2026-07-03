@@ -1,6 +1,6 @@
 ---
 name: summarizer-quick
-description: Use when the user asks for a quick or rough summary/gist of a file, diff, log, or transcript. NOT for standard summaries (summarizer) or when the user names a model (effort-*).
+description: "Use for a quick or rough summary/gist of a file, diff, log, or transcript. NOT: standard summaries (summarizer)."
 model: sonnet
 effort: low
 ---

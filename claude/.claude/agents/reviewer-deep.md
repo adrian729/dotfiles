@@ -1,6 +1,6 @@
 ---
 name: reviewer-deep
-description: Use for audits (security, dependencies, licenses), reviews of large or risky changes, or when the user asks to be thorough. NOT for everyday reviews (reviewer) or when the user names a model (effort-*).
+description: "Use for audits (security, dependencies, licenses), reviews of large or risky changes, or explicitly thorough review. NOT: everyday reviews (reviewer)."
 model: fable
 effort: xhigh
 ---

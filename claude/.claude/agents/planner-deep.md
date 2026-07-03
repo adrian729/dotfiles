@@ -1,6 +1,6 @@
 ---
 name: planner-deep
-description: Use for large or high-stakes architecture and design decisions, or when the user asks for maximum planning rigor. NOT for everyday plans (planner) or when the user names a model (effort-*).
+description: "Use for large or high-stakes architecture/design decisions, or explicitly maximum planning rigor. NOT: everyday plans (planner)."
 model: fable
 effort: xhigh
 ---

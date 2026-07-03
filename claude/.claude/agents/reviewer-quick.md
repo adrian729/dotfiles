@@ -1,6 +1,6 @@
 ---
 name: reviewer-quick
-description: Use for a quick review or sanity check on small diffs, or to triage/classify issues and failures. NOT for standard code review (reviewer), audits or risky changes (reviewer-deep), or when the user names a model (effort-*).
+description: "Use for a quick review or sanity check on small diffs, or to triage/classify issues and failures. NOT: standard code review (reviewer), audits or risky changes (reviewer-deep)."
 model: sonnet
 effort: low
 ---

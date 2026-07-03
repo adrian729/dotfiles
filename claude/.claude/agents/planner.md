@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Use PROACTIVELY for implementation plans, API/schema/component design, and trade-off analysis. NOT for specs/estimates (planner-quick), high-stakes architecture needing maximum rigor (planner-deep), or when the user names a model (effort-*).
+description: "Use PROACTIVELY for implementation plans, API/schema/component design, and trade-off analysis. NOT: specs/estimates (planner-quick), high-stakes architecture (planner-deep)."
 model: fable
 effort: high
 ---

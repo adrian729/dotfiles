@@ -1,6 +1,6 @@
 ---
 name: debugger-quick
-description: Use to debug simple, likely-shallow failures with an obvious reproduction. NOT for real root-cause investigations (debugger), gnarly or intermittent failures (debugger-deep), or when the user names a model (effort-*).
+description: "Use to debug simple, likely-shallow failures with an obvious reproduction. NOT: real root-cause investigations (debugger), gnarly/intermittent failures (debugger-deep)."
 model: sonnet
 effort: medium
 ---

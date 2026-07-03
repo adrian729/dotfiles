@@ -1,6 +1,6 @@
 ---
 name: writer-deep
-description: Use for ADRs, onboarding guides, and documents where quality and completeness matter most. NOT for everyday docs (writer) or when the user names a model (effort-*).
+description: "Use for ADRs, onboarding guides, and documents where quality and completeness matter most. NOT: everyday docs (writer)."
 model: opus
 effort: medium
 ---

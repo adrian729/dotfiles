@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Use PROACTIVELY for code review, verifying a change works, or critiquing/judging alternatives. NOT for quick sanity checks or triage (reviewer-quick), audits/security/large or risky changes or explicit thoroughness requests (reviewer-deep), or when the user names a model (effort-*).
+description: "Use PROACTIVELY for code review, verifying a change works, or critiquing/judging alternatives. NOT: quick sanity checks or triage (reviewer-quick), audits/security/large or risky changes or explicit thoroughness (reviewer-deep)."
 model: opus
 effort: high
 ---
