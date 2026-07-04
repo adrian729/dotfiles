@@ -1,6 +1,6 @@
 ---
 name: researcher-quick
-description: "Use to fetch specific external resources — tickets, PRs, issues, known docs page. NOT: open-ended research (researcher)."
+description: "Use to fetch/get specific external resources — tickets, PRs, issues, given URL, known docs page, what does this ticket/PR say. NOT: open-ended research (researcher)."
 model: sonnet
 effort: low
 ---

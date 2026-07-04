@@ -1,6 +1,6 @@
 ---
 name: planner
-description: "Use PROACTIVELY for implementation plans, API/schema/component design, and trade-off analysis. NOT: specs/estimates (planner-quick), high-stakes architecture (planner-deep)."
+description: "Use PROACTIVELY for implementation plans (plan out X, how should we approach), API/schema/component design, proposals, and trade-off analysis (which option, pros and cons). NOT: specs/estimates (planner-quick), high-stakes architecture (planner-deep)."
 model: fable
 effort: high
 ---

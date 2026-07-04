@@ -17,7 +17,7 @@
       "Bash(cargo publish*)"
     ]
   },
-  "model": "claude-fable-5[1m]",
+  "model": "opus[1m]",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -55,7 +55,7 @@
     "lua-lsp@claude-plugins-official": true,
     "clangd-lsp@claude-plugins-official": true
   },
-  "effortLevel": "xhigh",
+  "effortLevel": "high",
   "autoMemoryEnabled": false,
   "skipWorkflowUsageWarning": true,
   "theme": "dark-ansi",
