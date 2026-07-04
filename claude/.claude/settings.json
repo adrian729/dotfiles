@@ -3,7 +3,11 @@
     "allow": [
       "Read",
       "Grep",
-      "Glob"
+      "Glob",
+      "Bash(llm *)",
+      "Bash(llm-probe*)",
+      "Bash(ollama ps*)",
+      "Bash(ollama list*)"
     ],
     "deny": [
       "Bash(git push*)"

@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+# llm-probe — decide what local (ollama) model, if any, this machine should run,
+# and record the decision so Claude Code and the `llm` wrapper can consult it.
+#
+# PURE STATIC capability check: it never contacts the ollama server, never starts
+# it, and never lists installed models. It answers only "what COULD this machine
+# run"; whether a listed model is actually pulled is resolved at use time by `llm`
+# (which walks the fallback chain and falls back to Claude if none is available).
+#
+# Writes ~/.local/state/claude/local-llm.json (machine-local — deliberately NOT
+# stowed). Runs from install.sh at stow time; re-run anytime hardware/ollama change.
+#
+# THE NO-SWAP RULE: a machine runs more than one local model ONLY if all of them
+# fit resident in the memory budget simultaneously (no swapping), AND the second
+# model genuinely out-performs the chosen generalist at its specialty. Otherwise
+# it runs the single best-fitting model for everything. Recomputed per machine.
+#
+# Test overrides: LLM_PROBE_RAM_GB forces system RAM; LLM_PROBE_VRAM_GB forces the
+# discrete-GPU branch with that VRAM (exercises the dGPU path on any machine).
+set -euo pipefail
+
+STATE_DIR="$HOME/.local/state/claude"
+STATE_FILE="$STATE_DIR/local-llm.json"
+
+die() {
+  echo "llm-probe: $*" >&2
+  exit 1
+}
+
+# --- write a state file atomically (temp + mv), then exit 0 ------------------
+# The probe's exit-code contract: 0 whenever a state file was successfully
+# written (INCLUDING every enabled:false outcome); nonzero only on internal
+# failure. install.sh relies on this so a low-RAM/no-ollama machine is not an
+# install error.
+write_state() {
+  local json="$1" tmp
+  mkdir -p "$STATE_DIR" || die "could not create $STATE_DIR"
+  tmp="$STATE_FILE.$$.tmp"
+  printf '%s\n' "$json" >"$tmp" || die "could not write $tmp"
+  mv -f "$tmp" "$STATE_FILE" || die "could not move state file into place"
+}
+
+# Emit an enabled:false state file + one-line summary, then exit 0.
+disabled() {
+  local reason="$1" json
+  json=$(jq -n \
+    --arg at "$PROBED_AT" --arg reason "$reason" \
+    --arg os "$OS" --arg arch "$ARCH" --arg chip "$CHIP" --argjson ram "$RAM_GB" \
+    --argjson ollama_installed "$OLLAMA_INSTALLED" --arg ollama_version "$OLLAMA_VERSION" \
+    '{enabled:false, probed_at:$at, reason:$reason,
+      machine:{os:$os, arch:$arch, chip:$chip, ram_gb:$ram},
+      ollama:{installed:$ollama_installed, version:($ollama_version|if .=="" then null else . end)}}')
+  write_state "$json"
+  echo "local LLM capability: disabled · $reason"
+  exit 0
+}
+
+# --- static model catalog ----------------------------------------------------
+# Footprints are fixed worst-case GB at 32k ctx (weights + KV) — deliberately
+# conservative; no per-tier footprint math. Adding a model = one line here + in
+# the ordered lists / better_at_code below.
+footprint_gb() {
+  case "$1" in
+    qwen3:30b)        echo 22 ;;
+    qwen3-coder:30b)  echo 22 ;;
+    qwen3:14b)        echo 12 ;;
+    qwen3:8b)         echo 7 ;;
+    qwen2.5-coder:7b) echo 6 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Generalist (compress) candidates, best → smallest.
+COMPRESS_CANDIDATES="qwen3:30b qwen3:14b qwen3:8b"
+# Specialist coder candidates, best → smallest.
+CODER_CANDIDATES="qwen3-coder:30b qwen2.5-coder:7b"
+
+# Does coder $1 genuinely out-code generalist $2? A small specialist does NOT
+# beat a much bigger generalist at its own specialty.
+better_at_code() {
+  local coder="$1" generalist="$2"
+  case "$coder" in
+    qwen3-coder:30b)  # 30B specialist beats every generalist here
+      return 0 ;;
+    qwen2.5-coder:7b) # beats a 14B/8B generalist, NOT the 30B
+      case "$generalist" in
+        qwen3:14b | qwen3:8b) return 0 ;;
+        *) return 1 ;;
+      esac ;;
+  esac
+  return 1
+}
+
+# --- 0. timestamp ------------------------------------------------------------
+PROBED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# --- 1. hardware -------------------------------------------------------------
+OS=$(uname -s)
+ARCH=$(uname -m)
+CHIP="unknown"
+RAM_GB=0
+case "$OS" in
+  Darwin)
+    CHIP=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown)
+    RAM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
+    ;;
+  Linux)
+    CHIP=$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -n1)
+    [ -z "$CHIP" ] && CHIP=unknown
+    RAM_GB=$(( $(sed -n 's/^MemTotal:[[:space:]]*\([0-9]*\).*/\1/p' /proc/meminfo 2>/dev/null || echo 0) / 1048576 ))
+    ;;
+  *) CHIP=unknown ;;
+esac
+# Test override for system RAM.
+if [ -n "${LLM_PROBE_RAM_GB:-}" ]; then
+  RAM_GB="$LLM_PROBE_RAM_GB"
+fi
+
+# --- 2. dependencies (before budget so a missing dep short-circuits) ---------
+OLLAMA_INSTALLED=false
+OLLAMA_VERSION=""
+if command -v ollama >/dev/null 2>&1; then
+  OLLAMA_INSTALLED=true
+  # `ollama --version` prints "ollama version is X.Y.Z" and works offline.
+  OLLAMA_VERSION=$(ollama --version 2>/dev/null | sed -n 's/.*version is //p' | head -n1)
+fi
+$OLLAMA_INSTALLED || disabled "missing dependency: ollama"
+command -v jq   >/dev/null 2>&1 || disabled "missing dependency: jq"
+command -v curl >/dev/null 2>&1 || disabled "missing dependency: curl"
+
+# --- 3. memory budget basis (adapts to hardware — this is the portability) ---
+# Detect the fast-memory tier ollama will actually run in.
+detect_vram_gb() { # echo total VRAM GB across GPUs, or nothing if none found
+  local mib="" bytes="" sum=0 f v
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    mib=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null)
+    if [ -n "$mib" ]; then
+      while read -r v; do [ -n "$v" ] && sum=$((sum + v)); done <<<"$mib"
+      [ "$sum" -gt 0 ] && { echo $((sum / 1024)); return 0; }
+    fi
+  fi
+  for f in /sys/class/drm/card*/device/mem_info_vram_total; do
+    [ -r "$f" ] || continue
+    bytes=$(cat "$f" 2>/dev/null || echo 0)
+    sum=$((sum + bytes / 1073741824))
+  done
+  [ "$sum" -gt 0 ] && { echo "$sum"; return 0; }
+  if command -v rocm-smi >/dev/null 2>&1; then
+    bytes=$(rocm-smi --showmeminfo vram 2>/dev/null | sed -n 's/.*[Tt]otal.*: *\([0-9]*\).*/\1/p' | head -n1)
+    [ -n "$bytes" ] && [ "$bytes" -gt 0 ] && { echo $((bytes / 1073741824)); return 0; }
+  fi
+  return 1
+}
+
+BUDGET_BASIS=""
+MODEL_BUDGET_GB=0
+NOTE=""
+VRAM_GB=""
+if [ -n "${LLM_PROBE_VRAM_GB:-}" ]; then
+  # Test override: force the discrete-GPU branch on any machine.
+  VRAM_GB="$LLM_PROBE_VRAM_GB"
+  BUDGET_BASIS="vram-forced"
+  MODEL_BUDGET_GB=$((VRAM_GB * 9 / 10))
+elif [ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
+  # Apple Silicon: unified memory shared CPU/GPU.
+  BUDGET_BASIS="unified-memory"
+  MODEL_BUDGET_GB=$((RAM_GB * 3 / 4))
+elif VRAM_GB=$(detect_vram_gb); then
+  # Discrete GPU: budget is VRAM, not system RAM.
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    BUDGET_BASIS="vram-nvidia"
+  else
+    BUDGET_BASIS="vram-amd"
+  fi
+  MODEL_BUDGET_GB=$((VRAM_GB * 9 / 10))
+else
+  # CPU-only (Intel Macs, headless Linux): works but slow.
+  BUDGET_BASIS="system-ram-cpu"
+  MODEL_BUDGET_GB=$((RAM_GB * 3 / 4))
+  NOTE="CPU-only — expect low tok/s"
+fi
+
+# --- 4. policy decision (implements the no-swap rule) ------------------------
+# 4a. compress/generalist = best candidate that fits ALONE in budget.
+COMPRESS_PRIMARY=""
+COMPRESS_BACKUP=""
+for m in $COMPRESS_CANDIDATES; do
+  fp=$(footprint_gb "$m")
+  if [ "$fp" -le "$MODEL_BUDGET_GB" ]; then
+    if [ -z "$COMPRESS_PRIMARY" ]; then
+      COMPRESS_PRIMARY="$m"
+    elif [ -z "$COMPRESS_BACKUP" ]; then
+      COMPRESS_BACKUP="$m"
+    fi
+  fi
+done
+[ -n "$COMPRESS_PRIMARY" ] || disabled "no catalogued model fits budget ${MODEL_BUDGET_GB}GB (basis $BUDGET_BASIS)"
+
+COMPRESS_FP=$(footprint_gb "$COMPRESS_PRIMARY")
+
+# 4b. code model: add a specialist coder ONLY if it co-fits (both resident, zero
+# swaps) AND out-codes the chosen generalist. Either gate fails → single-model.
+POLICY="single-model"
+POLICY_REASON=""
+CODE_PRIMARY="$COMPRESS_PRIMARY"
+CODE_BACKUP="$COMPRESS_BACKUP"
+for c in $CODER_CANDIDATES; do
+  cfp=$(footprint_gb "$c")
+  if better_at_code "$c" "$COMPRESS_PRIMARY" && [ $((COMPRESS_FP + cfp)) -le "$MODEL_BUDGET_GB" ]; then
+    POLICY="multi-model"
+    CODE_PRIMARY="$c"
+    CODE_BACKUP="$COMPRESS_PRIMARY" # fall back to the generalist if coder missing
+    POLICY_REASON="$COMPRESS_PRIMARY (${COMPRESS_FP}GB) + $c (${cfp}GB) = $((COMPRESS_FP + cfp))GB <= budget ${MODEL_BUDGET_GB}GB and $c out-codes $COMPRESS_PRIMARY — pair co-resides, no-swap rule satisfied"
+    break
+  fi
+done
+if [ "$POLICY" = "single-model" ]; then
+  # Explain why no coder earned a slot (co-fit vs out-code), for the record.
+  best_coder=$(set -- $CODER_CANDIDATES; echo "$1")
+  best_coder_fp=$(footprint_gb "$best_coder")
+  if [ $((COMPRESS_FP + best_coder_fp)) -gt "$MODEL_BUDGET_GB" ]; then
+    POLICY_REASON="$COMPRESS_PRIMARY (${COMPRESS_FP}GB) + $best_coder (${best_coder_fp}GB) = $((COMPRESS_FP + best_coder_fp))GB > budget ${MODEL_BUDGET_GB}GB — no co-fit, no-swap rule forces one model for everything"
+  else
+    POLICY_REASON="no catalogued coder out-codes $COMPRESS_PRIMARY at its budget — one model for everything"
+  fi
+fi
+
+# --- 5. recommended num_ctx by budget tier (half-open, on model budget) ------
+if   [ "$MODEL_BUDGET_GB" -ge 30 ]; then NUM_CTX=32768
+elif [ "$MODEL_BUDGET_GB" -ge 18 ]; then NUM_CTX=16384
+else                                     NUM_CTX=8192
+fi
+
+# --- build ordered fallback lists (primary + one designated backup) ----------
+compress_list=$(printf '%s\n' "$COMPRESS_PRIMARY" "$COMPRESS_BACKUP" | grep -v '^$' | jq -R . | jq -s .)
+code_list=$(printf '%s\n' "$CODE_PRIMARY" "$CODE_BACKUP" | grep -v '^$' | jq -R . | jq -s .)
+
+# --- 6. write state ----------------------------------------------------------
+json=$(jq -n \
+  --arg at "$PROBED_AT" \
+  --arg os "$OS" --arg arch "$ARCH" --arg chip "$CHIP" --argjson ram "$RAM_GB" \
+  --arg ollama_version "$OLLAMA_VERSION" \
+  --arg basis "$BUDGET_BASIS" --argjson budget "$MODEL_BUDGET_GB" \
+  --arg policy "$POLICY" --arg policy_reason "$POLICY_REASON" \
+  --argjson compress "$compress_list" --argjson code "$code_list" \
+  --argjson num_ctx "$NUM_CTX" --arg note "$NOTE" \
+  --arg vram "${VRAM_GB:-}" \
+  '{enabled:true, probed_at:$at,
+    machine:({os:$os, arch:$arch, chip:$chip, ram_gb:$ram}
+      + (if $vram != "" then {vram_gb:($vram|tonumber)} else {} end)),
+    ollama:{installed:true, version:$ollama_version},
+    budget_basis:$basis, model_budget_gb:$budget,
+    policy:$policy, policy_reason:$policy_reason,
+    compress_models:$compress, code_models:$code,
+    num_ctx:$num_ctx,
+    note:($note|if .=="" then null else . end), reason:null}')
+write_state "$json"
+
+# --- one-line human summary --------------------------------------------------
+summary="local LLM capability: enabled · $BUDGET_BASIS ${MODEL_BUDGET_GB}GB · policy $POLICY · models $(echo "$compress_list" | jq -r 'join(",")') · ctx $NUM_CTX · recommend OLLAMA_NUM_PARALLEL=2"
+[ -n "$NOTE" ] && summary="$summary · $NOTE"
+echo "$summary"

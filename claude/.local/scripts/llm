@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# llm — delegate a token-heavy micro-task to a local ollama model, so Claude
+# spends no tokens on the bulk. Pipe big content in on stdin (compression:
+# only the short answer comes back) or write bulk output to a file with -o
+# (generation: Claude spot-checks cheaply).
+#
+# Named `llm`, not a model name, because which model runs is machine-dependent:
+# `llm-probe` records the per-machine policy in ~/.local/state/claude/local-llm.json
+# and this wrapper walks that machine's fallback chain at call time.
+#
+# It NEVER starts the ollama server (the server is user-managed) and never pulls
+# models. When it can't delegate it exits nonzero with a one-line reason on
+# stderr; the local-llm skill's rule is then to do the task the normal Claude way.
+set -euo pipefail
+
+STATE_FILE="$HOME/.local/state/claude/local-llm.json"
+PROBE="$HOME/.local/scripts/llm-probe"
+HOST="localhost:11434"
+CTX_CAP=40960
+
+die() { echo "llm: $*" >&2; exit 1; }
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: llm [flags] PROMPT...          # stdin (optional) = content to operate on
+  --code       use the machine's code_models list (codegen) not compress_models
+  -m MODEL     force this model (no fallback walk)
+  --no-think   disable thinking (faster, but reasoning models leak reasoning
+               prose into the answer; default keeps thinking ON so .response
+               stays clean, auto-falling back to off for non-thinking models)
+  -c NUM_CTX   override context window (hard cap 40960)
+  -T SECS      request timeout (default 300)
+  -o FILE      write the response to FILE; stdout prints only a receipt line
+  --temp F     sampling temperature (default 0.2)
+Exit: 0 ok · 1 usage · 2 input>ctx · 3 server down · 4 disabled here
+      · 5 no candidate model · 6 API error · 124 timeout
+EOF
+  exit 1
+}
+
+# --- parse args --------------------------------------------------------------
+LIST_KEY="compress_models"
+FORCE_MODEL=""
+THINK=true
+CTX_OVERRIDE=""
+TIMEOUT=300
+OUTFILE=""
+TEMP=0.2
+PROMPT_PARTS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --code) LIST_KEY="code_models"; shift ;;
+    -m) [ $# -ge 2 ] || usage; FORCE_MODEL="$2"; shift 2 ;;
+    --no-think) THINK=false; shift ;;
+    -c) [ $# -ge 2 ] || usage; CTX_OVERRIDE="$2"; shift 2 ;;
+    -T) [ $# -ge 2 ] || usage; TIMEOUT="$2"; shift 2 ;;
+    -o) [ $# -ge 2 ] || usage; OUTFILE="$2"; shift 2 ;;
+    --temp) [ $# -ge 2 ] || usage; TEMP="$2"; shift 2 ;;
+    --) shift; while [ $# -gt 0 ]; do PROMPT_PARTS+=("$1"); shift; done ;;
+    -*) echo "llm: unknown flag: $1" >&2; usage ;;
+    *) PROMPT_PARTS+=("$1"); shift ;;
+  esac
+done
+[ ${#PROMPT_PARTS[@]} -gt 0 ] || usage
+PROMPT="${PROMPT_PARTS[*]}"
+
+case "$TIMEOUT" in *[!0-9]*|'') die "invalid -T (seconds): $TIMEOUT" ;; esac
+
+# --- 0. state file (auto-probe once if missing) ------------------------------
+if [ ! -f "$STATE_FILE" ]; then
+  # Safe to auto-run: the probe is static — no server contact, no pulls.
+  if [ -x "$PROBE" ]; then
+    "$PROBE" >/dev/null 2>&1 || true
+  fi
+fi
+[ -f "$STATE_FILE" ] || { echo "llm: local delegation disabled (no capability state; run llm-probe)" >&2; exit 4; }
+
+enabled=$(jq -r '.enabled // false' "$STATE_FILE" 2>/dev/null || echo false)
+if [ "$enabled" != "true" ]; then
+  reason=$(jq -r '.reason // "disabled on this machine"' "$STATE_FILE" 2>/dev/null || echo "unreadable state file")
+  echo "llm: local delegation disabled — $reason" >&2
+  exit 4
+fi
+
+NUM_CTX=$(jq -r '.num_ctx // 8192' "$STATE_FILE")
+if [ -n "$CTX_OVERRIDE" ]; then
+  case "$CTX_OVERRIDE" in *[!0-9]*|'') die "invalid -c (num_ctx): $CTX_OVERRIDE" ;; esac
+  NUM_CTX="$CTX_OVERRIDE"
+fi
+if [ "$NUM_CTX" -gt "$CTX_CAP" ]; then
+  echo "llm: -c $NUM_CTX exceeds cap $CTX_CAP — using $CTX_CAP" >&2
+  NUM_CTX="$CTX_CAP"
+fi
+
+# --- 1. server check — never auto-start --------------------------------------
+if ! curl -sf --max-time 1 "$HOST/api/version" >/dev/null 2>&1; then
+  echo "llm: ollama server not running — start it with 'ollama serve' if you want local delegation" >&2
+  exit 3
+fi
+
+# --- read stdin (the content to operate on), if any --------------------------
+STDIN_FILE=$(mktemp "${TMPDIR:-/tmp}/llm.stdin.XXXXXX")
+trap 'rm -f "$STDIN_FILE" "${RESP_FILE:-}"' EXIT
+if [ ! -t 0 ]; then
+  cat > "$STDIN_FILE"
+fi
+STDIN_BYTES=$(wc -c < "$STDIN_FILE" | tr -d ' ')
+
+# --- 2. size guard (hard-fail) -----------------------------------------------
+# Silent truncation is exactly the failure this design exists to prevent.
+PROMPT_BYTES=${#PROMPT}
+EST_TOKENS=$(( (STDIN_BYTES + PROMPT_BYTES) * 10 / 35 ))   # ~/3.5 chars per token
+LIMIT=$(( NUM_CTX - 2048 ))
+if [ "$EST_TOKENS" -gt "$LIMIT" ]; then
+  echo "llm: input ~$(( EST_TOKENS / 1000 ))k tokens > ctx $NUM_CTX; raise -c (max $CTX_CAP), pre-filter (grep/tail), or chunk" >&2
+  exit 2
+fi
+
+# --- 3. candidate models -----------------------------------------------------
+MODELS=()
+if [ -n "$FORCE_MODEL" ]; then
+  MODELS=("$FORCE_MODEL")
+else
+  while IFS= read -r m; do [ -n "$m" ] && MODELS+=("$m"); done \
+    < <(jq -r --arg k "$LIST_KEY" '.[$k][]?' "$STATE_FILE")
+fi
+[ ${#MODELS[@]} -gt 0 ] || { echo "llm: no models listed for $LIST_KEY in $STATE_FILE" >&2; exit 5; }
+
+# Drop reasoning: everything through a closing </think> (qwen3 can emit reasoning
+# even with think:false, sometimes without the opening tag), then stray tags and
+# leading blank lines.
+strip_think() {
+  printf '%s' "$1" \
+    | awk 'BEGIN{RS="\0"} {sub(/.*<\/think>/,""); printf "%s",$0}' \
+    | sed -e 's/<\/\{0,1\}think>//g' -e '/./,$!d'
+}
+
+# --- 4-5. request with fallback walk -----------------------------------------
+RESP_FILE=$(mktemp "${TMPDIR:-/tmp}/llm.resp.XXXXXX")
+tried=""
+n=${#MODELS[@]}
+i=0
+while [ "$i" -lt "$n" ]; do
+  model="${MODELS[$i]}"
+  tried="${tried:+$tried, }$model"
+  think="$THINK"        # per-model: may drop to false if model can't think
+  retried_nothink=false
+
+  while : ; do
+    body=$(jq -n \
+      --arg model "$model" \
+      --arg prompt "$PROMPT" \
+      --rawfile content "$STDIN_FILE" \
+      --argjson think "$think" \
+      --argjson num_ctx "$NUM_CTX" \
+      --argjson temp "$TEMP" \
+      '{model:$model,
+        prompt: (if ($content|length) > 0
+                 then $prompt + "\n\n<content>\n" + $content + "\n</content>\n\nAnswer the request above the content."
+                 else $prompt end),
+        stream:false, think:$think, keep_alive:"30m",
+        options:{num_ctx:$num_ctx, temperature:$temp}}')
+
+    set +e
+    http=$(curl -sS -m "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
+      -X POST "$HOST/api/generate" -d "$body" 2>/dev/null)
+    cexit=$?
+    set -e
+
+    if [ "$cexit" -eq 28 ]; then
+      echo "llm: request timed out after ${TIMEOUT}s (model $model)" >&2
+      exit 124
+    fi
+    if [ "$cexit" -ne 0 ]; then
+      echo "llm: request failed (curl exit $cexit, model $model)" >&2
+      exit 6
+    fi
+
+    errmsg=$(jq -r '.error // empty' "$RESP_FILE" 2>/dev/null || echo "")
+
+    # Non-thinking model rejected think:true — retry it once with thinking off
+    # (those models already produce clean output without a thinking block).
+    if [ "$think" = "true" ] && [ "$retried_nothink" = "false" ] \
+        && printf '%s' "$errmsg" | grep -qi 'does not support thinking'; then
+      think=false
+      retried_nothink=true
+      continue
+    fi
+
+    if [ "$http" = "200" ] && [ -z "$errmsg" ]; then
+      resp=$(strip_think "$(jq -r '.response // ""' "$RESP_FILE")")
+      if [ -n "$OUTFILE" ]; then
+        printf '%s\n' "$resp" > "$OUTFILE" || die "could not write $OUTFILE"
+        echo "wrote $(printf '%s\n' "$resp" | wc -l | tr -d ' ') lines to $OUTFILE"
+      else
+        printf '%s\n' "$resp"
+      fi
+      exit 0
+    fi
+
+    # Model-not-found (404) is the ONLY error we walk to the next model for.
+    if [ "$http" = "404" ] || printf '%s' "$errmsg" | grep -qi 'not found'; then
+      if [ $(( i + 1 )) -lt "$n" ]; then
+        echo "llm: model $model not available, falling back to ${MODELS[$((i+1))]}" >&2
+      fi
+      i=$(( i + 1 ))
+      break
+    fi
+
+    # Any other error (500/OOM/malformed): walking won't help — abort.
+    echo "llm: ollama HTTP $http (model $model): ${errmsg:-unexpected response}" >&2
+    exit 6
+  done
+done
+
+echo "llm: no candidate model available (tried: $tried) — 'ollama pull <model>' or fall back to Claude" >&2
+exit 5
