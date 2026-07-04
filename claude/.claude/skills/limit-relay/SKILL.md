@@ -20,7 +20,7 @@ Check before heavy/long task, after heavy mid-session prompt, and at clean check
 1. One short line to user, e.g. `⏳ may hit 5h limit (~HH:MM, NN% used); checkpointing + auto-continuing here after reset — keep session open`.
 2. Immediately (heavy step could burn the rest first):
    - Write `relay-handoff.md` to your scratchpad dir, self-contained to resume cold: task, done, next steps, files touched.
-   - Arm resume via run_in_background, noting its task id: `sleep $(( HOURS_RESET - $(date +%s) + 60 ))`. If HOURS_RESET is past, don't arm; just proceed.
+   - Arm resume via run_in_background, noting its task id: `T=$(( HOURS_RESET + 60 )); while [ $(date +%s) -lt $T ]; do sleep 30; done`. NEVER a bare `sleep N` — it counts awake time only, so machine suspend (lid closed) delays firing by the suspended duration; the poll re-checks wall clock within 30s of any wake. If HOURS_RESET is past, don't arm; just proceed.
 3. Work, keeping `relay-handoff.md` current at each checkpoint.
 4. Finish before reset → delete `relay-handoff.md`, THEN stop armed sleep.
 5. Cut off / sleep fires → on re-invoke: read `relay-handoff.md`, redo §1–2, continue; if still short re-arm to current HOURS_RESET; repeat per window until done, then delete it.
