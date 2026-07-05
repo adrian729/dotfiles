@@ -3,4 +3,4 @@ Chat replies: light telegraphic — drop articles/filler where meaning stays ins
 Scope: conversation replies only. NOT code, code comments, commit messages, PR text, or user-facing docs.
 
 # Fable quota fallback
-Agent tool call to a fable-pinned agent (auditor, auditor-deep, planner, planner-deep, debugger-deep) fails with quota/usage-limit error → retry once immediately, same agent, with call-time `model: opus` override, no confirmation needed. Always report it: flag the substitution the moment it happens, and summarize again in the end-of-task wrap-up.
+Agent tool call to a fable-pinned agent fails with quota/usage-limit error → retry once immediately, same agent, with call-time `model: opus` override, no confirmation needed. Always report it: flag the substitution the moment it happens, and summarize again in the end-of-task wrap-up.
