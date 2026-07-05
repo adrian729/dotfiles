@@ -48,3 +48,18 @@ These have no fixed `model` — they inherit whatever model the caller passes at
 | `effort-high` | high | User explicitly asks "high" effort for a delegated task (not "very/extra high") |
 | `effort-xhigh` | xhigh | User explicitly asks "xhigh"/"very high"/"extra high" effort for a delegated task |
 | `effort-max` | max | User explicitly asks "max"/"maximum" effort for a delegated task |
+
+## Model capabilities — when to use each
+
+Independent, first-principles reference for the four models this fleet routes across, sourced from the `claude-api` skill's model catalog and per-model docs (not from the agent assignments above). Use it as the yardstick when auditing whether each agent's `model`/`effort` pairing fits its job.
+
+| Model | Cost (in/out per MTok) | Context | Max out | Effort | Positioning (task-fit) | When to use | Don't use when |
+|---|---|---|---|---|---|---|---|
+| Haiku 4.5 | $1 / $5 | 200K | 64K | none | Fastest, cheapest; for simple, speed-critical tasks | Mechanical, high-volume, latency-bound: classification, extraction, formatting, lint fixes, simple lookups, quick sanity checks, cheap batch | Any real multi-step reasoning; you need an effort dial; context >200K |
+| Sonnet 5 | $3 / $15 ($2/$10 intro→2026-08-31) | 1M | 128K | low→max | Best speed/intelligence balance; near-Opus on coding and agentic work | Default workhorse: everyday coding, features, tests, standard review, routine debugging, agentic/tool loops, summarization, research, most writing. Push effort to `xhigh` before bumping tier | Task is trivially mechanical (→ Haiku) or genuinely frontier-hard (→ Opus/Fable) |
+| Opus 4.8 | $5 / $25 | 1M | 128K | low→max | Most capable Opus-tier; SOTA long-horizon agentic, knowledge work, and memory | Correctness-critical & long-horizon: autonomous agentic runs, big refactors, architecture/impact analysis, gnarly/intermittent debugging, self-verifying knowledge work, memory-heavy tasks, high-stakes docs/reviews. Give full task spec up front at `high`/`xhigh` | Routine work Sonnet 5 handles cheaper; latency-sensitive interactive use |
+| Fable 5 | $10 / $50 | 1M | 128K | low→max (thinking always on) | Most capable widely released model; for the most demanding reasoning and long-horizon agentic work | Frontier-difficulty only: novel/unsolved problems, longest-horizon autonomous runs, sustained multi-agent orchestration, exhaustive audits/deep research where "leave nothing out" is the real requirement | Anything latency-sensitive (turns run minutes); security/cyber-adjacent work (classifiers false-positive); tasks Opus already handles (pure 2× waste) |
+
+Two cross-cutting rules the rows assume:
+- **Effort before tier** — Sonnet 5 at `xhigh` ≈ Opus at `medium` on much coding/agentic work; raise the effort dial before jumping model tier.
+- **Difficulty ≠ stakes for the top two** — critical-but-tractable is an Opus job; Fable is only for problems at or beyond Opus's ceiling.
