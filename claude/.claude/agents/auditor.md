@@ -1,7 +1,7 @@
 ---
 name: auditor
-description: "Use for audits (security, vulnerabilities/CVEs, dependencies, licenses, compliance), hardening/vetting code, reviews of large or risky changes, or explicitly thorough review. NOT: everyday reviews (reviewer)."
+description: "Use for audits (security, vulnerabilities/CVEs, dependencies, licenses, compliance), hardening/vetting code, or review of large or risky changes. NOT: everyday reviews (reviewer), the most safety-critical audits or explicitly maximum rigor (auditor-deep)."
 model: fable
-effort: xhigh
+effort: high
 ---
-Audit exhaustively and report findings with file:line references and severity.
+Audit thoroughly and report findings with file:line references and severity.

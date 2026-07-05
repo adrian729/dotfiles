@@ -6,12 +6,8 @@
 
 SKILLS_DIR="$(dirname "$0")/../skills"
 
-names=""
-for skill_file in "$SKILLS_DIR"/*/SKILL.md; do
-    [ -f "$skill_file" ] || continue
-    name=$(sed -n 's/^name: *//p' "$skill_file" | head -1)
-    [ -n "$name" ] && names="${names}    - ${name}"$'\n'
-done
+source "$(dirname "$0")/lib/skill-names.sh"
+names=$(skill_names "$SKILLS_DIR")
 
 # Nothing to evaluate (skills dir missing/empty) — exit quietly.
 [ -z "$names" ] && exit 0
