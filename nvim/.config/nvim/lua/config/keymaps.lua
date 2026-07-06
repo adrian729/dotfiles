@@ -120,3 +120,17 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- markdown.lua
 -- ------------------------------------------------------------------
 -- <leader>mp - toggle markdown preview (browser)
+-- ------------------------------------------------------------------
+-- codecompanion.lua
+-- ------------------------------------------------------------------
+-- <leader>cc - toggle chat (default/last)
+-- <leader>cn - new chat: pick backend (+ model for ollama)
+-- <leader>cq - close all chats
+-- <leader>ca - action palette (n, x)
+-- <leader>ci - inline prompt / refactor (n, x) — ollama, JSON-forced; spinner + blocks while busy
+-- <leader>cx - unblock inline (reset busy) if a request hangs
+-- <leader>cm - switch inline ollama model
+-- <leader>ct - toggle ollama thinking (fast <-> higher quality)
+-- <leader>cs - status popup: what each mode currently uses
+-- ga         - (in chat buffer) switch that chat's backend + model
+-- g2 / g3    - (after inline) accept / reject the proposed diff (g1 = always accept)
