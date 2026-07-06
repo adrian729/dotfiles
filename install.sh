@@ -16,6 +16,7 @@ directories=(
   "clangd"
   "tmux"
   "zsh"
+  "ollama"
 )
 
 # Ask if user wants to stow all directories without asking

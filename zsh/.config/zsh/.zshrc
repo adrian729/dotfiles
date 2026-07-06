@@ -146,6 +146,10 @@ fi
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 # fzf end
 
+# ollama
+[ -f "$HOME/.config/ollama/ollama.env" ] && . "$HOME/.config/ollama/ollama.env"
+# ollama end
+
 #######################
 # OH-MY-ZSH & PLUGINS #
 #######################
