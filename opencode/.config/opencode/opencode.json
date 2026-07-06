@@ -5,6 +5,12 @@
     "port": 42069
   },
   "provider": {},
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "git push *": "deny"
+    }
+  },
   "lsp": {
     "lua-ls": {
       "command": ["lua-language-server"],

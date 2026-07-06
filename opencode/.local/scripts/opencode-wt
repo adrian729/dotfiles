@@ -1,0 +1,358 @@
+#!/usr/bin/env bash
+# opencode-wt — start or resume an OpenCode session in its own git worktree.
+# One command per task: same invocation creates the worktree+branch+session the
+# first time and resumes the same session every time after. Optional color tints
+# the tmux pane background so parallel sessions are distinguishable.
+set -euo pipefail
+
+COLOR_NAMES="red maroon peach yellow green teal sky sapphire blue lavender mauve pink flamingo rosewater"
+
+tint_for() {
+  case "$1" in
+    red)       echo "#493446" ;;
+    maroon)    echo "#473847" ;;
+    peach)     echo "#4a3c40" ;;
+    yellow)    echo "#4a4548" ;;
+    green)     echo "#394545" ;;
+    teal)      echo "#36454f" ;;
+    sky)       echo "#334454" ;;
+    sapphire)  echo "#2f4054" ;;
+    blue)      echo "#333c57" ;;
+    lavender)  echo "#3c3e58" ;;
+    mauve)     echo "#413956" ;;
+    pink)      echo "#493f53" ;;
+    flamingo)  echo "#48414e" ;;
+    rosewater) echo "#494551" ;;
+    *) return 1 ;;
+  esac
+}
+
+usage() {
+  cat <<EOF
+Usage:
+  opencode-wt <name> [color]    Start or resume OpenCode session <name> in its
+                                own worktree (<repo>/.opencode/worktrees/<name>,
+                                branch <name>). Re-running the same command
+                                resumes the session; the color is remembered
+                                per name. When the session exits with unpushed
+                                commits, offers to push and open/update a draft
+                                PR.
+  opencode-wt -l, --list        List this repo's session worktrees.
+  opencode-wt -d, --done <name> Remove a worktree when finished; offers local
+                                branch deletion once its PR is merged.
+  opencode-wt -h, --help        Show this help.
+
+Colors (tmux pane background tint; terminal background outside tmux):
+  $COLOR_NAMES
+EOF
+}
+
+die() {
+  echo "opencode-wt: $*" >&2
+  exit 1
+}
+
+main_root() {
+  local common
+  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+    die "not inside a git repository"
+  dirname "$common"
+}
+
+has_origin() {
+  git -C "$1" remote get-url origin >/dev/null 2>&1
+}
+
+ensure_excluded() {
+  local exclude="$1/.git/info/exclude"
+  mkdir -p "$(dirname "$exclude")"
+  grep -qxF '.opencode/worktrees/' "$exclude" 2>/dev/null ||
+    echo '.opencode/worktrees/' >>"$exclude"
+}
+
+copy_worktreeinclude() {
+  local root=$1 wt_dir=$2 f
+  [ -f "$root/.worktreeinclude" ] || return 0
+  git -C "$root" ls-files -o -i --exclude-from="$root/.worktreeinclude" -z |
+    while IFS= read -r -d '' f; do
+      case "$f" in */) continue ;; esac
+      mkdir -p "$wt_dir/$(dirname "$f")"
+      cp "$root/$f" "$wt_dir/$f" ||
+        echo "opencode-wt: warning: could not copy $f into the worktree" >&2
+    done
+}
+
+# Find an opencode session running in the given directory by parsing the JSON
+# session list — bash-only, no python/jq needed. Returns the first session ID
+# matching the directory, or empty string.
+find_session_for() {
+  local dir=$1
+  opencode session list --format json 2>/dev/null |
+    tr '\n' ' ' |
+    sed 's/}, */}\n/g' |
+    grep -F "\"directory\": \"$dir\"" |
+    sed 's/.*"id": "\([^"]*\)".*/\1/' || true
+}
+
+apply_color() {
+  local name=$1 tint=$2
+  [ -n "$tint" ] || return 0
+  if [ -n "${TMUX:-}" ]; then
+    prev_pane_bg=$(tmux display -p '#{pane_bg}' 2>/dev/null || true)
+    prev_win_name=$(tmux display -p '#{window_name}' 2>/dev/null || true)
+    prev_autorename=$(tmux show -wv automatic-rename 2>/dev/null || true)
+    tmux select-pane -P "bg=$tint" 2>/dev/null || true
+    tmux rename-window "$name" 2>/dev/null || true
+  else
+    printf '\033]11;%s\007' "$tint"
+  fi
+}
+
+reset_color() {
+  if [ -n "${TMUX:-}" ]; then
+    tmux select-pane -P "bg=${prev_pane_bg:-default}" 2>/dev/null || true
+    [ -n "${prev_win_name:-}" ] &&
+      tmux rename-window "$prev_win_name" 2>/dev/null || true
+    if [ -n "${prev_autorename:-}" ]; then
+      tmux set -w automatic-rename "$prev_autorename" 2>/dev/null || true
+    else
+      tmux set -wu automatic-rename 2>/dev/null || true
+    fi
+  else
+    printf '\033]111\007'
+  fi
+}
+
+offer_push_pr() {
+  local name=$1 base count dirty ans url
+  has_origin . || return 0
+  if git rev-parse --verify --quiet '@{u}' >/dev/null; then
+    base='@{u}'
+  elif git rev-parse --verify --quiet origin/HEAD >/dev/null; then
+    base=origin/HEAD
+  else
+    return 0
+  fi
+  count=$(git rev-list --count "$base"..HEAD)
+  [ "$count" -gt 0 ] || return 0
+
+  echo ""
+  echo "Session '$name' has $count unpushed commit(s):"
+  git log --oneline --no-decorate "$base"..HEAD | sed 's/^/  /'
+  git diff --shortstat "$base" HEAD | sed 's/^ */  /'
+  dirty=$(git status --porcelain | wc -l | tr -d ' ')
+  [ "$dirty" -gt 0 ] && echo "  note: $dirty uncommitted file(s) will stay local"
+  printf 'Push and open/update draft PR? [Y/n] '
+  read -r ans || ans=n
+  case "$ans" in
+    n | N | no | NO)
+      echo "Not pushed — resume with: opencode-wt $name"
+      return 0
+      ;;
+  esac
+
+  if ! git push -u origin "$name"; then
+    echo "opencode-wt: warning: push failed — retry with: git push -u origin $name" >&2
+    return 0
+  fi
+  if command -v gh >/dev/null 2>&1; then
+    if url=$(gh pr view "$name" --json url -q .url 2>/dev/null); then
+      echo "PR updated: $url"
+    elif gh pr create --fill --draft; then
+      :
+    else
+      echo "opencode-wt: warning: could not create the PR via gh — use the URL from the push output" >&2
+    fi
+  fi
+}
+
+cmd_list() {
+  local root=$1 prefix path branch name color dirty line
+  prefix="$root/.opencode/worktrees/"
+  printf '%-20s %-20s %-8s %s\n' NAME BRANCH COLOR STATE
+  git -C "$root" worktree list --porcelain | while IFS= read -r line; do
+    case "$line" in
+      "worktree "*)
+        path=${line#worktree }
+        continue
+        ;;
+      "branch refs/heads/"*) branch=${line#branch refs/heads/} ;;
+      detached) branch="(detached)" ;;
+      *) continue ;;
+    esac
+    case "$path" in
+      "$prefix"*)
+        name=${path#"$prefix"}
+        color=$(git -C "$root" config --get "opencode-wt.$name.color" 2>/dev/null || echo -)
+        if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then
+          dirty=dirty
+        else
+          dirty=clean
+        fi
+        printf '%-20s %-20s %-8s %s\n' "$name" "$branch" "$color" "$dirty"
+        ;;
+    esac
+  done
+}
+
+cmd_done() {
+  local root=$1 name=$2 wt_dir ans state="" parent sid
+  wt_dir="$root/.opencode/worktrees/$name"
+  [ -d "$wt_dir" ] || die "no worktree named '$name' (see opencode-wt -l)"
+  [ -f "$wt_dir/.git" ] ||
+    die "'$name' exists but is not a worktree (try: git worktree prune)"
+
+  if [ -n "$(git -C "$wt_dir" status --porcelain)" ]; then
+    echo "Worktree '$name' has uncommitted changes:"
+    git -C "$wt_dir" status --short
+    printf 'Remove anyway and DISCARD these changes? [y/N] '
+    read -r ans || ans=n
+    case "$ans" in
+      y | Y | yes | YES) git -C "$root" worktree remove --force "$wt_dir" ;;
+      *) die "aborted" ;;
+    esac
+  else
+    git -C "$root" worktree remove "$wt_dir"
+  fi
+
+  git -C "$root" config --unset "opencode-wt.$name.color" 2>/dev/null || true
+
+  # Clean up orphaned session in opencode's DB
+  sid=$(git -C "$root" config --get "opencode-wt.$name.session" 2>/dev/null || true)
+  if [ -n "$sid" ] && command -v opencode >/dev/null 2>&1; then
+    opencode session delete "$sid" 2>/dev/null || true
+  fi
+  git -C "$root" config --unset "opencode-wt.$name.session" 2>/dev/null || true
+
+  parent=$(dirname "$wt_dir")
+  while [ "$parent" != "$root/.opencode/worktrees" ] && rmdir "$parent" 2>/dev/null; do
+    parent=$(dirname "$parent")
+  done
+  echo "Removed worktree '$name'."
+  if command -v gh >/dev/null 2>&1; then
+    state=$(cd "$root" && gh pr view "$name" --json state -q .state 2>/dev/null || true)
+  fi
+  if [ "$state" = "MERGED" ]; then
+    printf "Its PR is merged — delete local branch '%s' too? [Y/n] " "$name"
+    read -r ans || ans=n
+    case "$ans" in
+      n | N | no | NO) echo "Branch kept." ;;
+      *) git -C "$root" branch -D "$name" ;;
+    esac
+  else
+    echo "Branch kept:"
+    echo "  not pushed yet?     git push -u origin $name"
+    echo "  PR merged? delete:  git branch -D $name"
+  fi
+}
+
+cmd_start() {
+  local root=$1 name=$2 color=$3 wt_dir tint="" created="" base
+  local saved="" new
+  git check-ref-format --branch "$name" >/dev/null 2>&1 ||
+    die "'$name' is not a valid branch name"
+  if [ -n "$color" ]; then
+    tint=$(tint_for "$color") || die "unknown color '$color' (valid: $COLOR_NAMES)"
+  fi
+  wt_dir="$root/.opencode/worktrees/$name"
+
+  ensure_excluded "$root"
+
+  if [ ! -d "$wt_dir" ]; then
+    git -C "$root" worktree prune
+    if has_origin "$root"; then
+      if git -C "$root" fetch --quiet origin; then
+        git -C "$root" rev-parse --verify --quiet origin/HEAD >/dev/null ||
+          git -C "$root" remote set-head origin --auto >/dev/null 2>&1 || true
+      else
+        echo "opencode-wt: warning: fetch failed — branching from last-known origin/HEAD" >&2
+      fi
+    fi
+    if git -C "$root" show-ref --verify --quiet "refs/heads/$name"; then
+      echo "Branch '$name' exists — reattaching it to a new worktree."
+      git -C "$root" worktree add "$wt_dir" "$name"
+    else
+      if git -C "$root" rev-parse --verify --quiet origin/HEAD >/dev/null; then
+        base=origin/HEAD
+      else
+        base=HEAD
+      fi
+      git -C "$root" worktree add "$wt_dir" -b "$name" "$base"
+    fi
+    copy_worktreeinclude "$root" "$wt_dir"
+    created=1
+  elif [ ! -f "$wt_dir/.git" ]; then
+    die "'$name' exists but is not a worktree (leftover folder? try: git worktree prune, or pick another name)"
+  fi
+
+  if [ -n "$color" ]; then
+    git -C "$root" config "opencode-wt.$name.color" "$color"
+  else
+    color=$(git -C "$root" config --get "opencode-wt.$name.color" 2>/dev/null || true)
+    if [ -n "$color" ]; then
+      tint=$(tint_for "$color") || true
+    fi
+  fi
+
+  cd "$wt_dir"
+  apply_color "$name" "$tint"
+  [ -n "$tint" ] && trap reset_color EXIT
+
+  # Recover orphaned session after a crash — scan opencode's DB for any session
+  # in this worktree directory that wasn't saved to git config.
+  saved=$(git -C "$root" config --get "opencode-wt.$name.session" 2>/dev/null || true)
+  if [ -z "$saved" ]; then
+    saved=$(find_session_for "$wt_dir")
+    [ -n "$saved" ] && git -C "$root" config "opencode-wt.$name.session" "$saved"
+  fi
+
+  # Temp tui.json with system theme so opencode's background is transparent
+  # and the tmux pane tint (or OSC 11 terminal background) shows through.
+  local _temp_tui=
+  if [ -n "$tint" ]; then
+    _temp_tui=$(mktemp)
+    printf '{"theme":"system"}\n' > "$_temp_tui"
+  fi
+
+  if [ -z "$created" ] && [ -n "$saved" ]; then
+    OPENCODE_TUI_CONFIG="${_temp_tui:-}" opencode --session "$saved" || true
+  else
+    OPENCODE_TUI_CONFIG="${_temp_tui:-}" opencode || true
+  fi
+
+  [ -n "$_temp_tui" ] && rm -f "$_temp_tui"
+
+  # After exit — capture the session that was just created
+  new=$(find_session_for "$wt_dir")
+  if [ -n "$new" ] && [ "$new" != "$saved" ]; then
+    git -C "$root" config "opencode-wt.$name.session" "$new"
+  fi
+
+  offer_push_pr "$name"
+}
+
+case "${1:-}" in
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  -l | --list)
+    [ $# -eq 1 ] || { usage >&2; exit 1; }
+    root=$(main_root)
+    cmd_list "$root"
+    ;;
+  -d | --done)
+    [ $# -eq 2 ] || { usage >&2; exit 1; }
+    root=$(main_root)
+    cmd_done "$root" "$2"
+    ;;
+  "" | -*)
+    usage >&2
+    exit 1
+    ;;
+  *)
+    [ $# -le 2 ] || { usage >&2; exit 1; }
+    root=$(main_root)
+    cmd_start "$root" "$1" "${2:-}"
+    ;;
+esac
