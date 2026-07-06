@@ -16,6 +16,7 @@ claude-wt <name> [color]    # start OR resume session <name>
 claude-wt -l                # list this repo's sessions (branch, color, clean/dirty)
 claude-wt -d <name>         # remove a worktree when you're done
 claude-wt -h                # help + valid colors
+open-wt <editor> <name>     # open an editor in session worktree <name>
 ```
 
 The same command is both start and resume: the first run creates the
@@ -52,7 +53,8 @@ exist only in the worktree folder, so this is how you peek at them:
 git-wt feature-auth status --short    # what's dirty in its worktree
 git-wt feature-auth diff              # uncommitted edits
 git log main..feature-auth            # committed work — visible from the main checkout
-code .claude/worktrees/feature-auth   # or open the worktree in any editor
+code .claude/worktrees/feature-auth   # open the worktree in any editor
+open-wt code feature-auth             # or use the open-wt helper
 ```
 
 ## Colors

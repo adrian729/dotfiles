@@ -190,11 +190,17 @@ from your main checkout. Nothing to sync, pull, or push between them.
   cd .claude/worktrees/feature-auth && nvim    # or any terminal editor
   ```
 
-  VS Code's Source Control panel shows that branch's changes; for nvim,
-  `cd` in first so cwd-based git plugins (gitsigns, fugitive) target the
-  right tree. Editor and session share the working tree: your hand edits
-  are visible to Claude on resume, and its edits appear in your editor
-  live — handy for fixing something yourself mid-review.
+  Or with the `open-wt` helper (which `cd`s in for you so cwd-based
+  plugins target the right tree):
+
+  ```bash
+  open-wt code feature-auth
+  open-wt nvim feature-auth
+  ```
+
+  Editor and session share the working tree: your hand edits are visible
+  to Claude on resume, and its edits appear in your editor live — handy
+  for fixing something yourself mid-review.
 - **Don't checkout the branch in your main folder** — git refuses while
   the worktree exists ("already used by worktree"), because a branch can
   only be checked out in one place. The worktree IS your local checkout of
