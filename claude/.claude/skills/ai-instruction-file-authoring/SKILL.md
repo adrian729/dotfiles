@@ -23,6 +23,7 @@ CLAUDE.md (global `~/.claude/CLAUDE.md` or project `<repo>/CLAUDE.md`): no front
 - Anti-triggers when sibling skill/agent or base agent could grab request — they route *elsewhere*, not *off*; legitimate co-fire? say so, keep anti-trigger narrow.
 - Voice: imperative, condition-first. **you** only when trigger is Claude's own judgment; name **user** only to mark explicit ask vs. inference; never **I**.
 - Word-level trim: drop articles/filler where meaning stays unambiguous — AI readers don't need them. Never cut semantic load: quoted phrasings, sibling names, verbs, NOT-clauses, numbers, slash-commands.
+- Agents with quick/base/deep tiers: descriptions must be cumulative. Deep tier: `"cover everything <base> does AND additionally <its focus>"`. Base tier must encompass quick scope. NOT-clause still routes trivial/specialized cases away, but agent when invoked covers the full stack below it.
 
 ## Body
 - Skill: one line what/why, then procedure. Numbered steps; **bold** labels + `→` for rules; inline code for literals. Reference other skills/commands by name, don't re-explain. Rarely-needed detail → sibling files, pointed to.
@@ -45,7 +46,7 @@ Test per line: "delete this — behavior change?" No → cut. Yes → keep, tigh
 1. **Trigger/Routing** — skill: ends with "Use when", triggers concrete, anti-triggers present where collision possible yet narrow. Agent: leads with "Use", NOT-clause names existing siblings. Mentally test: fires/routes when it should, co-fires where valid, quiet otherwise?
 2. **Frontmatter** — valid; `name` = dir (skill) / filename (agent); only allowed fields. N/A for CLAUDE.md (none).
 3. **Tokens** — every word earns its place; no human framing; no restating description; articles/filler cut where safe.
-4. **Sufficiency** — rules cover needed cases; no gap forcing a guess; agent body states deliverable.
+4. **Sufficiency** — rules cover needed cases; no gap forcing a guess; agent body states deliverable. Quick/base/deep tiers: each tier's description encompasses the tier below.
 5. **Consistency** — body matches description; no contradictions; referenced skills/commands/siblings exist.
 6. **CLAUDE.md** — one topic per header; no cross-hierarchy duplication; automations redirected to hooks/update-config, not memory.
 

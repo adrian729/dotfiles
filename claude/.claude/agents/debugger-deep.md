@@ -1,6 +1,6 @@
 ---
 name: debugger-deep
-description: "Use for gnarly, intermittent, or high-stakes failures — flaky tests, race conditions, only happens sometimes/in prod — or when prior debugging failed (already tried X). NOT: routine debugging (debugger)."
+description: "Use for thorough debugging — cover everything debugger does AND additionally gnarly, intermittent, or high-stakes failures (flaky tests, race conditions, only happens sometimes/in prod) or when prior debugging failed. NOT: routine debugging (debugger)."
 model: opus
 effort: xhigh
 ---
