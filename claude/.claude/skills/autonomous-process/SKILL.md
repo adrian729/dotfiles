@@ -1,6 +1,6 @@
 ---
 name: autonomous-process
-description: Drive task end-to-end hands-off through three gated phases — plan, implement, final review — running audit-loop at each gate, then emit full per-phase process report; runs whole task in auto-mode. Use when user EXPLICITLY asks to run task autonomously / "the full process" / "plan it, build it, and review it on your own" / "end to end without me". NOT triggered by merely being in or selecting auto-mode; NOT for one-off audit/review (use audit-loop or /code-review), nor plain "just implement X" with no plan→review lifecycle.
+description: Drive task end-to-end hands-off through three gated phases — plan, implement, final review — running audit-loop at each gate, then emit full per-phase process report; runs whole task in auto-mode. Use when user EXPLICITLY asks to run task autonomously / "the full process" / "plan it, build it, and review it on your own" / "end to end without me". NOT triggered by merely being in or selecting auto-mode; NOT for one-off audit/review (use audit-loop or reviewer/auditor), nor plain "just implement X" with no plan→review lifecycle.
 ---
 
 # Autonomous Process
@@ -17,7 +17,7 @@ This skill always runs hands-off — there is no interactive variant. Your **ver
 
 ## Phases
 1. **Plan** — produce implementation plan (`Plan` agent for design, `Explore` for investigation, or inline if small). No code changes. Then `audit-loop` the plan: completeness vs intent, contradictions, unstated assumptions, missing edge cases, feasibility. Iterate to convergence. Code stays untouched until plan passes.
-2. **Implement** — execute converged plan; subagents per rule above. Then `audit-loop` the implementation: correctness, security, edge cases, tests, simplification/reuse (reuse `/code-review`, `/security-review`, `/simplify`, `/verify`).
+2. **Implement** — execute converged plan; subagents per rule above. Then `audit-loop` the implementation.
 3. **Final review** — fresh end-to-end pass over whole change against original intent and plan. Issues found → `audit-loop` again until clean. None → done.
 
 Run 1→2→3 without stopping for approval — only pause is one-time auto-mode setup above (and any deviation you explicitly state).
