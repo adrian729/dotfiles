@@ -33,7 +33,7 @@ Non-code targets use same agents — dimensions (§5) drive the focus, not agent
 |------|---------|-----------------|-------------------------------|
 | Quick/cheap | "quick", "cheap", "light" | `reviewer-quick` (sonnet med) | `reviewer` (sonnet xhigh) |
 | Normal | (default) | `reviewer` (sonnet xhigh) | `auditor` (opus high) |
-| Paranoid | "security", "thorough", "audit" | `auditor` (opus high) | `auditor-deep` (opus xhigh) |
+| Paranoid | "security", "thorough", "paranoid", "deep" | `auditor` (opus high) | `auditor-deep` (opus xhigh) |
 | Maximum | "exhaustive", "leave no stone unturned" | `auditor-deep` (opus xhigh) | `auditor-deep` (fresh spawn) |
 
 After confirmation fails → next iteration uses Main loop agent again (all tiers: Reset == Main).
