@@ -29,12 +29,19 @@ CLAUDE.md (global `~/.claude/CLAUDE.md` or project `<repo>/CLAUDE.md`): no front
 - Skill: one line what/why, then procedure. Numbered steps; **bold** labels + `→` for rules; inline code for literals. Reference other skills/commands by name, don't re-explain. Rarely-needed detail → sibling files, pointed to.
 - Agent: one terse imperative line stating deliverable and report shape (e.g. `Analyze and explain, citing file:line.`).
 
-## CLAUDE.md / memory files
+## CLAUDE.md / AGENTS.md / memory files
 - No frontmatter/trigger → skip those sections. Loaded every turn → token discipline applies doubly.
 - One topic per `#` header; each line a behavior-changing directive — imperative rule, not description of current behavior; cut "why".
 - No duplication across hierarchy: project file holds only repo-specific deltas, never restates global rules.
 - Don't re-encode an existing skill's/agent's job — reference by name.
-- Boundary: automated triggers ("whenever/each time/before/after X") belong in settings.json hooks (update-config), NOT CLAUDE.md — which holds only what the model decides/acts on at inference time. Flag and redirect misplaced requests.
+- Boundary: automated triggers ("whenever/each time/before/after X") belong to the harness's own automation mechanism (Claude Code: `settings.json` hooks, via update-config) — NOT the memory file, which holds only what the model decides/acts on at inference time. Flag and redirect misplaced requests.
+
+## Portability
+- Default target: Claude Code + OpenCode both. Cursor too when free, not a hard requirement.
+- Generic by default costs nothing — don't hardcode `claude`-namespaced paths/state dirs, "Claude"-specific wording, or tool examples when a generic equivalent works identically.
+- Tool-specific mechanics only where the task genuinely requires them: Claude Code hooks/settings.json, model/effort dials, UI keybindings, or anything keyed to `.claude/agents/`-only subagents. Don't invent portability where the mechanism doesn't exist elsewhere.
+- Skill/agent inherently tied to one tool (wraps a tool-only mechanism) → say so in its description/body. Don't leave portability ambiguous by omission.
+- A skill genuinely tied to one tool's own mechanism (not just tool-flavored wording) → add an explicit `NOT when <host isn't that tool>` clause to its `description`, so it doesn't fire under a host where it's meaningless or circular — not just document the limit in the body.
 
 ## Token discipline
 Two failure modes:
@@ -49,6 +56,7 @@ Test per line: "delete this — behavior change?" No → cut. Yes → keep, tigh
 4. **Sufficiency** — rules cover needed cases; no gap forcing a guess; agent body states deliverable. Quick/base/deep tiers: each tier's description encompasses the tier below.
 5. **Consistency** — body matches description; no contradictions; referenced skills/commands/siblings exist.
 6. **CLAUDE.md** — one topic per header; no cross-hierarchy duplication; automations redirected to hooks/update-config, not memory.
+7. **Portability** — generic by default (Claude Code + OpenCode; Cursor when free); tool-specific only where the mechanism requires it; genuine tool-lock stated explicitly, not left implicit.
 
 Report by item; fix safe issues, flag judgment calls.
 

@@ -8,7 +8,7 @@ description: Drive task end-to-end hands-off through three gated phases — plan
 Run task through its full lifecycle with no hand-holding: plan → implement → final review, each gate closed by `audit-loop`, then report whole run. Rules below always hold.
 
 ## Auto-mode (first action, before any work)
-This skill always runs hands-off — there is no interactive variant. Your **very first action**, before Phase 1 or any planning, is to get into auto-mode (auto-accepting actions, no per-step approval): switch it automatically if you can; otherwise prompt user once to enable it (shift+Tab → auto-accept) and wait for confirmation. This is the **only** interactive moment — after it the entire run, planning included, proceeds unattended. Hard rules below still hold with auto-mode on.
+This skill always runs hands-off — there is no interactive variant. Your **very first action**, before Phase 1 or any planning, is to get into auto-mode (auto-accepting actions, no per-step approval): switch it automatically if you can; otherwise prompt user once to enable it and wait for confirmation. This is the **only** interactive moment — after it the entire run, planning included, proceeds unattended. Hard rules below still hold with auto-mode on.
 
 ## Hard rules
 - **No code in Phase 1.** Never edit/write project files during planning or its audit loop — even in auto-mode. Plan artifacts only. Touch code before plan converges only for reason you state explicitly.
