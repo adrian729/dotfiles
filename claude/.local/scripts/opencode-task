@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# opencode-task — delegate a real coding task to OpenCode's own agent loop
+# (bash + edit + read tools), running headlessly and unattended.
+#
+# Complements opencode-wt (interactive, tmux, a human at the keyboard): this
+# is the non-interactive, scriptable form — the way Claude calls its own
+# subagents, but backed by OpenCode instead. Worktrees live at
+# <repo>/.opencode/worktrees/<name>, the SAME convention opencode-wt uses, so
+# `opencode-wt -l` lists them and `opencode-wt -d <name>` cleans them up.
+# Re-running the same NAME resumes that worktree's OpenCode session.
+#
+# SAFETY MODEL — read before changing anything below:
+# `--auto` (auto-approve any permission not explicitly denied) is required
+# because there is no TTY to answer prompts. Mitigations, honestly scoped:
+# global opencode.json denies `git push`/`git push *` for every OpenCode
+# agent, this script never merges the worktree into the caller's checkout or
+# pushes it, and the default `task` agent (opencode.json) denies
+# external_directory so its edit/read/glob tools can't touch paths outside
+# the worktree. None of this is a real sandbox: the bash tool can still run
+# any command, including ones that touch paths outside the worktree — the
+# worktree is a courtesy boundary against normal agent behavior, not a
+# containment guarantee against an adversarial or malfunctioning model.
+# Do NOT repurpose this to run --auto against a real working directory.
+set -euo pipefail
+
+AGENT="task"
+TIMEOUT=1800
+
+die() { echo "opencode-task: $*" >&2; exit 1; }
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: opencode-task NAME PROMPT...
+  NAME         worktree/branch/session name (same convention as opencode-wt)
+  -m MODEL     provider/model (default: OpenCode's own default)
+  --agent A    agent to run (default: task — bash/edit/read, confined to --dir)
+  -T SECS      timeout (default 1800)
+Runs in <repo>/.opencode/worktrees/NAME; re-running the same NAME resumes that
+session. Never pushes, never merges into your checkout — inspect with
+`opencode-git-wt NAME diff`, clean up with `opencode-wt -d NAME`.
+Exit: 0 ok · 1 usage · 2 bad name · 3 opencode/git/jq missing · 6 API error · 124 timeout
+EOF
+  exit 1
+}
+
+# --- parse args ---------------------------------------------------------------
+[ $# -ge 1 ] || usage
+NAME="$1"; shift
+MODEL=""
+AGENT_ARG=""
+TIMEOUT_ARG=""
+PROMPT_PARTS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -m) [ $# -ge 2 ] || usage; MODEL="$2"; shift 2 ;;
+    --agent) [ $# -ge 2 ] || usage; AGENT_ARG="$2"; shift 2 ;;
+    -T) [ $# -ge 2 ] || usage; TIMEOUT_ARG="$2"; shift 2 ;;
+    --) shift; while [ $# -gt 0 ]; do PROMPT_PARTS+=("$1"); shift; done ;;
+    -*) echo "opencode-task: unknown flag: $1" >&2; usage ;;
+    *) PROMPT_PARTS+=("$1"); shift ;;
+  esac
+done
+[ ${#PROMPT_PARTS[@]} -gt 0 ] || usage
+PROMPT="${PROMPT_PARTS[*]}"
+[ -n "$AGENT_ARG" ] && AGENT="$AGENT_ARG"
+[ -n "$TIMEOUT_ARG" ] && TIMEOUT="$TIMEOUT_ARG"
+
+case "$TIMEOUT" in *[!0-9]*|'') die "invalid -T (seconds): $TIMEOUT" ;; esac
+
+command -v opencode >/dev/null 2>&1 || { echo "opencode-task: opencode CLI not found" >&2; exit 3; }
+command -v git >/dev/null 2>&1 || { echo "opencode-task: git required" >&2; exit 3; }
+command -v jq >/dev/null 2>&1 || { echo "opencode-task: jq required" >&2; exit 3; }
+
+git check-ref-format --branch "$NAME" >/dev/null 2>&1 || { echo "opencode-task: '$NAME' is not a valid branch name" >&2; exit 2; }
+
+ROOT_COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
+ROOT=$(dirname "$ROOT_COMMON")
+WT_DIR="$ROOT/.opencode/worktrees/$NAME"
+
+# --- portable timeout wrapper (macOS has no `timeout`) ------------------------
+TIMEOUT_BIN=""
+if command -v timeout >/dev/null 2>&1; then TIMEOUT_BIN="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then TIMEOUT_BIN="gtimeout"
+fi
+
+copy_worktreeinclude() {
+  local root="$1" wt_dir="$2" f
+  [ -f "$root/.worktreeinclude" ] || return 0
+  git -C "$root" ls-files -o -i --exclude-from="$root/.worktreeinclude" -z |
+    while IFS= read -r -d '' f; do
+      case "$f" in */) continue ;; esac
+      mkdir -p "$wt_dir/$(dirname "$f")"
+      cp "$root/$f" "$wt_dir/$f" ||
+        echo "opencode-task: warning: could not copy $f into the worktree" >&2
+    done
+}
+
+# Caller MUST invoke this with errexit off (bracket with set +e / set -e).
+# Runs CMD in its own process group so a timeout kill reaches any children it
+# spawns (test runners, builds, ...), not just the immediate process.
+run_timed() { # run_timed SECS CMD...  — returns 124 on timeout
+  local secs="$1"; shift
+  if [ -n "$TIMEOUT_BIN" ]; then
+    "$TIMEOUT_BIN" "$secs" "$@"
+    return $?
+  fi
+  local marker; marker=$(mktemp "${TMPDIR:-/tmp}/opencode-task.timeout.XXXXXX")
+  rm -f "$marker"
+  set -m
+  "$@" &
+  local pid=$!
+  set +m
+  ( sleep "$secs" 2>/dev/null
+    if kill -0 "$pid" 2>/dev/null; then
+      if kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null; then
+        : > "$marker"
+      fi
+    fi
+  ) &
+  local watcher=$!
+  wait "$pid" 2>/dev/null
+  local rc=$?
+  kill "$watcher" 2>/dev/null || true
+  wait "$watcher" 2>/dev/null || true
+  if [ -f "$marker" ]; then rm -f "$marker"; return 124; fi
+  return "$rc"
+}
+
+# --- create or reuse the worktree (same layout/bookkeeping as opencode-wt) ---
+SAVED_SESSION=""
+if [ ! -d "$WT_DIR" ]; then
+  git -C "$ROOT" worktree prune
+  if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
+    git -C "$ROOT" fetch --quiet origin || echo "opencode-task: warning: fetch failed — branching from last-known origin/HEAD" >&2
+  fi
+  if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$NAME"; then
+    echo "opencode-task: branch '$NAME' exists — reattaching it to a new worktree." >&2
+    git -C "$ROOT" worktree add "$WT_DIR" "$NAME"
+  else
+    base=HEAD
+    git -C "$ROOT" rev-parse --verify --quiet origin/HEAD >/dev/null && base=origin/HEAD
+    git -C "$ROOT" worktree add "$WT_DIR" -b "$NAME" "$base"
+  fi
+  copy_worktreeinclude "$ROOT" "$WT_DIR"
+  exclude="$ROOT/.git/info/exclude"
+  mkdir -p "$(dirname "$exclude")"
+  grep -qxF '.opencode/worktrees/' "$exclude" 2>/dev/null || echo '.opencode/worktrees/' >>"$exclude"
+elif [ ! -f "$WT_DIR/.git" ]; then
+  die "'$NAME' exists but is not a worktree (try: git worktree prune, or pick another name)"
+else
+  SAVED_SESSION=$(git -C "$ROOT" config --get "opencode-wt.$NAME.session" 2>/dev/null || true)
+  echo "opencode-task: reusing existing worktree '$NAME'${SAVED_SESSION:+ (resuming session $SAVED_SESSION)}" >&2
+fi
+
+# --- run headlessly, confined to the worktree ---------------------------------
+echo "opencode-task: running in $WT_DIR (agent=$AGENT${MODEL:+, model=$MODEL}, timeout=${TIMEOUT}s) ..." >&2
+
+OC_ARGS=()
+[ -n "$MODEL" ] && OC_ARGS+=(-m "$MODEL")
+[ -n "$SAVED_SESSION" ] && OC_ARGS+=(-s "$SAVED_SESSION")
+
+RESP_FILE=$(mktemp "${TMPDIR:-/tmp}/opencode-task.resp.XXXXXX")
+trap 'rm -f "$RESP_FILE"' EXIT
+
+set +e
+run_timed "$TIMEOUT" opencode run "${OC_ARGS[@]+"${OC_ARGS[@]}"}" --agent "$AGENT" --dir "$WT_DIR" --auto --format json -- "$PROMPT" >"$RESP_FILE"
+rc=$?
+set -e
+
+if [ "$rc" -eq 124 ]; then
+  echo "opencode-task: timed out after ${TIMEOUT}s — worktree left at $WT_DIR for inspection" >&2
+  exit 124
+fi
+
+sid=$(jq -rs 'map(select(.sessionID != null) | .sessionID) | first // empty' "$RESP_FILE" 2>/dev/null)
+[ -n "$sid" ] && git -C "$ROOT" config "opencode-wt.$NAME.session" "$sid"
+
+errmsg=$(jq -r 'select(.type=="error") | (.error.data.message // .error.name // "unknown error")' "$RESP_FILE" 2>/dev/null | head -1)
+# Dedupe by part.id, keeping the last (assumed-cumulative) text per id, in
+# first-seen order — safe whether or not a part streams multiple snapshots.
+resp=$(jq -rs '
+  [.[] | select(.type=="text")]
+  | reduce .[] as $e ({}; .[$e.part.id] = $e.part.text)
+  | to_entries | .[].value
+' "$RESP_FILE" 2>/dev/null)
+
+echo ""
+echo "=== opencode-task: '$NAME' finished (exit $rc) ==="
+if [ -n "$resp" ]; then
+  echo "$resp"
+fi
+if [ -n "$errmsg" ]; then
+  echo "opencode-task: error: $errmsg" >&2
+fi
+
+echo ""
+echo "--- changes in $WT_DIR ---"
+git -C "$WT_DIR" status --short
+git -C "$WT_DIR" diff --shortstat
+echo ""
+echo "Inspect:   opencode-git-wt $NAME diff"
+echo "Resume:    opencode-wt $NAME       (interactive, same session)"
+echo "Discard:   opencode-wt -d $NAME"
+
+[ "$rc" -eq 0 ] && [ -z "$errmsg" ] || exit 6
+exit 0
