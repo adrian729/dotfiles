@@ -1,0 +1,8 @@
+{
+  "preferred": [
+    "opencode/deepseek-v4-flash-free",
+    "opencode/mimo-v2.5-free",
+    "opencode/hy3-free",
+    "opencode/big-pickle"
+  ]
+}

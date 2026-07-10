@@ -55,41 +55,36 @@ disabled() {
   exit 0
 }
 
-# --- static model catalog ----------------------------------------------------
-# Footprints are fixed worst-case GB at 32k ctx (weights + KV) — deliberately
-# conservative; no per-tier footprint math. Adding a model = one line here + in
-# the ordered lists / better_at_code below.
+# --- model catalog (from llm-models-probe state, then config, then built-in) ---
+CATALOG_STATE="$HOME/.local/state/agents/local-llm-models.json"
+CATALOG_CONFIG="$HOME/.local/config/local-llm-models.json"
+
+CATALOG_FILE=""
+[ -f "$CATALOG_STATE" ]  && CATALOG_FILE="$CATALOG_STATE"
+[ -z "$CATALOG_FILE" ]   && [ -f "$CATALOG_CONFIG" ] && CATALOG_FILE="$CATALOG_CONFIG"
+
 footprint_gb() {
-  case "$1" in
-    qwen3:30b)        echo 22 ;;
-    qwen3-coder:30b)  echo 22 ;;
-    qwen3:14b)        echo 12 ;;
-    qwen3:8b)         echo 7 ;;
-    qwen2.5-coder:7b) echo 6 ;;
-    *) return 1 ;;
-  esac
+  jq -r --arg n "$1" '.models[$n].footprint_gb // empty' "$CATALOG_FILE" 2>/dev/null || true
 }
 
-# Generalist (compress) candidates, best → smallest.
-COMPRESS_CANDIDATES="qwen3:30b qwen3:14b qwen3:8b"
-# Specialist coder candidates, best → smallest.
-CODER_CANDIDATES="qwen3-coder:30b qwen2.5-coder:7b"
-
-# Does coder $1 genuinely out-code generalist $2? A small specialist does NOT
-# beat a much bigger generalist at its own specialty.
+# Does coder $1 genuinely out-code generalist $2?
 better_at_code() {
-  local coder="$1" generalist="$2"
-  case "$coder" in
-    qwen3-coder:30b)  # 30B specialist beats every generalist here
-      return 0 ;;
-    qwen2.5-coder:7b) # beats a 14B/8B generalist, NOT the 30B
-      case "$generalist" in
-        qwen3:14b | qwen3:8b) return 0 ;;
-        *) return 1 ;;
-      esac ;;
-  esac
+  local coder="$1" generalist="$2" beats
+  beats=$(jq -r --arg c "$coder" '.better_at_code[$c] // [] | join(",")' "$CATALOG_FILE" 2>/dev/null || echo "")
+  [ "$beats" = "*" ] && return 0
+  case ",$beats," in *",$generalist,"*) return 0 ;; esac
   return 1
 }
+
+if [ -n "$CATALOG_FILE" ]; then
+  COMPRESS_CANDIDATES=$(jq -r '.compress_order | join(" ")' "$CATALOG_FILE" 2>/dev/null || echo "")
+  CODER_CANDIDATES=$(jq -r '.coder_order | join(" ")' "$CATALOG_FILE" 2>/dev/null || echo "")
+else
+  # Built-in fallback (last resort — state or config should normally exist)
+  echo "llm-probe: no model catalog found — using built-in fallback" >&2
+  COMPRESS_CANDIDATES="qwen3:30b qwen3:14b qwen3:8b"
+  CODER_CANDIDATES="qwen3-coder:30b qwen2.5-coder:7b"
+fi
 
 # --- 0. timestamp ------------------------------------------------------------
 PROBED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -186,6 +181,7 @@ COMPRESS_PRIMARY=""
 COMPRESS_BACKUP=""
 for m in $COMPRESS_CANDIDATES; do
   fp=$(footprint_gb "$m")
+  [ -n "$fp" ] || continue
   if [ "$fp" -le "$MODEL_BUDGET_GB" ]; then
     if [ -z "$COMPRESS_PRIMARY" ]; then
       COMPRESS_PRIMARY="$m"
@@ -206,6 +202,7 @@ CODE_PRIMARY="$COMPRESS_PRIMARY"
 CODE_BACKUP="$COMPRESS_BACKUP"
 for c in $CODER_CANDIDATES; do
   cfp=$(footprint_gb "$c")
+  [ -n "$cfp" ] || continue
   if better_at_code "$c" "$COMPRESS_PRIMARY" && [ $((COMPRESS_FP + cfp)) -le "$MODEL_BUDGET_GB" ]; then
     POLICY="multi-model"
     CODE_PRIMARY="$c"
@@ -217,8 +214,10 @@ done
 if [ "$POLICY" = "single-model" ]; then
   # Explain why no coder earned a slot (co-fit vs out-code), for the record.
   best_coder=$(set -- $CODER_CANDIDATES; echo "$1")
-  best_coder_fp=$(footprint_gb "$best_coder")
-  if [ $((COMPRESS_FP + best_coder_fp)) -gt "$MODEL_BUDGET_GB" ]; then
+  if [ -n "$best_coder" ]; then
+    best_coder_fp=$(footprint_gb "$best_coder")
+  fi
+  if [ -n "${best_coder_fp:-}" ] && [ $((COMPRESS_FP + best_coder_fp)) -gt "$MODEL_BUDGET_GB" ]; then
     POLICY_REASON="$COMPRESS_PRIMARY (${COMPRESS_FP}GB) + $best_coder (${best_coder_fp}GB) = $((COMPRESS_FP + best_coder_fp))GB > budget ${MODEL_BUDGET_GB}GB — no co-fit, no-swap rule forces one model for everything"
   else
     POLICY_REASON="no catalogued coder out-codes $COMPRESS_PRIMARY at its budget — one model for everything"

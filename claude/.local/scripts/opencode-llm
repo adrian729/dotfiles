@@ -22,6 +22,16 @@ set -euo pipefail
 
 AGENT="relay"
 NEUTRAL_DIR="$HOME/.local/state/agents/opencode-llm-cwd"
+STATE_FILE="$HOME/.local/state/agents/opencode-llm.json"
+CONFIG_FILE="$HOME/.local/config/opencode-llm-models.json"
+
+# --- built-in fallback model list (last resort) ------------------------------
+FALLBACK_MODELS=(
+  opencode/deepseek-v4-flash-free
+  opencode/mimo-v2.5-free
+  opencode/hy3-free
+  opencode/big-pickle
+)
 
 die() { echo "opencode-llm: $*" >&2; exit 1; }
 
@@ -121,22 +131,31 @@ Answer the request above the content."
 fi
 [ -n "$FULL_PROMPT" ] || { echo "opencode-llm: empty prompt and empty stdin" >&2; exit 2; }
 
-# --- candidate models (free tier, ordered by measured latency) ---------------
-# opencode/big-pickle and opencode/north-mini-code-free are solid but run
-# ~70-80s per call (heavy hidden reasoning) even for trivial prompts — kept
-# only as a last resort. deepseek-v4-flash-free / mimo-v2.5-free answer in
-# ~2s; hy3-free ~10s. Re-measure with -T if the zen free tier's mix changes.
+# --- candidate model list (state → config → built-in fallback) ----------------
+# opencode/big-pickle is solid but runs ~70-80s per call (heavy hidden
+# reasoning) — kept only as a last resort. deepseek-v4-flash-free /
+# mimo-v2.5-free answer in ~2s; hy3-free ~10s.
+# The model chain is tuned per-machine by opencode-llm-probe at install time.
 MODELS=()
-if [ -n "$FORCE_MODEL" ]; then
-  MODELS=("$FORCE_MODEL")
-else
-  MODELS=(
-    opencode/deepseek-v4-flash-free
-    opencode/mimo-v2.5-free
-    opencode/hy3-free
-    opencode/big-pickle
-  )
-fi
+load_models() {
+  if [ -n "$FORCE_MODEL" ]; then
+    MODELS=("$FORCE_MODEL")
+    return
+  fi
+  if [ -f "$STATE_FILE" ]; then
+    while IFS= read -r m; do [ -n "$m" ] && MODELS+=("$m"); done \
+      < <(jq -r '.models[]?' "$STATE_FILE" 2>/dev/null)
+  fi
+  if [ ${#MODELS[@]} -eq 0 ] && [ -f "$CONFIG_FILE" ]; then
+    while IFS= read -r m; do [ -n "$m" ] && MODELS+=("$m"); done \
+      < <(jq -r '.preferred[]?' "$CONFIG_FILE" 2>/dev/null)
+  fi
+  if [ ${#MODELS[@]} -eq 0 ]; then
+    MODELS=("${FALLBACK_MODELS[@]}")
+    echo "opencode-llm: no model config found — using built-in fallback" >&2
+  fi
+}
+load_models
 
 # --- request with fallback walk -----------------------------------------------
 tried=""

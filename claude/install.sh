@@ -11,11 +11,19 @@ else
     echo "~/.claude.json not found, skipping (run claude once first)."
 fi
 
+# Probe this machine's local-LLM (ollama) model availability and filter the
+# catalog against what's actually pulled. Runs before llm-probe, which reads
+# the filtered catalog. Non-fatal in every case.
+probe="$HOME/.local/scripts/llm-models-probe"
+if [ -x "$probe" ]; then
+    "$probe" || echo "llm-models-probe failed — using static catalog"
+else
+    echo "llm-models-probe not stowed yet — skipping"
+fi
+
 # Probe this machine's local-LLM (ollama) capability and record the per-machine
-# policy for Claude/the `llm` wrapper. Run by explicit path, not bare name:
-# ~/.local/scripts is only on PATH via zshrc (never sourced by this installer),
-# and this script runs even if the user declined stowing `claude`, so the
-# symlink may not exist yet. Non-fatal in every case — install proceeds.
+# policy for Claude/the `llm` wrapper. Reads the model catalog from the state
+# file written by llm-models-probe above (or falls back to static config).
 probe="$HOME/.local/scripts/llm-probe"
 if [ -x "$probe" ]; then
     "$probe" || echo "llm-probe ran but failed — skipping local-LLM capability check"

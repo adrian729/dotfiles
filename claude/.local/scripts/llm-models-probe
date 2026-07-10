@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# llm-models-probe — verify the local-llm model catalog against what ollama
+# has actually installed on this machine. Filters out uncatalogued models from
+# compress_order / coder_order; if none of the catalogued models are installed,
+# discovers alternatives by estimating footprints from tag parameter counts.
+#
+# Runs at install time (claude/install.sh), before llm-probe (which reads the
+# filtered catalog). Writes ~/.local/state/agents/local-llm-models.json.
+# Non-fatal — install proceeds; the runtime `llm` script falls back gracefully.
+set -euo pipefail
+
+STATE_DIR="$HOME/.local/state/agents"
+STATE_FILE="$STATE_DIR/local-llm-models.json"
+CONFIG_FILE="$HOME/.local/config/local-llm-models.json"
+
+die() { echo "llm-models-probe: $*" >&2; exit 1; }
+
+mkdir -p "$STATE_DIR" || die "could not create $STATE_DIR"
+
+PROBED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# --- read the static catalog -------------------------------------------------
+if [ -f "$CONFIG_FILE" ]; then
+  CATALOG_MODELS=$(jq '.models' "$CONFIG_FILE" 2>/dev/null || echo "null")
+  COMPRESS_ORDER=()
+  while IFS= read -r m; do [ -n "$m" ] && COMPRESS_ORDER+=("$m"); done \
+    < <(jq -r '.compress_order[]?' "$CONFIG_FILE" 2>/dev/null)
+  CODER_ORDER=()
+  while IFS= read -r m; do [ -n "$m" ] && CODER_ORDER+=("$m"); done \
+    < <(jq -r '.coder_order[]?' "$CONFIG_FILE" 2>/dev/null)
+  BETTER_AT_CODE=$(jq '.better_at_code' "$CONFIG_FILE" 2>/dev/null || echo "null")
+else
+  echo "llm-models-probe: $CONFIG_FILE not found — using built-in fallback" >&2
+  CATALOG_MODELS='{
+    "qwen3:30b":{"footprint_gb":22},"qwen3-coder:30b":{"footprint_gb":22},
+    "qwen3:14b":{"footprint_gb":12},"qwen3:8b":{"footprint_gb":7},
+    "qwen2.5-coder:7b":{"footprint_gb":6}}'
+  COMPRESS_ORDER=(qwen3:30b qwen3:14b qwen3:8b)
+  CODER_ORDER=(qwen3-coder:30b qwen2.5-coder:7b)
+  BETTER_AT_CODE='{"qwen3-coder:30b":["*"],"qwen2.5-coder:7b":["qwen3:14b","qwen3:8b"]}'
+fi
+
+# --- try to connect to ollama server -----------------------------------------
+NOTE=""
+INSTALLED=()
+
+if curl -sf --max-time 2 "localhost:11434/api/version" >/dev/null 2>&1; then
+  mapfile -t INSTALLED < <( \
+    curl -s "localhost:11434/api/tags" 2>/dev/null \
+    | jq -r '.models[].name' 2>/dev/null || true)
+fi
+
+# Helper: check if a model name is in the installed list.
+is_installed() {
+  local name="$1"
+  for i in "${INSTALLED[@]}"; do
+    [ "$i" = "$name" ] && return 0
+  done
+  return 1
+}
+
+if [ ${#INSTALLED[@]} -eq 0 ]; then
+  NOTE="ollama not running — using static catalog; could not verify against local install"
+  FILTERED_COMPRESS=("${COMPRESS_ORDER[@]}")
+  FILTERED_CODER=("${CODER_ORDER[@]}")
+  FILTERED_BETTER="$BETTER_AT_CODE"
+  FILTERED_MODELS="$CATALOG_MODELS"
+else
+  # --- filter compress_order ------------------------------------------------
+  REMOVED_COMPRESS=()
+  FILTERED_COMPRESS=()
+  for m in "${COMPRESS_ORDER[@]}"; do
+    if is_installed "$m"; then
+      FILTERED_COMPRESS+=("$m")
+    else
+      REMOVED_COMPRESS+=("$m")
+    fi
+  done
+
+  # --- filter coder_order ---------------------------------------------------
+  REMOVED_CODER=()
+  FILTERED_CODER=()
+  for m in "${CODER_ORDER[@]}"; do
+    if is_installed "$m"; then
+      FILTERED_CODER+=("$m")
+    else
+      REMOVED_CODER+=("$m")
+    fi
+  done
+
+  # --- filter better_at_code — drop coders that are no longer in FILTERED_CODER
+  if [ "${FILTERED_CODER[*]}" != "${CODER_ORDER[*]}" ]; then
+    FILTERED_BETTER=$(jq -n --argjson src "$BETTER_AT_CODE" \
+      'reduce ($src | keys[]) as $k ({}; if ([$k] | inside($ARGS.positional // [])) then .[$k] = $src[$k] else . end)' \
+      --args "${FILTERED_CODER[@]}" 2>/dev/null || echo "$BETTER_AT_CODE")
+  else
+    FILTERED_BETTER="$BETTER_AT_CODE"
+  fi
+
+  # --- filter models map — keep only models still in either order -----------
+  ALL_KEPT=()
+  for m in "${FILTERED_COMPRESS[@]}" "${FILTERED_CODER[@]}"; do
+    ALL_KEPT+=("$m")
+  done
+  if [ ${#ALL_KEPT[@]} -gt 0 ]; then
+    FILTERED_MODELS=$(jq -n \
+      --argjson src "$CATALOG_MODELS" \
+      --argjson keep "$(printf '%s\n' "${ALL_KEPT[@]}" | jq -R . | jq -s .)" \
+      'reduce $keep[] as $k ({}; .[$k] = $src[$k])' 2>/dev/null || echo "$CATALOG_MODELS")
+  else
+    FILTERED_MODELS="{}"
+  fi
+
+  # --- build summary note ---------------------------------------------------
+  REMOVED=()
+  [ ${#REMOVED_COMPRESS[@]} -gt 0 ] && REMOVED+=("compress: ${REMOVED_COMPRESS[*]}")
+  [ ${#REMOVED_CODER[@]} -gt 0 ] && REMOVED+=("coder: ${REMOVED_CODER[*]}")
+  if [ ${#REMOVED[@]} -gt 0 ]; then
+    NOTE="ollama running — removed: $(IFS='; '; echo "${REMOVED[*]}")"
+  else
+    NOTE="ollama running — all catalogued models verified"
+  fi
+
+  # --- if nothing matched, discover from installed models -------------------
+  if [ ${#FILTERED_COMPRESS[@]} -eq 0 ]; then
+    DISCOVERED=()
+    for i in "${INSTALLED[@]}"; do
+      # Extract param count from tag (e.g. "qwen3:30b" -> 30, "llama3.2:3b" -> 3.2)
+      param_str="${i##*:}"
+      param_b=$(echo "$param_str" | sed -n 's/^\([0-9.]*\)b$/\1/p' || true)
+      [ -z "$param_b" ] && continue
+      # Estimate footprint: param_b * 0.7 + 1 GB
+      fp_gb=$(echo "$param_b * 0.7 + 1" | bc 2>/dev/null || echo 0)
+      [ "$(echo "$fp_gb > 0" | bc)" -eq 0 ] && continue
+      DISCOVERED+=("$i:$fp_gb")
+    done
+    if [ ${#DISCOVERED[@]} -gt 0 ]; then
+      # Sort by footprint descending
+      DISCOVERED_SORTED=$(printf '%s\n' "${DISCOVERED[@]}" \
+        | sort -t: -k2 -rn \
+        | awk -F: '{print $1}')
+      mapfile -t FILTERED_COMPRESS <<<"$DISCOVERED_SORTED"
+      # Build models map with estimated footprints
+      ESTIMATES="{}"
+      for item in "${DISCOVERED[@]}"; do
+        name="${item%%:*}"
+        fp="${item##*:}"
+        ESTIMATES=$(echo "$ESTIMATES" | jq --arg n "$name" --argjson f "$fp" '.[$n] = {footprint_gb: $f}' 2>/dev/null || echo "$ESTIMATES")
+      done
+      FILTERED_MODELS="$ESTIMATES"
+      NOTE="${NOTE}; no catalogued compress models installed — estimated footprints for: ${FILTERED_COMPRESS[*]}"
+    else
+      NOTE="${NOTE}; no catalogued or discoverable models — using empty catalog"
+    fi
+    FILTERED_CODER=()
+    FILTERED_BETTER="{}"
+  fi
+fi
+
+# --- build ordered fallback lists --------------------------------------------
+# (mirrors what llm-probe does: primary + first backup per list)
+compress_list=$(printf '%s\n' "${FILTERED_COMPRESS[@]}" | jq -R . | jq -s . 2>/dev/null || echo '[]')
+code_list=$(printf '%s\n' "${FILTERED_CODER[@]}" | jq -R . | jq -s . 2>/dev/null || echo '[]')
+
+# --- write state file --------------------------------------------------------
+json=$(jq -n \
+  --arg at "$PROBED_AT" \
+  --arg note "${NOTE:-verified}" \
+  --argjson models "$FILTERED_MODELS" \
+  --argjson compress "$compress_list" \
+  --argjson code "$code_list" \
+  --argjson better "${FILTERED_BETTER:-{\}}" \
+  '{probed_at:$at, models:$models, compress_order:$compress, coder_order:$code, better_at_code:$better, note:$note}')
+
+tmp="$STATE_FILE.$$.tmp"
+printf '%s\n' "$json" >"$tmp" || die "could not write $tmp"
+mv -f "$tmp" "$STATE_FILE" || die "could not move state file into place"
+
+# --- one-line summary --------------------------------------------------------
+echo "llm-models: $NOTE"
