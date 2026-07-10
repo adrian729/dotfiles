@@ -1,23 +1,6 @@
 #!/usr/bin/env bash
-# opencode-llm — delegate a token-heavy micro-task to a free-tier cloud model
-# via OpenCode's `relay` agent (defined in opencode.json: no tools, text in /
-# text out), so Claude spends no tokens on the bulk. Same contract as `llm`
-# (the local-ollama sibling): pipe big content in on stdin (compression: only
-# the short answer comes back) or write bulk output to a file with -o
-# (generation: Claude spot-checks cheaply).
-#
-# Prefer `llm` first — it's free, offline, and has zero external dependency.
-# Reach for this one when local delegation is disabled/unavailable on this
-# machine, or the task wants a different model than the local fallback chain
-# offers. Requires the `opencode` CLI, already logged in (`opencode auth
-# login` / `opencode providers login`).
-#
-# It NEVER runs with tool access (the `relay` agent denies every tool) and
-# never touches the caller's working directory — every call runs with --dir
-# pointed at a fixed neutral folder so no project's opencode.json can override
-# `relay`'s behavior. When it can't delegate it exits nonzero with a one-line
-# reason on stderr; the local-llm skill's rule then applies: do the task the
-# normal Claude way.
+# opencode-llm — delegate token-heavy micro-task to free-tier cloud model via OpenCode relay.
+# Same contract as `llm`. Prefer `llm` first (free, offline); use this when local disabled.
 set -euo pipefail
 
 AGENT="relay"
@@ -25,7 +8,6 @@ NEUTRAL_DIR="$HOME/.local/state/agents/opencode-llm-cwd"
 STATE_FILE="$HOME/.local/state/agents/opencode-llm.json"
 CONFIG_FILE="$HOME/.local/config/opencode-llm-models.json"
 
-# --- built-in fallback model list (last resort) ------------------------------
 FALLBACK_MODELS=(
   opencode/deepseek-v4-flash-free
   opencode/mimo-v2.5-free
@@ -47,7 +29,7 @@ EOF
   exit 1
 }
 
-# --- parse args --------------------------------------------------------------
+
 FORCE_MODEL=""
 TIMEOUT=300
 OUTFILE=""
@@ -111,7 +93,6 @@ run_timed() { # run_timed SECS CMD...  — returns 124 on timeout
   return "$rc"
 }
 
-# --- read stdin (the content to operate on), if any --------------------------
 STDIN_FILE=$(mktemp "${TMPDIR:-/tmp}/opencode-llm.stdin.XXXXXX")
 RESP_FILE=$(mktemp "${TMPDIR:-/tmp}/opencode-llm.resp.XXXXXX")
 trap 'rm -f "$STDIN_FILE" "$RESP_FILE"' EXIT
@@ -131,7 +112,7 @@ Answer the request above the content."
 fi
 [ -n "$FULL_PROMPT" ] || { echo "opencode-llm: empty prompt and empty stdin" >&2; exit 2; }
 
-# --- candidate model list (state → config → built-in fallback) ----------------
+
 # opencode/big-pickle is solid but runs ~70-80s per call (heavy hidden
 # reasoning) — kept only as a last resort. deepseek-v4-flash-free /
 # mimo-v2.5-free answer in ~2s; hy3-free ~10s.
@@ -157,7 +138,7 @@ load_models() {
 }
 load_models
 
-# --- request with fallback walk -----------------------------------------------
+
 tried=""
 n=${#MODELS[@]}
 i=0

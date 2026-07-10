@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 # opencode-wt — start or resume an OpenCode session in its own git worktree.
-# One command per task: same invocation creates the worktree+branch+session the
-# first time and resumes the same session every time after. Optional color tints
-# the tmux pane background so parallel sessions are distinguishable.
 set -euo pipefail
 
 COLOR_NAMES="red maroon peach yellow green teal sky sapphire blue lavender mauve pink flamingo rosewater"

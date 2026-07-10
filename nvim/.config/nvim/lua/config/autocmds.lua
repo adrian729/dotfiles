@@ -1,4 +1,3 @@
--- Set scroll offset
 local vcenter_group = vim.api.nvim_create_augroup("VCenterCursor", { clear = true })
 vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter", "WinNew", "VimResized" }, {
 	group = vcenter_group,
@@ -9,7 +8,6 @@ vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter", "WinNew", "VimResized" }, 
 	end,
 })
 
--- FT rulers
 local rulers = {
 	lua = "80,120",
 	rust = "80,100",

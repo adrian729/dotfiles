@@ -1,6 +1,5 @@
 local opt = vim.opt
 
--- UI
 vim.g.have_nerd_fonts = true
 opt.termguicolors = true
 opt.number = true
@@ -12,22 +11,17 @@ opt.splitbelow = true
 opt.splitright = true
 opt.wrap = false
 opt.updatetime = 250
--- Tab
 opt.expandtab = true
 opt.tabstop = 4
 opt.shiftwidth = 4
--- Behaviour
 opt.clipboard = "unnamedplus" -- Sync system clipboard with nvim clipboard
 opt.completeopt = { "menu", "menuone", "noselect" }
 opt.virtualedit = "block"
 opt.inccommand = "split"
--- Search
 opt.ignorecase = true
 opt.smartcase = true
--- Leader
 vim.g.mapleader = " "
 vim.g.maplocalleader = "\\"
--- Setup diagnostigs
 vim.diagnostic.config({
 	-- virtual_text = true,
 	-- virtual_lines = false,

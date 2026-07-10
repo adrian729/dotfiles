@@ -1,26 +1,8 @@
 #!/usr/bin/env bash
-# opencode-task — delegate a real coding task to OpenCode's own agent loop
-# (bash + edit + read tools), running headlessly and unattended.
-#
-# Complements opencode-wt (interactive, tmux, a human at the keyboard): this
-# is the non-interactive, scriptable form — the way Claude calls its own
-# subagents, but backed by OpenCode instead. Worktrees live at
-# <repo>/.opencode/worktrees/<name>, the SAME convention opencode-wt uses, so
-# `opencode-wt -l` lists them and `opencode-wt -d <name>` cleans them up.
-# Re-running the same NAME resumes that worktree's OpenCode session.
-#
-# SAFETY MODEL — read before changing anything below:
-# `--auto` (auto-approve any permission not explicitly denied) is required
-# because there is no TTY to answer prompts. Mitigations, honestly scoped:
-# global opencode.json denies `git push`/`git push *` for every OpenCode
-# agent, this script never merges the worktree into the caller's checkout or
-# pushes it, and the default `task` agent (opencode.json) denies
-# external_directory so its edit/read/glob tools can't touch paths outside
-# the worktree. None of this is a real sandbox: the bash tool can still run
-# any command, including ones that touch paths outside the worktree — the
-# worktree is a courtesy boundary against normal agent behavior, not a
-# containment guarantee against an adversarial or malfunctioning model.
-# Do NOT repurpose this to run --auto against a real working directory.
+# opencode-task — delegate a real coding task to OpenCode's agent headlessly.
+# SAFETY MODEL: --auto is required (no TTY). opencode.json denies git push;
+# agent denies external_directory. Not a real sandbox — bash tool escapes worktree.
+# Do NOT repurpose to run --auto against a real working directory.
 set -euo pipefail
 
 AGENT="task"
@@ -43,7 +25,7 @@ EOF
   exit 1
 }
 
-# --- parse args ---------------------------------------------------------------
+
 [ $# -ge 1 ] || usage
 NAME="$1"; shift
 MODEL=""
@@ -126,7 +108,7 @@ run_timed() { # run_timed SECS CMD...  — returns 124 on timeout
   return "$rc"
 }
 
-# --- create or reuse the worktree (same layout/bookkeeping as opencode-wt) ---
+
 SAVED_SESSION=""
 if [ ! -d "$WT_DIR" ]; then
   git -C "$ROOT" worktree prune
@@ -152,7 +134,7 @@ else
   echo "opencode-task: reusing existing worktree '$NAME'${SAVED_SESSION:+ (resuming session $SAVED_SESSION)}" >&2
 fi
 
-# --- run headlessly, confined to the worktree ---------------------------------
+
 echo "opencode-task: running in $WT_DIR (agent=$AGENT${MODEL:+, model=$MODEL}, timeout=${TIMEOUT}s) ..." >&2
 
 OC_ARGS=()

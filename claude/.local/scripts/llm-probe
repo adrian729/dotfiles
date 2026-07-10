@@ -1,22 +1,6 @@
 #!/usr/bin/env bash
-# llm-probe — decide what local (ollama) model, if any, this machine should run,
-# and record the decision so Claude Code and the `llm` wrapper can consult it.
-#
-# PURE STATIC capability check: it never contacts the ollama server, never starts
-# it, and never lists installed models. It answers only "what COULD this machine
-# run"; whether a listed model is actually pulled is resolved at use time by `llm`
-# (which walks the fallback chain and falls back to Claude if none is available).
-#
-# Writes ~/.local/state/agents/local-llm.json (machine-local — deliberately NOT
-# stowed). Runs from install.sh at stow time; re-run anytime hardware/ollama change.
-#
-# THE NO-SWAP RULE: a machine runs more than one local model ONLY if all of them
-# fit resident in the memory budget simultaneously (no swapping), AND the second
-# model genuinely out-performs the chosen generalist at its specialty. Otherwise
-# it runs the single best-fitting model for everything. Recomputed per machine.
-#
-# Test overrides: LLM_PROBE_RAM_GB forces system RAM; LLM_PROBE_VRAM_GB forces the
-# discrete-GPU branch with that VRAM (exercises the dGPU path on any machine).
+# llm-probe — determine what ollama model this machine can run. Static only (never contacts
+# server). No-swap rule: multiple models only if they co-fit memory without swapping.
 set -euo pipefail
 
 STATE_DIR="$HOME/.local/state/agents"
@@ -27,11 +11,8 @@ die() {
   exit 1
 }
 
-# --- write a state file atomically (temp + mv), then exit 0 ------------------
-# The probe's exit-code contract: 0 whenever a state file was successfully
-# written (INCLUDING every enabled:false outcome); nonzero only on internal
-# failure. install.sh relies on this so a low-RAM/no-ollama machine is not an
-# install error.
+# Exit 0 on any successful state write (including enabled:false) — install.sh
+# relies on this so low-RAM/no-ollama machines aren't install errors.
 write_state() {
   local json="$1" tmp
   mkdir -p "$STATE_DIR" || die "could not create $STATE_DIR"
@@ -40,7 +21,6 @@ write_state() {
   mv -f "$tmp" "$STATE_FILE" || die "could not move state file into place"
 }
 
-# Emit an enabled:false state file + one-line summary, then exit 0.
 disabled() {
   local reason="$1" json
   json=$(jq -n \
@@ -55,7 +35,6 @@ disabled() {
   exit 0
 }
 
-# --- model catalog (from llm-models-probe state, then config, then built-in) ---
 CATALOG_STATE="$HOME/.local/state/agents/local-llm-models.json"
 CATALOG_CONFIG="$HOME/.local/config/local-llm-models.json"
 
@@ -86,10 +65,8 @@ else
   CODER_CANDIDATES="qwen3-coder:30b qwen2.5-coder:7b"
 fi
 
-# --- 0. timestamp ------------------------------------------------------------
 PROBED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-# --- 1. hardware -------------------------------------------------------------
 OS=$(uname -s)
 ARCH=$(uname -m)
 CHIP="unknown"
@@ -111,7 +88,6 @@ if [ -n "${LLM_PROBE_RAM_GB:-}" ]; then
   RAM_GB="$LLM_PROBE_RAM_GB"
 fi
 
-# --- 2. dependencies (before budget so a missing dep short-circuits) ---------
 OLLAMA_INSTALLED=false
 OLLAMA_VERSION=""
 if command -v ollama >/dev/null 2>&1; then
@@ -123,7 +99,6 @@ $OLLAMA_INSTALLED || disabled "missing dependency: ollama"
 command -v jq   >/dev/null 2>&1 || disabled "missing dependency: jq"
 command -v curl >/dev/null 2>&1 || disabled "missing dependency: curl"
 
-# --- 3. memory budget basis (adapts to hardware — this is the portability) ---
 # Detect the fast-memory tier ollama will actually run in.
 detect_vram_gb() { # echo total VRAM GB across GPUs, or nothing if none found
   local mib="" bytes="" sum=0 f v
@@ -175,8 +150,7 @@ else
   NOTE="CPU-only — expect low tok/s"
 fi
 
-# --- 4. policy decision (implements the no-swap rule) ------------------------
-# 4a. compress/generalist = best candidate that fits ALONE in budget.
+# compress/generalist = best candidate that fits ALONE in budget.
 COMPRESS_PRIMARY=""
 COMPRESS_BACKUP=""
 for m in $COMPRESS_CANDIDATES; do
@@ -224,17 +198,15 @@ if [ "$POLICY" = "single-model" ]; then
   fi
 fi
 
-# --- 5. recommended num_ctx by budget tier (half-open, on model budget) ------
 if   [ "$MODEL_BUDGET_GB" -ge 30 ]; then NUM_CTX=32768
 elif [ "$MODEL_BUDGET_GB" -ge 18 ]; then NUM_CTX=16384
 else                                     NUM_CTX=8192
 fi
 
-# --- build ordered fallback lists (primary + one designated backup) ----------
 compress_list=$(printf '%s\n' "$COMPRESS_PRIMARY" "$COMPRESS_BACKUP" | grep -v '^$' | jq -R . | jq -s .)
 code_list=$(printf '%s\n' "$CODE_PRIMARY" "$CODE_BACKUP" | grep -v '^$' | jq -R . | jq -s .)
 
-# --- 6. write state ----------------------------------------------------------
+
 json=$(jq -n \
   --arg at "$PROBED_AT" \
   --arg os "$OS" --arg arch "$ARCH" --arg chip "$CHIP" --argjson ram "$RAM_GB" \
@@ -255,7 +227,7 @@ json=$(jq -n \
     note:($note|if .=="" then null else . end), reason:null}')
 write_state "$json"
 
-# --- one-line human summary --------------------------------------------------
+
 summary="local LLM capability: enabled · $BUDGET_BASIS ${MODEL_BUDGET_GB}GB · policy $POLICY · models $(echo "$compress_list" | jq -r 'join(",")') · ctx $NUM_CTX · recommend OLLAMA_NUM_PARALLEL=2"
 [ -n "$NOTE" ] && summary="$summary · $NOTE"
 echo "$summary"

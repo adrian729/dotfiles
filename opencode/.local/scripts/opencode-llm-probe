@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
-# opencode-llm-probe — verify opencode-llm's preferred model list against
-# what the OpenCode CLI actually offers. Best-effort: if auth fails, output
-# can't be parsed, or the CLI isn't available, writes the static preferred
-# list as-is with a note.
-#
-# Runs at install time (opencode/install.sh). Writes
-# ~/.local/state/agents/opencode-llm.json. Non-fatal — install proceeds.
+# opencode-llm-probe — verify preferred models against what the CLI offers. Non-fatal.
 set -euo pipefail
 
 STATE_DIR="$HOME/.local/state/agents"
@@ -18,7 +12,6 @@ mkdir -p "$STATE_DIR" || die "could not create $STATE_DIR"
 
 PROBED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-# --- read preferred list from config -----------------------------------------
 if [ -f "$CONFIG_FILE" ]; then
   mapfile -t PREFERRED < <(jq -r '.preferred[]?' "$CONFIG_FILE" 2>/dev/null)
 else
@@ -33,7 +26,6 @@ fi
 
 [ ${#PREFERRED[@]} -gt 0 ] || die "no preferred models defined"
 
-# --- try to discover available models ----------------------------------------
 AVAILABLE=()
 NOTE=""
 DISCOVERED=()
@@ -47,7 +39,6 @@ elif ! output=$(opencode models opencode --format json 2>/dev/null); then
   FINAL=("${PREFERRED[@]}")
 
 else
-  # Parse the JSON array of model names
   mapfile -t ALL_MODELS < <(echo "$output" | jq -r '.[].name // .[] // empty' 2>/dev/null || true)
   if [ ${#ALL_MODELS[@]} -eq 0 ]; then
     # Maybe the output is a flat list of strings or table rows
@@ -101,7 +92,6 @@ else
   fi
 fi
 
-# --- write state file --------------------------------------------------------
 json=$(jq -n \
   --arg at "$PROBED_AT" \
   --arg note "${NOTE:-null}" \
@@ -112,5 +102,4 @@ tmp="$STATE_FILE.$$.tmp"
 printf '%s\n' "$json" >"$tmp" || die "could not write $tmp"
 mv -f "$tmp" "$STATE_FILE" || die "could not move state file into place"
 
-# --- one-line summary --------------------------------------------------------
 echo "opencode-llm-models: ${NOTE:-verified} (${#FINAL[@]} models)"

@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# git-wt — run a git command inside a claude-wt session worktree from anywhere
-# in the repo: `git-wt feature-auth status` == `git -C <repo>/.claude/worktrees/feature-auth status`.
-# On PATH it also works as a git subcommand: `git wt feature-auth status`.
+# git-wt — run a git command inside a claude-wt session worktree.
 set -euo pipefail
 
 usage() {

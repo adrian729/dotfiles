@@ -90,7 +90,6 @@ GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; CYAN=$'\033[36m'; BLUE=$
 
 NOW=$(date +%s)
 
-# Reset-time text only (the color is taken from the matching bar, computed below).
 H_RESET_STR=""
 if [ "${HOURS_RESET:-0}" -gt 0 ] 2>/dev/null; then
     H_RESET_TIME=$(date -r "$HOURS_RESET" "+%-I%p" 2>/dev/null || date -d "@$HOURS_RESET" "+%-I%p" 2>/dev/null)
@@ -108,7 +107,6 @@ if [ "${WEEK_RESET:-0}" -gt 0 ] 2>/dev/null; then
     fi
 fi
 
-# Builds a clamped 10-cell bar: make_bar <value> <bar_var>
 make_bar() {
     local val=${1:-0} _fill _pad bar
     (( val < 0 )) && val=0; (( val > 100 )) && val=100
@@ -118,7 +116,6 @@ make_bar() {
     eval "$2=\"\$bar\""
 }
 
-# Context color by % used: green <20, yellow 20-39, red >=40
 usage_color() {
     local val=${1:-0}
     if   [ "$val" -ge 40 ] 2>/dev/null; then echo "$RED"
@@ -147,12 +144,11 @@ pace_color() {
 make_bar "${PCT:-0}"   CTX_BAR;  CTX_COLOR=$(usage_color "${PCT:-0}")
 make_bar "${HOURS:-0}" H_BAR;    H_COLOR=$(pace_color "${HOURS:-0}" "${HOURS_RESET:-0}" 18000)
 make_bar "${WEEK:-0}"  W_BAR;    W_COLOR=$(pace_color "${WEEK:-0}"  "${WEEK_RESET:-0}"  604800)
-H_RESET_COLOR=$H_COLOR; W_RESET_COLOR=$W_COLOR     # reset-time text shares its bar's color
+H_RESET_COLOR=$H_COLOR; W_RESET_COLOR=$W_COLOR
 
 EXCEEDS_STR=""
 [ "$EXCEEDS_200K" = "true" ] && EXCEEDS_STR=" ${RED}>200k${RESET}"
 
-# Effort + thinking indicator (each segment shown only when present)
 THINK_MARK=""; [ "$THINKING" = "true" ] && THINK_MARK="✱"
 EFFORT_SEG=""
 if   [ -n "$EFFORT" ] && [ -n "$THINK_MARK" ]; then EFFORT_SEG=" ${GRAY}(${EFFORT} ${THINK_MARK})${RESET}"

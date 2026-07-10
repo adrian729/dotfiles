@@ -1,12 +1,10 @@
 #!/bin/bash
 
-# Check if stow is installed
 if ! command -v stow &>/dev/null; then
 	echo "GNU Stow could not be found, please install it first."
 	exit
 fi
 
-# List of directories to stow
 directories=(
   "opencode"
   "claude"
@@ -20,11 +18,9 @@ directories=(
   "ollama"
 )
 
-# Ask if user wants to stow all directories without asking
 read -p "Do you want to stow all directories without asking? (y/n): " stow_all
 echo ""
 
-# Iterate over each directory and run stow
 for dir in "${directories[@]}"; do
 	if [ -d "$dir" ]; then
 		if [[ "$stow_all" =~ ^[Yy]$ ]]; then
@@ -56,7 +52,6 @@ for dir in "${directories[@]}"; do
 	echo ""
 done
 
-# Run install.sh scripts in each directory if they exist
 echo "Running install scripts..."
 for dir in "${directories[@]}"; do
 	if [ -f "$dir/install.sh" ]; then

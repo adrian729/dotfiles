@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
 
-#session_name=$(tmux display-message -p '#S')
-#if tmux has-session -t=$session_name 2> /dev/null; then
-#  tmux send-keys -t $session_name "nvim ." ^M
-#fi
-
 tmux split-pane -v
 tmux select-pane -t 1
 tmux resize-pane -D 10

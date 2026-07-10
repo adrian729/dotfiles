@@ -7,7 +7,9 @@
       "Bash(llm *)",
       "Bash(llm-probe*)",
       "Bash(ollama ps*)",
-      "Bash(ollama list*)"
+      "Bash(ollama list*)",
+      "Bash(opencode-task*)",
+      "Bash(opencode-llm*)"
     ],
     "deny": [
       "Bash(git push*)"

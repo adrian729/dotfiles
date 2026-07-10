@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# opencode-agent-models-probe — assign best model to each agent tier. Non-fatal.
+set -eo pipefail
+
+STATE_DIR="$HOME/.local/state/agents"
+STATE_FILE="$STATE_DIR/opencode-agent-models.json"
+CONFIG_FILE="$HOME/.local/config/opencode-agent-models.json"
+
+die() { echo "opencode-agent-models-probe: $*" >&2; exit 1; }
+
+mkdir -p "$STATE_DIR" || die "could not create $STATE_DIR"
+PROBED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# NOTE: bash 3.2 compat — no associative arrays or mapfile
+QUICK_LIST=()
+BASE_LIST=()
+DEEP_LIST=()
+
+load_list() {
+  # Read a JSON array from config file into a bash indexed array by name.
+  # Usage: load_list <arr-name> <json-key>
+  local _arr="$1" _key="$2" _line
+  if [ ! -f "$CONFIG_FILE" ]; then return 1; fi
+  while IFS= read -r _line; do
+    [ -n "$_line" ] || continue
+    eval "${_arr}+=(\"\$_line\")"
+  done < <(jq -r ".${_key}[]?" "$CONFIG_FILE" 2>/dev/null || true)
+}
+
+if [ -f "$CONFIG_FILE" ]; then
+  echo "opencode-agent-models-probe: reading model preferences from $CONFIG_FILE" >&2
+  load_list QUICK_LIST "quick"
+  load_list BASE_LIST "base"
+  load_list DEEP_LIST "deep"
+fi
+
+if [ ${#QUICK_LIST[@]} -eq 0 ]; then
+  echo "opencode-agent-models-probe: using built-in quick model fallback" >&2
+  QUICK_LIST=(opencode/deepseek-v4-flash-free opencode/mimo-v2.5-free opencode/north-mini-code-free)
+fi
+if [ ${#BASE_LIST[@]} -eq 0 ]; then
+  echo "opencode-agent-models-probe: using built-in base model fallback" >&2
+  BASE_LIST=(opencode/nemotron-3-ultra-free opencode/north-mini-code-free opencode/deepseek-v4-flash-free)
+fi
+if [ ${#DEEP_LIST[@]} -eq 0 ]; then
+  echo "opencode-agent-models-probe: using built-in deep model fallback" >&2
+  DEEP_LIST=(opencode/big-pickle opencode/nemotron-3-ultra-free)
+fi
+
+ALL_MODELS=()
+NOTE=""
+
+collect_models() {
+  local prov="$1" out line
+  out=$(opencode models "$prov" --format json 2>/dev/null || true)
+  if [ -z "$out" ]; then return 1; fi
+  # Try parsing as JSON array of objects, then flat array, then text table
+  while IFS= read -r line; do
+    [ -n "$line" ] && ALL_MODELS+=("$line")
+  done < <(echo "$out" | jq -r '.[].name // .[] // empty' 2>/dev/null || true)
+  if [ ${#ALL_MODELS[@]} -eq 0 ]; then
+    while IFS= read -r line; do
+      [ -n "$line" ] && ALL_MODELS+=("$line")
+    done < <(opencode models "$prov" 2>/dev/null | awk 'NR>2 {print $1}' | grep -v '^$' || true)
+  fi
+}
+
+AVAILABLE_ANY=false
+collect_models opencode && AVAILABLE_ANY=true
+collect_models opencode-go 2>/dev/null && AVAILABLE_ANY=true
+
+if ! $AVAILABLE_ANY; then
+  NOTE="opencode CLI not reachable (auth?) — using preferred lists unchanged"
+  echo "opencode-agent-models-probe: $NOTE" >&2
+fi
+first_match() {
+  # $1 = space-separated list of preferred models (taken from array)
+  # reads ALL_MODELS global
+  local pref model avail
+  for pref in "$@"; do
+    for avail in "${ALL_MODELS[@]}"; do
+      # Strip provider prefix for comparison
+      local p="${pref#opencode/}"; p="${p#opencode-go/}"
+      local a="${avail#opencode/}"; a="${a#opencode-go/}"
+      if [ "$pref" = "$avail" ] || [ "$p" = "$a" ]; then
+        echo "$pref"
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
+TIER_QUICK=""
+TIER_BASE=""
+TIER_DEEP=""
+
+if [ ${#ALL_MODELS[@]} -gt 0 ]; then
+  TIER_QUICK=$(first_match "${QUICK_LIST[@]}") || true
+  TIER_BASE=$(first_match "${BASE_LIST[@]}") || true
+  TIER_DEEP=$(first_match "${DEEP_LIST[@]}") || true
+
+  # If no matches at all, discover *free* models from the available list
+  if [ -z "$TIER_QUICK" ] && [ -z "$TIER_BASE" ] && [ -z "$TIER_DEEP" ]; then
+    DISCOVERED=()
+    m
+    for m in "${ALL_MODELS[@]}"; do
+      case "$m" in *free*|*Free*|*FREE*) DISCOVERED+=("$m") ;; esac
+    done
+    if [ ${#DISCOVERED[@]} -gt 0 ]; then
+      TIER_QUICK="${DISCOVERED[0]}"
+      TIER_BASE="${DISCOVERED[0]}"
+      [ ${#DISCOVERED[@]} -gt 1 ] && TIER_DEEP="${DISCOVERED[1]}" || TIER_DEEP="${DISCOVERED[0]}"
+      NOTE="no preferred models available — using discovered free models"
+    else
+      NOTE="no recognized models found — using preferred lists unchanged"
+    fi
+  fi
+fi
+
+# Fall back to first preferred if not matched
+[ -z "$TIER_QUICK" ] && TIER_QUICK="${QUICK_LIST[0]}"
+[ -z "$TIER_BASE" ]  && TIER_BASE="${BASE_LIST[0]}"
+[ -z "$TIER_DEEP" ]  && TIER_DEEP="${DEEP_LIST[0]}"
+
+# Tier → agent mapping: comma-separated agent: tier
+#   quick: reviewer-quick, implementer-quick
+#   base:  reviewer, implementer, debugger, planner, researcher
+#   deep:  auditor
+build_overrides_json() {
+  local quick="$1" base="$2" deep="$3"
+  jq -n \
+    --arg quick "$quick" \
+    --arg base "$base" \
+    --arg deep "$deep" \
+    '{
+      agent: {
+        "reviewer":          {model: $base},
+        "reviewer-quick":    {model: $quick},
+        "auditor":           {model: $deep},
+        "implementer":       {model: $base},
+        "implementer-quick": {model: $quick},
+        "debugger":          {model: $base},
+        "planner":           {model: $base},
+        "researcher":        {model: $base}
+      }
+    }'
+}
+
+OVERRIDES=$(build_overrides_json "$TIER_QUICK" "$TIER_BASE" "$TIER_DEEP")
+
+AVAIL_JSON=$([ ${#ALL_MODELS[@]} -gt 0 ] && printf '%s\n' "${ALL_MODELS[@]}" | jq -R . | jq -s . 2>/dev/null || echo '[]')
+
+STATE_JSON=$(jq -n \
+  --arg at "$PROBED_AT" \
+  --arg note "${NOTE:-}" \
+  --argjson available "$AVAIL_JSON" \
+  --arg quick "$TIER_QUICK" \
+  --arg base "$TIER_BASE" \
+  --arg deep "$TIER_DEEP" \
+  --argjson overrides "$OVERRIDES" \
+  '{
+    probed_at: $at,
+    available: $available,
+    tiers: {quick: $quick, base: $base, deep: $deep},
+    agent_overrides: $overrides,
+    note: ($note | if . == "" then null else . end)
+  }'
+)
+
+tmp="$STATE_FILE.$$.tmp"
+printf '%s\n' "$STATE_JSON" >"$tmp" || die "could not write $tmp"
+mv -f "$tmp" "$STATE_FILE" || die "could not move state file into place"
+
+OVERRIDES_FILE="$STATE_DIR/opencode-agent-model-overrides.json"
+printf '%s\n' "$OVERRIDES" >"$OVERRIDES_FILE" || die "could not write overrides file"
+
+echo "opencode-agent-models: quick=$TIER_QUICK base=$TIER_BASE deep=$TIER_DEEP ${NOTE:+· $NOTE}"

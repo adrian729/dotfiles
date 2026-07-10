@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
-# llm — delegate a token-heavy micro-task to a local ollama model, so Claude
-# spends no tokens on the bulk. Pipe big content in on stdin (compression:
-# only the short answer comes back) or write bulk output to a file with -o
-# (generation: Claude spot-checks cheaply).
-#
-# Named `llm`, not a model name, because which model runs is machine-dependent:
-# `llm-probe` records the per-machine policy in ~/.local/state/agents/local-llm.json
-# and this wrapper walks that machine's fallback chain at call time.
-#
-# It NEVER starts the ollama server (the server is user-managed) and never pulls
-# models. When it can't delegate it exits nonzero with a one-line reason on
-# stderr; the local-llm skill's rule is then to do the task the normal Claude way.
+# llm — delegate token-heavy work to a local ollama. Pipes stdin → short answer / -o file.
+# Never starts the server or pulls models; nonzero exit = fall back to Claude.
 set -euo pipefail
 
 STATE_FILE="$HOME/.local/state/agents/local-llm.json"
@@ -38,7 +28,7 @@ EOF
   exit 1
 }
 
-# --- parse args --------------------------------------------------------------
+
 LIST_KEY="compress_models"
 FORCE_MODEL=""
 THINK=true
@@ -66,7 +56,6 @@ PROMPT="${PROMPT_PARTS[*]}"
 
 case "$TIMEOUT" in *[!0-9]*|'') die "invalid -T (seconds): $TIMEOUT" ;; esac
 
-# --- 0. state file (auto-probe once if missing) ------------------------------
 if [ ! -f "$STATE_FILE" ]; then
   # Safe to auto-run: the probe is static — no server contact, no pulls.
   if [ -x "$PROBE" ]; then
@@ -92,13 +81,11 @@ if [ "$NUM_CTX" -gt "$CTX_CAP" ]; then
   NUM_CTX="$CTX_CAP"
 fi
 
-# --- 1. server check — never auto-start --------------------------------------
 if ! curl -sf --max-time 1 "$HOST/api/version" >/dev/null 2>&1; then
   echo "llm: ollama server not running — start it with 'ollama serve' if you want local delegation" >&2
   exit 3
 fi
 
-# --- read stdin (the content to operate on), if any --------------------------
 STDIN_FILE=$(mktemp "${TMPDIR:-/tmp}/llm.stdin.XXXXXX")
 trap 'rm -f "$STDIN_FILE" "${RESP_FILE:-}"' EXIT
 if [ ! -t 0 ]; then
@@ -106,7 +93,6 @@ if [ ! -t 0 ]; then
 fi
 STDIN_BYTES=$(wc -c < "$STDIN_FILE" | tr -d ' ')
 
-# --- 2. size guard (hard-fail) -----------------------------------------------
 # Silent truncation is exactly the failure this design exists to prevent.
 PROMPT_BYTES=${#PROMPT}
 EST_TOKENS=$(( (STDIN_BYTES + PROMPT_BYTES) * 10 / 35 ))   # ~/3.5 chars per token
@@ -116,7 +102,6 @@ if [ "$EST_TOKENS" -gt "$LIMIT" ]; then
   exit 2
 fi
 
-# --- 3. candidate models -----------------------------------------------------
 MODELS=()
 if [ -n "$FORCE_MODEL" ]; then
   MODELS=("$FORCE_MODEL")
@@ -135,7 +120,6 @@ strip_think() {
     | sed -e 's/<\/\{0,1\}think>//g' -e '/./,$!d'
 }
 
-# --- 4-5. request with fallback walk -----------------------------------------
 RESP_FILE=$(mktemp "${TMPDIR:-/tmp}/llm.resp.XXXXXX")
 tried=""
 n=${#MODELS[@]}

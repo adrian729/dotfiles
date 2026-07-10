@@ -11,3 +11,14 @@ loops; re-run after code changes.
 Before spawning reviewer for code diffs: if diff is small/routine AND not on sensitive paths,
 use reviewer-quick instead of reviewer. Sensitive paths: auth, crypto, payment,
 secrets, infra. Does not apply to doc/plan targets — reviewer is default.
+
+# Code comments
+Comments explain WHY, not WHAT — code already shows what it does.
+Three valid uses:
+- What: terse one-line summary at top of file/module/function
+- How: high-level approach inside a function if non-obvious
+- Why: rationale for a statement or design choice the code can't express
+
+Never: restate the obvious, add section headers (`# SETUP`), label trivial blocks,
+or explain what a variable/function name already says. Write for a reader who sees
+the code but not the reasoning behind it.
