@@ -16,7 +16,7 @@ This skill always runs hands-off — there is no interactive variant. Your **ver
 - **Token discipline** — concise everywhere, but never so terse a step fails or agent returns too little to act on.
 
 ## Phases
-1. **Plan** — produce implementation plan (`Plan` agent for design, `Explore` for investigation, or inline if small). No code changes. Then `audit-loop` the plan: completeness vs intent, contradictions, unstated assumptions, missing edge cases, feasibility. Iterate to convergence. Code stays untouched until plan passes.
+1. **Plan** — produce implementation plan (tool's planner agent: Claude Code → `Plan`/`Explore`, OpenCode → `planner`/`explore` subagent; or inline if small). No code changes. Then `audit-loop` the plan: completeness vs intent, contradictions, unstated assumptions, missing edge cases, feasibility. Iterate to convergence. Code stays untouched until plan passes.
 2. **Implement** — execute converged plan; subagents per rule above. Then `audit-loop` the implementation.
 3. **Final review** — fresh end-to-end pass over whole change against original intent and plan. Issues found → `audit-loop` again until clean. None → done.
 

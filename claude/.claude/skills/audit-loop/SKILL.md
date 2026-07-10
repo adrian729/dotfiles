@@ -16,7 +16,11 @@ Repeatedly find issues, fix safe ones, re-audit until clean. Run hands-off; repo
 - **Iter cap** — number ("max 5", "cap at 3") → hard cap. Otherwise no cap; rely on convergence.
 - **Split mode** — see §9.
 
-## 3. Agents
+## 3. Agent roles by tool
+
+Each step maps to a tool-specific agent. The host tool's section controls which agent fills each role.
+
+### Tool: Claude Code
 
 | Step | Default agent | Escalated agent |
 |------|--------------|-----------------|
@@ -27,7 +31,20 @@ Repeatedly find issues, fix safe ones, re-audit until clean. Run hands-off; repo
 
 Non-code targets use same agents — dimensions (§5) drive the focus, not agent body.
 
+### Tool: OpenCode
+
+| Step | Default agent | Escalated agent |
+|------|--------------|-----------------|
+| Audit | per tier table (§4) | per tier table |
+| Triage | `reviewer` (deepseek-v4-flash-free) | `auditor` (big-pickle) for paranoid mode |
+| Fix | `implementer` (deepseek-v4-flash-free) | `implementer` (rerun with more steps) for risky fixes |
+| Report | `relay` (deepseek-v4-flash-free) | — |
+
+Non-code targets use same agents — dimensions (§5) drive the focus, not agent body.
+
 ## 4. Tiers
+
+### Tool: Claude Code
 
 | Mode | Trigger | Main loop audit | Confirmation (clean_streak==1) |
 |------|---------|-----------------|-------------------------------|
@@ -35,6 +52,15 @@ Non-code targets use same agents — dimensions (§5) drive the focus, not agent
 | Normal | (default) | `reviewer` (sonnet xhigh) | `auditor` (opus high) |
 | Paranoid | "security", "thorough", "paranoid", "deep" | `auditor` (opus high) | `auditor-deep` (opus xhigh) |
 | Maximum | "exhaustive", "leave no stone unturned" | `auditor-deep` (opus xhigh) | `auditor-deep` (fresh spawn) |
+
+### Tool: OpenCode
+
+| Mode | Trigger | Main loop audit | Confirmation (clean_streak==1) |
+|------|---------|-----------------|-------------------------------|
+| Quick/cheap | "quick", "cheap", "light" | `reviewer-quick` (mimo-v2.5-free) | `reviewer` (deepseek-v4-flash-free) |
+| Normal | (default) | `reviewer` (deepseek-v4-flash-free) | `auditor` (big-pickle) |
+| Paranoid | "security", "thorough", "paranoid", "deep" | `auditor` (big-pickle) | `auditor` (big-pickle, fresh spawn) |
+| Maximum | "exhaustive", "leave no stone unturned" | `auditor` (big-pickle) | `auditor` (big-pickle, fresh spawn) |
 
 After confirmation fails → next iteration uses Main loop agent again (all tiers: Reset == Main).
 
@@ -58,15 +84,15 @@ Repeat:
 1. `iteration += 1`
 2. **Agent selection** — if `clean_streak == 1`, use Confirmation column from tier table. Otherwise use Main loop column.
 3. **Audit** — spawn selected agent. Prompt: read-only, report findings, never edit files; target dimensions (§5). Provide: target scope, dimensions, current deferred list. Do NOT provide own reasoning or prior-iteration findings. Target exists only in conversation → serialize first (embed full text in prompt, or scratch file + path).
-4. **Triage** — spawn `analyzer` with all findings + target scope + deferred list. Per finding: is it a re-sight of a deferred item? **First** re-sight → treat as blocking normally. **Second+** re-sight of same finding → mark non-blocking (noted for report, no action). Missing or unsound failure scenario → downgrade to minor or reject. Log all reasons. Paranoid mode → `analyzer-deep`.
-5. Surviving blocking findings → `clean_streak = 0`. Per finding: in-scope and low-risk → fix via `implementer`; else defer + record reason (risky / ambiguous / out-of-scope / needs user decision). Minors → ledger.
+4. **Triage** — spawn the tool's triage agent (§3) with all findings + target scope + deferred list. Per finding: is it a re-sight of a deferred item? **First** re-sight → treat as blocking normally. **Second+** re-sight of same finding → mark non-blocking (noted for report, no action). Missing or unsound failure scenario → downgrade to minor or reject. Log all reasons. Paranoid mode → escalate (§3).
+5. Surviving blocking findings → `clean_streak = 0`. Per finding: in-scope and low-risk → fix via tool's fix agent (§3); else defer + record reason (risky / ambiguous / out-of-scope / needs user decision). Minors → ledger.
 6. No surviving blocking findings → `clean_streak += 1`.
 7. **Stop** when EITHER `clean_streak == 2` (two consecutive clean passes — never stop on one) OR cap was given and `iteration == cap`.
 
 **Stall guard** — only remaining blocked issues were already deferred AND no new fix possible → stop, "stalled". A deferred finding that became fixable → re-triage, don't stall. A pass whose only blocking findings are re-sighted deferreds with no new findings and no fixes applied contributes to stall detection.
 
 ## 8. Report (always)
-Spawn `summarizer` with full iteration log. Output:
+Spawn the tool's report agent (§3) with full iteration log. Output:
 - **Target** + **mode** (tier used).
 - **Per iteration**: blocking found / fixed / deferred + reasons, downgrades + reasons, clean_streak, agents used.
 - **Outcome**: total iterations + why stopped (2 clean / cap reached / stalled).
