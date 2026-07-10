@@ -1,0 +1,203 @@
+---
+name: opencode-cli
+description: Invoke the OpenCode CLI from another AI tool (Claude Code, Cursor, etc.), a shell script, or CI pipeline — subcommand reference (run, serve, session, agent, mcp, models, providers), flags (`--format json` for scripting, `--dir` to confine tools, `--auto` for unattended approval, `-m` for model, `--agent` for subagent), config precedence chain, env vars, permission model. Use when the caller needs subcommands, flags, scripting patterns, or config mechanics to spawn or interact with an `opencode` process programmatically; NOT for editing opencode's own config (use customize-opencode skill), configuring agent definitions (handle those in opencode.json), nor running under OpenCode itself (self-referential).
+---
+
+OpenCode CLI — the `opencode` binary. `opencode run --format json` is the scripting workhorse.
+
+## Subcommands
+
+| Command | Description |
+|---|---|
+| `opencode [project]` | Start interactive TUI (default) |
+| `opencode run [message..]` | Non-interactive: run a prompt, exit |
+| `opencode serve` | Start headless HTTP server |
+| `opencode web` | Start server + open web UI |
+| `opencode attach <url>` | Attach TUI to a remote server |
+| `opencode session` | Manage sessions (list, delete) |
+| `opencode agent` | Manage agents (create, list) |
+| `opencode mcp` | Manage MCP servers |
+| `opencode providers` | Manage provider credentials (alias: auth) |
+| `opencode models [provider]` | List available models |
+| `opencode stats` | Token usage and cost stats |
+| `opencode export [sessionID]` | Export session as JSON |
+| `opencode import <file>` | Import session from JSON file or URL |
+| `opencode pr <number>` | Fetch PR branch, checkout, run |
+| `opencode github` | GitHub agent subcommands |
+| `opencode plugin <module>` | Install plugin (alias: plug) |
+| `opencode db` | Database tools (sqlite3 shell, path) |
+| `opencode acp` | Agent Client Protocol server (stdin/stdout) |
+| `opencode debug` | Debugging tools (config, paths, startup, LSP) |
+| `opencode upgrade [target]` | Upgrade to latest or specific version |
+| `opencode uninstall` | Remove OpenCode and all related files |
+| `opencode completion` | Generate shell completion script |
+
+## `opencode run` — scripting workhorse
+
+`opencode run [message..]` runs a prompt without the TUI and exits. Extended flags:
+
+| Flag | Short | Description |
+|---|---|---|
+| `--model <provider/model>` | `-m` | Model (e.g. `opencode/deepseek-v4-flash-free`) |
+| `--continue` | `-c` | Continue the last session |
+| `--session <id>` | `-s` | Continue a specific session |
+| `--fork` | | Fork the session before continuing |
+| `--agent <name>` | | Agent to use (e.g. `task`, `relay`) |
+| `--format <format>` | | Output: `default` (formatted text) or `json` (raw JSON events) |
+| `--auto` | | Auto-approve permissions not explicitly denied |
+| `--dir <path>` | | Working directory (confines file tools when agent denies external_directory) |
+| `--file <path>` | `-f` | Attach file to message (repeatable) |
+| `--title <text>` | | Session title |
+| `--attach <url>` | | Connect to a running opencode server |
+| `--variant <level>` | | Model variant/reasoning effort (e.g. `high`, `max`, `minimal`) |
+| `--thinking` | | Show thinking blocks in output |
+| `--interactive` | `-i` | Direct interactive split-footer mode |
+| `--port <n>` | | Port for local server |
+| `--password <pwd>` | `-p` | Basic auth password (defaults to `OPENCODE_SERVER_PASSWORD`) |
+| `--username <name>` | `-u` | Basic auth username (defaults to `OPENCODE_SERVER_USERNAME` or `'opencode'`) |
+
+## Session management
+
+```sh
+opencode session list --format json    # list sessions as JSON array
+opencode session list --max-count 20   # limit to 20 most recent
+opencode session delete <sessionID>    # delete a session
+```
+
+## Headless server
+
+```sh
+# Start headless HTTP API server (random port by default)
+OPENCODE_SERVER_PASSWORD=secret opencode serve
+
+# With explicit port and hostname
+opencode serve --port 4096 --hostname 0.0.0.0
+
+# Web mode (server + browser UI)
+opencode web
+
+# Attach TUI to a running server
+opencode attach http://localhost:4096
+
+# Run against a server (avoids cold-start overhead)
+opencode run --attach http://localhost:4096 --dir /repo "task"
+```
+
+## Agent management
+
+```sh
+# List agents
+opencode agent list
+
+# Create agent (non-interactive with all flags)
+opencode agent create \
+  --path custom-agent \
+  --description "Does X" \
+  --mode subagent \
+  --tools "bash,read,edit,glob,grep" \
+  --model provider/model
+```
+
+## MCP
+
+```sh
+opencode mcp add <name> <command> [args...]   # add MCP server
+opencode mcp list                             # list servers
+opencode mcp auth <name>                      # authenticate
+opencode mcp logout <name>                    # clear credentials
+opencode mcp debug <name>                     # debug connection
+```
+
+## Providers / auth
+
+```sh
+opencode providers list       # list configured providers
+opencode providers login      # log in (interactive)
+opencode providers login <url> # log in with custom URL
+opencode providers logout <name> # remove provider credentials
+```
+
+## Permission model
+
+Each permission rule resolves to one of three states:
+
+| State | Behavior |
+|---|---|
+| `allow` | Run without approval |
+| `ask` | Prompt for approval (once/always/reject) |
+| `deny` | Block the action |
+
+Permission keys: `read`, `edit`, `glob`, `grep`, `bash`, `task`, `skill`, `lsp`, `question`, `webfetch`, `websearch`, `external_directory`, `doom_loop`.
+
+`bash` supports object syntax with glob patterns — last matching rule wins:
+
+```json
+"bash": {
+  "*": "allow",
+  "git push": "deny",
+  "git push *": "deny",
+  "npm publish": "ask",
+  "npm publish *": "ask"
+}
+```
+
+## Config precedence (later wins)
+
+1. Remote (organizational) — `.well-known/opencode` endpoint
+2. Global user — `~/.config/opencode/opencode.json`
+3. Custom path — `$OPENCODE_CONFIG` env var
+4. Project — `<git-root>/opencode.json`
+5. `.opencode/` dir — `<project>/.opencode/{agents,skills,tools,themes,...}`
+6. Custom config dir — `$OPENCODE_CONFIG_DIR` env var
+7. Inline — `$OPENCODE_CONFIG_CONTENT` env var
+8. Managed file — `/Library/Application Support/opencode/` etc.
+9. Managed MDM — `ai.opencode.managed` preference domain
+
+TUI config: `~/.config/opencode/tui.json` (overridable via `$OPENCODE_TUI_CONFIG`).
+
+## Key environment variables
+
+Most-used vars inline; full list in [`env-vars.md`](env-vars.md).
+
+| Variable | Purpose |
+|---|---|
+| `OPENCODE_CONFIG` | Path to config file |
+| `OPENCODE_CONFIG_DIR` | Path to config directory |
+| `OPENCODE_CONFIG_CONTENT` | Inline JSON config (highest runtime override) |
+| `OPENCODE_PERMISSION` | Inline JSON permissions config |
+| `OPENCODE_SERVER_PASSWORD` | Basic auth password for serve/web |
+| `OPENCODE_SERVER_USERNAME` | Basic auth username (default: `opencode`) |
+| `OPENCODE_TUI_CONFIG` | Path to TUI config file |
+| `OPENCODE_DISABLE_CLAUDE_CODE` | Don't read `.claude` (prompt + skills) |
+| `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` | Don't load `.claude/skills` |
+| `OPENCODE_DISABLE_AUTOUPDATE` | Disable update checks |
+
+## Scripting patterns
+
+Most-used patterns inline; more in [`scripting-patterns.md`](scripting-patterns.md).
+
+```sh
+# One-shot query, JSON output
+opencode run --format json "Explain closures in JavaScript" | jq .
+
+# Pipe content
+cat build.log | opencode run --format json "Extract every error with file:line"
+
+# With specific provider/model
+opencode run -m opencode/deepseek-v4-flash-free --format json "Summarize this"
+
+# Headless task agent in specific directory, auto-approve
+opencode run --agent task --dir /workspace --auto "Refactor module" --format json
+
+# Continue a specific session
+opencode run -s <sessionID> --format json "Follow up"
+
+# Attach file to prompt
+opencode run -f src/main.rs "Review this file for bugs"
+
+# List sessions programmatically
+opencode session list --format json
+
+# Minimal interactive
+opencode --mini --prompt "Walk me through the architecture"
+```
