@@ -4,7 +4,7 @@
 |---|---|
 | `OPENCODE_CONFIG` | Path to config file |
 | `OPENCODE_CONFIG_DIR` | Path to config directory |
-| `OPENCODE_CONFIG_CONTENT` | Inline JSON config (highest runtime override) |
+| `OPENCODE_CONFIG_CONTENT` | Inline JSON config (highest override among static/env config sources — an active org login can still override this; see Config precedence in SKILL.md) |
 | `OPENCODE_TUI_CONFIG` | Path to TUI config file |
 | `OPENCODE_SERVER_PASSWORD` | Basic auth password for serve/web |
 | `OPENCODE_SERVER_USERNAME` | Basic auth username (default: `opencode`) |
@@ -23,7 +23,6 @@
 | `OPENCODE_EXPERIMENTAL` | Enable all experimental features |
 | `OPENCODE_EXPERIMENTAL_PLAN_MODE` | Enable plan mode |
 | `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS` | Enable background subagents |
-| `OPENCODE_EXPERIMENTAL_SCOUT` | Enable Scout subagent |
 | `OPENCODE_EXPERIMENTAL_PARALLEL` | Enable parallel web search |
 | `OPENCODE_EXPERIMENTAL_LSP_TOOL` | Enable experimental LSP tool |
 | `OPENCODE_EXPERIMENTAL_FILEWATCHER` | Enable file watcher |

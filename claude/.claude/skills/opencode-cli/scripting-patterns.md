@@ -27,7 +27,4 @@ opencode run --variant high "Solve this problem" --format json
 
 # List sessions programmatically
 opencode session list --format json
-
-# Minimal interactive
-opencode --mini --prompt "Walk me through the architecture"
 ```

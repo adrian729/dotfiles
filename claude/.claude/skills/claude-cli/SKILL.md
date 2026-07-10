@@ -9,7 +9,7 @@ Claude Code CLI — the `claude` binary. Flags and positional prompt coexist in 
 
 | Mode | Invocation | Use case |
 |---|---|---|
-| Interactive | `claude` / `claude <path>` | Default: full terminal UI, turn-based conversation |
+| Interactive | `claude` | Default: full terminal UI, turn-based conversation |
 | One-shot | `claude -p "prompt"` / `echo "prompt" \| claude -p` | Non-interactive: print response to stdout, exit |
 | Background | `claude --bg "task"` | Detached agent session, managed via `claude agents` |
 | Minimal | `claude --bare` | Skip hooks, LSP, plugins, keychain, auto-memory, CLAUDE.md discovery |
@@ -31,8 +31,8 @@ Claude Code CLI — the `claude` binary. Flags and positional prompt coexist in 
 
 | Flag | Description |
 |---|---|
-| `--model <model>` | Model alias or full name (e.g. `sonnet`, `opus`, `claude-sonnet-4-20250514`) |
-| `--agent <name>` | Agent for the session (overrides `agent` setting). Built-in: `implementer`, `planner`, `reviewer`, `debugger`, `writer`, `researcher`, `explorer`, `auditor`, `analyzer`, `summarizer`, `cleaner`, plus `effort-*` carriers |
+| `--model <model>` | Model alias or full name (e.g. `sonnet`, `opus`, `claude-sonnet-5`) |
+| `--agent <name>` | Agent for the session (overrides `agent` setting). Accepts CLI built-in agents (e.g. `Explore`, `Plan`, `general-purpose` — exact set varies by version, see below) plus any custom agent defined in the current project's `.claude/agents/*.md` or a global `~/.claude/agents/` (a custom definition of the same name overrides the built-in). To get the live accepted list for the current install: pass any invalid name with `-p` (not `--help`, which skips validation) — e.g. `claude --agent x -p "hi"` — the CLI prints `not found. Available agents: ...` with the current roster |
 | `--agents <json>` | Define ad-hoc agents inline: `'{"reviewer":{"description":"...","prompt":"You are..."}}'` |
 | `--effort <level>` | Reasoning effort: `low`, `medium`, `high`, `xhigh`, `max` |
 | `--betas <betas...>` | Beta feature headers (API-key users only) |
@@ -84,7 +84,7 @@ Additional output flags:
 
 | Command | Action |
 |---|---|
-| `claude mcp add <name> <cmdOrUrl> [args...]` | Add an MCP server (stdio or HTTP) |
+| `claude mcp add <name> <cmdOrUrl> [args...] [-t/--transport stdio\|sse\|http]` | Add an MCP server (defaults to stdio; pass `--transport http`/`sse` for non-stdio servers) |
 | `claude mcp add-json <name> <json>` | Add server by JSON config string |
 | `claude mcp get <name>` | Show server details |
 | `claude mcp list` | List configured servers |
@@ -105,7 +105,7 @@ Runtime MCP via CLI flags:
 | Flag | Description |
 |---|---|
 | `-w`, `--worktree [name]` | Create a git worktree and start a session in it |
-| `--tmux` | Create a tmux session for the worktree |
+| `--tmux` | Create a tmux session for the worktree — requires `--worktree` to already be set; defaults to iTerm2-native panes rather than classic tmux unless `--tmux=classic` is passed (relevant here since this repo's terminal stack is Ghostty/Kitty/tmux, not iTerm2) |
 
 ## Plugins
 
@@ -114,7 +114,7 @@ Runtime MCP via CLI flags:
 | `claude plugin install <name>` | Install a plugin |
 | `claude plugin uninstall <name>` | Remove a plugin |
 | `claude plugin list` | List installed plugins |
-| `claude plugin marketplace` | Browse available plugins |
+| `claude plugin marketplace` | Manage marketplace sources (add/list/remove/update) — not for browsing plugins themselves (see `claude plugin list` above) |
 | `claude plugin init` | Create a plugin scaffold |
 | `claude plugin eval` | Evaluate plugin performance |
 
@@ -141,19 +141,21 @@ Runtime via CLI flags:
 
 ## Config file load order
 
-Later files override earlier ones:
+Highest to lowest precedence:
 
-1. `~/.claude/settings.json` — user-global settings
-2. `~/.claude/settings.local.json` — machine-local overrides (permissions, etc.)
-3. `<repo>/.claude/settings.json` — project-level settings
-4. `--settings <file-or-json>` — explicit CLI override
-5. `--setting-sources <sources>` — restrict to: `user`, `project`, `local`
+1. Managed — `managed-settings.json` (MDM/enterprise policy); cannot be overridden
+2. CLI args — `--settings <file-or-json>`
+3. Local — `<repo>/.claude/settings.local.json` (project-scoped, gitignored, per-machine; note there is no user-global `settings.local.json` — this tier only exists at the project level)
+4. Project — `<repo>/.claude/settings.json` (team-shared)
+5. User — `~/.claude/settings.json` (lowest precedence)
+
+`--setting-sources <sources>` is a separate load-filter, not a precedence tier: it controls which of `user`, `project`, `local` sources get read at all.
 
 ## Key environment variables
 
 | Variable | Purpose |
 |---|---|
-| `CLAUDE_CODE_OAUTH_TOKEN` | Long-lived auth token (from `claude setup-token`) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Long-lived auth token (from `claude setup-token`); not read by `--bare` — that mode needs `ANTHROPIC_API_KEY` or `apiKeyHelper` via `--settings` instead |
 | `ANTHROPIC_API_KEY` | API-key auth (alternative to OAuth) |
 | `CLAUDE_CODE_SIMPLE=1` | Set by `--bare` mode; disables hooks, LSP, plugins |
 | `CLAUDE_CODE_SAFE_MODE=1` | Set by `--safe-mode` |
@@ -177,8 +179,10 @@ git diff | claude -p "List changed functions as JSON" --output-format json
 # Custom agent with effort
 claude -p "Review this code" --agent reviewer --effort xhigh --output-format json
 
-# Auto-approve permissions (CI/unattended)
-claude -p "Refactor this module" --permission-mode auto
+# Auto-approve permissions (CI/unattended) — --permission-mode auto still runs a soft_deny/hard_deny
+# classifier and can block/hang on flagged actions (git pushes, prod reads, etc.); use
+# --dangerously-skip-permissions or --permission-mode bypassPermissions for guaranteed unattended runs
+claude -p "Refactor this module" --dangerously-skip-permissions
 
 # Background agent
 claude --bg "Run tests every 30s and report failures"
