@@ -7,7 +7,7 @@
 # run"; whether a listed model is actually pulled is resolved at use time by `llm`
 # (which walks the fallback chain and falls back to Claude if none is available).
 #
-# Writes ~/.local/state/claude/local-llm.json (machine-local — deliberately NOT
+# Writes ~/.local/state/agents/local-llm.json (machine-local — deliberately NOT
 # stowed). Runs from install.sh at stow time; re-run anytime hardware/ollama change.
 #
 # THE NO-SWAP RULE: a machine runs more than one local model ONLY if all of them
@@ -19,7 +19,7 @@
 # discrete-GPU branch with that VRAM (exercises the dGPU path on any machine).
 set -euo pipefail
 
-STATE_DIR="$HOME/.local/state/claude"
+STATE_DIR="$HOME/.local/state/agents"
 STATE_FILE="$STATE_DIR/local-llm.json"
 
 die() {

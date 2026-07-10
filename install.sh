@@ -10,6 +10,7 @@ fi
 directories=(
   "opencode"
   "claude"
+  "agents"
   "kitty"
   "ghostty"
   "nvim"

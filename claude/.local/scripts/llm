@@ -5,7 +5,7 @@
 # (generation: Claude spot-checks cheaply).
 #
 # Named `llm`, not a model name, because which model runs is machine-dependent:
-# `llm-probe` records the per-machine policy in ~/.local/state/claude/local-llm.json
+# `llm-probe` records the per-machine policy in ~/.local/state/agents/local-llm.json
 # and this wrapper walks that machine's fallback chain at call time.
 #
 # It NEVER starts the ollama server (the server is user-managed) and never pulls
@@ -13,7 +13,7 @@
 # stderr; the local-llm skill's rule is then to do the task the normal Claude way.
 set -euo pipefail
 
-STATE_FILE="$HOME/.local/state/claude/local-llm.json"
+STATE_FILE="$HOME/.local/state/agents/local-llm.json"
 PROBE="$HOME/.local/scripts/llm-probe"
 HOST="localhost:11434"
 CTX_CAP=40960
