@@ -177,8 +177,6 @@ Most-used vars inline; full list in [`env-vars.md`](env-vars.md).
 
 ## Scripting patterns
 
-Most-used patterns inline; more in [`scripting-patterns.md`](scripting-patterns.md).
-
 ```sh
 # One-shot query, JSON output
 opencode run --format json "Explain closures in JavaScript" | jq .
@@ -195,8 +193,14 @@ opencode run --agent task --dir /workspace --auto "Refactor module" --format jso
 # Continue a specific session
 opencode run -s <sessionID> --format json "Follow up"
 
+# Attach to running server (avoids cold-start overhead)
+opencode run --attach http://localhost:4096 --format json "Quick task"
+
 # Attach file to prompt
 opencode run -f src/main.rs "Review this file for bugs"
+
+# With reasoning effort variant
+opencode run --variant high "Solve this problem" --format json
 
 # List sessions programmatically
 opencode session list --format json
