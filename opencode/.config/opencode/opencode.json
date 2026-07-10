@@ -6,9 +6,61 @@
   },
   "provider": {},
   "permission": {
+    "read": "allow",
+    "grep": "allow",
+    "glob": "allow",
     "bash": {
       "*": "allow",
+      "llm": "allow",
+      "llm *": "allow",
+      "llm-probe": "allow",
+      "llm-probe *": "allow",
+      "ollama ps": "allow",
+      "ollama ps *": "allow",
+      "ollama list": "allow",
+      "ollama list *": "allow",
+      "npm publish": "ask",
+      "npm publish *": "ask",
+      "gh release": "ask",
+      "gh release *": "ask",
+      "docker push": "ask",
+      "docker push *": "ask",
+      "terraform apply": "ask",
+      "terraform apply *": "ask",
+      "kubectl apply": "ask",
+      "kubectl apply *": "ask",
+      "cargo publish": "ask",
+      "cargo publish *": "ask",
+      "git push": "deny",
       "git push *": "deny"
+    }
+  },
+  "agent": {
+    "relay": {
+      "description": "Text-only relay: answer from the given text alone, no tools.",
+      "mode": "primary",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "read": "deny",
+        "glob": "deny",
+        "grep": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "lsp": "deny",
+        "skill": "deny",
+        "external_directory": "deny"
+      },
+      "prompt": "You are a text-only relay. Answer the request using only the text given to you in the message. You have no tools and no file, repo, or web access — never claim to check or fetch anything, just answer directly."
+    },
+    "task": {
+      "description": "Full coding agent (bash/edit/read) for headless, unattended runs (see opencode-task) — edit/read/glob tools confined to its --dir; the bash tool is not sandboxed by this setting.",
+      "mode": "primary",
+      "permission": {
+        "external_directory": "deny"
+      }
     }
   },
   "lsp": {
