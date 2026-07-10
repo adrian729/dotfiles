@@ -4,3 +4,4 @@
 ^/standalone_quick_setup\.sh
 ^/install\.sh
 settings\.local\.json
+^/\.claude/settings\.json

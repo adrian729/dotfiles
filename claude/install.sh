@@ -22,3 +22,12 @@ if [ -x "$probe" ]; then
 else
     echo "llm-probe not stowed yet — skipping local-LLM capability check"
 fi
+
+# Copy settings.json as a regular file (not symlink), so Claude Code can
+# modify it freely without dirtying the dotfiles repo.  Re-run install.sh
+# to reset from the repo version.
+settings_target="$HOME/.claude/settings.json"
+[ -L "$settings_target" ] && rm "$settings_target"
+mkdir -p "$(dirname "$settings_target")"
+/bin/cp "$(dirname "$0")/.claude/settings.json" "$settings_target"
+
