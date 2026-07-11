@@ -1,60 +1,56 @@
 #!/usr/bin/env bash
-# opencode-llm-probe — verify preferred models against what the CLI offers. Non-fatal.
+# opencode-llm-probe — verify relay models against what the CLI offers. Non-fatal.
 set -euo pipefail
 
 STATE_DIR="$HOME/.local/state/agents"
 STATE_FILE="$STATE_DIR/opencode-llm.json"
-CONFIG_FILE="$HOME/.local/config/opencode-llm-models.json"
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode-models.json"
+if [ ! -f "$CONFIG_FILE" ]; then
+  SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  CONFIG_FILE="$SELF_DIR/../config/opencode-models.json"
+fi
 
 die() { echo "opencode-llm-probe: $*" >&2; exit 1; }
 
 mkdir -p "$STATE_DIR" || die "could not create $STATE_DIR"
-
 PROBED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+# Read relay models from unified config
 if [ -f "$CONFIG_FILE" ]; then
-  mapfile -t PREFERRED < <(jq -r '.preferred[]?' "$CONFIG_FILE" 2>/dev/null)
+  mapfile -t PREFERRED < <(jq -r '.relay[]?' "$CONFIG_FILE" 2>/dev/null)
 else
-  echo "opencode-llm-probe: $CONFIG_FILE not found — using built-in fallback" >&2
-  PREFERRED=(
-    opencode/deepseek-v4-flash-free
-    opencode/mimo-v2.5-free
-    opencode/hy3-free
-    opencode/big-pickle
-  )
+  echo "opencode-llm-probe: $CONFIG_FILE not found — no relay models" >&2
+  PREFERRED=()
 fi
 
-[ ${#PREFERRED[@]} -gt 0 ] || die "no preferred models defined"
+[ ${#PREFERRED[@]} -gt 0 ] || die "no relay models defined in $CONFIG_FILE"
 
 AVAILABLE=()
 NOTE=""
 DISCOVERED=()
 
 if ! command -v opencode >/dev/null 2>&1; then
-  NOTE="opencode CLI not found — using preferred list"
+  NOTE="opencode CLI not found — using relay list"
   FINAL=("${PREFERRED[@]}")
 
 elif ! output=$(opencode models opencode --format json 2>/dev/null); then
-  NOTE="could not reach OpenCode (auth?) — using preferred list; run 'opencode providers login'"
+  NOTE="could not reach OpenCode (auth?) — using relay list; run 'opencode providers login'"
   FINAL=("${PREFERRED[@]}")
 
 else
   mapfile -t ALL_MODELS < <(echo "$output" | jq -r '.[].name // .[] // empty' 2>/dev/null || true)
   if [ ${#ALL_MODELS[@]} -eq 0 ]; then
-    # Maybe the output is a flat list of strings or table rows
     mapfile -t ALL_MODELS < <(echo "$output" | jq -r '.[] // empty' 2>/dev/null || true)
   fi
   if [ ${#ALL_MODELS[@]} -eq 0 ]; then
-    # Try parsing as text table (assume first column = model name)
     mapfile -t ALL_MODELS < <(opencode models opencode 2>/dev/null \
       | awk 'NR>2 {print $1}' | grep -v '^$' || true)
   fi
 
   if [ ${#ALL_MODELS[@]} -eq 0 ]; then
-    NOTE="opencode models returned no parseable output — using preferred list"
+    NOTE="opencode models returned no parseable output — using relay list"
     FINAL=("${PREFERRED[@]}")
   else
-    # Match preferred against available — keep in order
     MATCHES=()
     MISSING=()
     for m in "${PREFERRED[@]}"; do
@@ -75,18 +71,15 @@ else
       [ ${#MISSING[@]} -gt 0 ] && REMOVED=" (removed: ${MISSING[*]})"
       NOTE="verified${REMOVED}"
     else
-      # All preferred missing — discover free-tier alternatives from ALL_MODELS
       for a in "${ALL_MODELS[@]}"; do
-        case "$a" in
-          *free*|*Free*|*FREE*) DISCOVERED+=("$a") ;;
-        esac
+        case "$a" in *free*|*Free*|*FREE*) DISCOVERED+=("$a") ;; esac
       done
       if [ ${#DISCOVERED[@]} -gt 0 ]; then
         FINAL=("${DISCOVERED[@]}")
-        NOTE="no preferred models available — using discovered: ${DISCOVERED[*]}"
+        NOTE="no relay models available — using discovered: ${DISCOVERED[*]}"
       else
         FINAL=("${PREFERRED[@]}")
-        NOTE="no recognized models found — using preferred list anyway"
+        NOTE="no recognized models found — using relay list anyway"
       fi
     fi
   fi

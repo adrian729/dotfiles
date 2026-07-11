@@ -6,14 +6,7 @@ set -euo pipefail
 AGENT="relay"
 NEUTRAL_DIR="$HOME/.local/state/agents/opencode-llm-cwd"
 STATE_FILE="$HOME/.local/state/agents/opencode-llm.json"
-CONFIG_FILE="$HOME/.local/config/opencode-llm-models.json"
-
-FALLBACK_MODELS=(
-  opencode/deepseek-v4-flash-free
-  opencode/mimo-v2.5-free
-  opencode/hy3-free
-  opencode/big-pickle
-)
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode-models.json"
 
 die() { echo "opencode-llm: $*" >&2; exit 1; }
 
@@ -116,7 +109,8 @@ fi
 # opencode/big-pickle is solid but runs ~70-80s per call (heavy hidden
 # reasoning) — kept only as a last resort. deepseek-v4-flash-free /
 # mimo-v2.5-free answer in ~2s; hy3-free ~10s.
-# The model chain is tuned per-machine by opencode-llm-probe at install time.
+# The model list is tuned per-machine by opencode-llm-probe at install time
+# from opencode-models.json's relay list.
 MODELS=()
 load_models() {
   if [ -n "$FORCE_MODEL" ]; then
@@ -129,11 +123,11 @@ load_models() {
   fi
   if [ ${#MODELS[@]} -eq 0 ] && [ -f "$CONFIG_FILE" ]; then
     while IFS= read -r m; do [ -n "$m" ] && MODELS+=("$m"); done \
-      < <(jq -r '.preferred[]?' "$CONFIG_FILE" 2>/dev/null)
+      < <(jq -r '.relay[]?' "$CONFIG_FILE" 2>/dev/null)
   fi
   if [ ${#MODELS[@]} -eq 0 ]; then
-    MODELS=("${FALLBACK_MODELS[@]}")
-    echo "opencode-llm: no model config found — using built-in fallback" >&2
+    echo "opencode-llm: no relay models found in $CONFIG_FILE or $STATE_FILE" >&2
+    exit 5
   fi
 }
 load_models
@@ -159,9 +153,6 @@ while [ "$i" -lt "$n" ]; do
   errmsg=$(jq -r 'select(.type=="error") | (.error.data.message // .error.name // "unknown error")' "$RESP_FILE" 2>/dev/null | head -1)
 
   if [ "$rc" -eq 0 ] && [ -z "$errmsg" ] && [ -s "$RESP_FILE" ]; then
-    # Dedupe by part.id, keeping the last (assumed-cumulative) text per id,
-    # in first-seen order — safe whether or not a part streams multiple
-    # snapshots before completion.
     resp=$(jq -rs '
       [.[] | select(.type=="text")]
       | reduce .[] as $e ({}; .[$e.part.id] = $e.part.text)
@@ -178,8 +169,6 @@ while [ "$i" -lt "$n" ]; do
     fi
   fi
 
-  # Any failure (bad model, auth, rate limit, empty response): walk to the
-  # next candidate. With -m forced there is no next candidate — surface it.
   if [ -n "$FORCE_MODEL" ]; then
     echo "opencode-llm: request failed (model $model): ${errmsg:-exit $rc}" >&2
     exit 6

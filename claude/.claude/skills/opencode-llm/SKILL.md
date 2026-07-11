@@ -7,7 +7,7 @@ Text-only relay wrapping the `opencode` CLI headlessly — the cloud-backed sibl
 
 - Contract identical to `llm`: `producer-cmd | opencode-llm "instruction"` (compress) or `opencode-llm -o path "spec"` (generate, spot-check after).
 - Backed by the `relay` agent (defined in `~/.config/opencode/opencode.json`): every tool denied, so it only ever answers from the text it's given — no file/repo/web access, nothing to verify beyond the text itself.
-- Free-tier models only, ordered fast-first (`deepseek-v4-flash-free`, `mimo-v2.5-free` ~2s; `hy3-free` ~10s; `big-pickle` last-resort ~70-80s — heavy hidden reasoning even for one-word replies). `-m provider/model` forces one, skipping the fallback walk.
+- Free-tier models only, ordered by preference in `opencode-models relay` (~2s fast, last-resort ~70-80s). `-m provider/model` forces one, skipping the fallback walk.
 - **Always call via `run_in_background`** — even the fast path is seconds, not instant, and the slow fallback can be a minute-plus.
 - On ANY nonzero exit (1 usage · 2 empty input · 3 opencode/jq missing · 5 no model available · 6 API error · 124 timeout) → one-line reason on stderr, then do the task the normal way (yourself or `llm` or the right subagent).
 - Needs `opencode` CLI logged in already (`opencode auth login` / `opencode providers login`) — this script never authenticates.

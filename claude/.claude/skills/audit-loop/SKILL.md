@@ -36,9 +36,9 @@ Non-code targets use same agents — dimensions (§5) drive the focus, not agent
 | Step | Default agent | Escalated agent |
 |------|--------------|-----------------|
 | Audit | per tier table (§4) | per tier table |
-| Triage | `reviewer` (deepseek-v4-flash-free) | `auditor` (big-pickle) for paranoid mode |
-| Fix | `implementer` (deepseek-v4-flash-free) | `implementer` (rerun with more steps) for risky fixes |
-| Report | `relay` (deepseek-v4-flash-free) | — |
+| Triage | `reviewer` (free model) | `auditor` (upgraded model) for paranoid mode |
+| Fix | `implementer` (free model) | `implementer` (rerun with more steps) for risky fixes |
+| Report | `relay` (free model) | — |
 
 Non-code targets use same agents — dimensions (§5) drive the focus, not agent body.
 
@@ -57,10 +57,10 @@ Non-code targets use same agents — dimensions (§5) drive the focus, not agent
 
 | Mode | Trigger | Main loop audit | Confirmation (clean_streak==1) |
 |------|---------|-----------------|-------------------------------|
-| Quick/cheap | "quick", "cheap", "light" | `reviewer-quick` (mimo-v2.5-free) | `reviewer` (deepseek-v4-flash-free) |
-| Normal | (default) | `reviewer` (deepseek-v4-flash-free) | `auditor` (big-pickle) |
-| Paranoid | "security", "thorough", "paranoid", "deep" | `auditor` (big-pickle) | `auditor` (big-pickle, fresh spawn) |
-| Maximum | "exhaustive", "leave no stone unturned" | `auditor` (big-pickle) | `auditor` (big-pickle, fresh spawn) |
+| Quick/cheap | "quick", "cheap", "light" | `reviewer-quick` | `reviewer` |
+| Normal | (default) | `reviewer` | `auditor` |
+| Paranoid | "security", "thorough", "paranoid", "deep" | `auditor` | `auditor` (fresh spawn) |
+| Maximum | "exhaustive", "leave no stone unturned" | `auditor` | `auditor` (fresh spawn) |
 
 After confirmation fails → next iteration uses Main loop agent again (all tiers: Reset == Main).
 

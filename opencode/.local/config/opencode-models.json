@@ -1,0 +1,56 @@
+{
+  "free_models": [
+    "opencode/deepseek-v4-flash-free",
+    "opencode/mimo-v2.5-free",
+    "opencode/north-mini-code-free",
+    "opencode/nemotron-3-ultra-free",
+    "opencode/hy3-free",
+    "opencode/big-pickle",
+    "gpt-oss:20b-cloud",
+    "gpt-oss:120b-cloud",
+    "gemma4:cloud",
+    "qwen3-coder:480b-cloud",
+    "qwen3.5:cloud",
+    "nemotron-3-super:cloud"
+  ],
+  "relay": [
+    "opencode/deepseek-v4-flash-free",
+    "opencode/mimo-v2.5-free",
+    "opencode/hy3-free",
+    "opencode/big-pickle"
+  ],
+  "agents": {
+    "auditor": [
+      "qwen3.7-max", "deepseek-v4-pro", "gpt-oss:120b-cloud", "qwen3.7-plus", "nemotron-3-super:cloud",
+      "deepseek-v4-flash", "minimax-m3", "kimi-k2.7-code", "gpt-oss:20b-cloud", "qwen3-coder:480b-cloud"
+    ],
+    "debugger": [
+      "deepseek-v4-flash", "deepseek-v4-pro", "qwen3.7-plus", "qwen3.7-max", "minimax-m3",
+      "deepseek-v4-flash-free", "kimi-k2.7-code", "gpt-oss:120b-cloud", "qwen3-coder:480b-cloud", "gpt-oss:20b-cloud"
+    ],
+    "implementer": [
+      "deepseek-v4-flash", "deepseek-v4-pro", "qwen3.7-plus", "qwen3.7-max", "minimax-m3",
+      "kimi-k2.7-code", "deepseek-v4-flash-free", "qwen3-coder:480b-cloud", "gpt-oss:120b-cloud", "nemotron-3-super:cloud"
+    ],
+    "implementer-quick": [
+      "deepseek-v4-flash", "deepseek-v4-flash-free", "mimo-v2.5", "qwen3.7-plus", "minimax-m3",
+      "gpt-oss:20b-cloud", "gpt-oss:120b-cloud", "nemotron-3-super:cloud", "deepseek-v4-pro", "qwen3.5-plus"
+    ],
+    "planner": [
+      "qwen3.7-max", "deepseek-v4-pro", "qwen3.7-plus", "gpt-oss:120b-cloud", "deepseek-v4-flash",
+      "minimax-m3", "nemotron-3-super:cloud", "gpt-oss:20b-cloud", "kimi-k2.7-code", "gemma4:cloud"
+    ],
+    "researcher": [
+      "deepseek-v4-flash", "qwen3.7-plus", "deepseek-v4-pro", "minimax-m3", "qwen3.7-max",
+      "deepseek-v4-flash-free", "gpt-oss:120b-cloud", "gpt-oss:20b-cloud", "nemotron-3-super:cloud", "gemma4:cloud"
+    ],
+    "reviewer": [
+      "deepseek-v4-pro", "qwen3.7-max", "qwen3.7-plus", "deepseek-v4-flash", "minimax-m3",
+      "gpt-oss:120b-cloud", "nemotron-3-super:cloud", "kimi-k2.7-code", "gpt-oss:20b-cloud", "gemma4:cloud"
+    ],
+    "reviewer-quick": [
+      "deepseek-v4-flash", "deepseek-v4-flash-free", "mimo-v2.5", "qwen3.7-plus", "minimax-m3",
+      "gpt-oss:20b-cloud", "gpt-oss:120b-cloud", "nemotron-3-super:cloud", "deepseek-v4-pro", "qwen3.5-plus"
+    ]
+  }
+}

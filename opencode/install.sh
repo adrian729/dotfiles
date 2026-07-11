@@ -15,7 +15,7 @@ fi
 
 # Probe available models and assign per-agent model overrides.
 # Merges into the copied opencode.json so the Markdown agent defaults get
-# upgraded to the best available model per tier. Non-fatal.
+# upgraded to the best available free model per agent. Non-fatal.
 probe_agent="$HOME/.local/scripts/opencode-agent-models-probe"
 if [ -x "$probe_agent" ]; then
     "$probe_agent" || echo "opencode-agent-models-probe failed — using Markdown defaults"

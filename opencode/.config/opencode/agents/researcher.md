@@ -1,7 +1,7 @@
 ---
 description: "Web research, documentation lookups, library comparisons — enforced read-only with web access. Use when you need to fetch and synthesize external information. NOT: codebase exploration (use explore subagent)."
 mode: subagent
-model: opencode/deepseek-v4-flash-free
+# model: managed in opencode.json agent block. Re-run install.sh after changes.
 steps: 40
 permission:
   edit: deny
