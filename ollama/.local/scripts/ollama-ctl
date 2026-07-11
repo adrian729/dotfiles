@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# ollama-ctl — manage ollama as a background service via brew services
+
+SERVICE="ollama"
+
+usage() {
+    cat <<EOF
+Usage: ollama-ctl [COMMAND]
+
+Manage ollama as a background service (brew services).
+
+Commands:
+  (no arg)  Show status: running/stopped, PID, RSS, loaded model
+  start     Start ollama in the background
+  stop      Stop the ollama background service
+  restart   Stop then start
+  log       Tail the ollama log file
+  -h, --help  Show this help message
+EOF
+    exit 0
+}
+
+status() {
+    local info pid running rss mem model
+    info=$(brew services info "$SERVICE" 2>/dev/null)
+    if echo "$info" | grep -q "Running: true"; then
+        running=true
+        pid=$(pgrep -f "ollama serve" | head -1)
+        echo "ollama: running"
+        if [[ -n "$pid" ]]; then
+            rss=$(ps -o rss= -p "$pid" 2>/dev/null)
+            if [[ -n "$rss" ]]; then
+                if (( rss > 1048576 )); then
+                    mem=$(echo "scale=1; $rss / 1048576" | bc -l)"G"
+                elif (( rss > 1024 )); then
+                    mem=$(echo "scale=0; $rss / 1024" | bc -l)"M"
+                else
+                    mem="${rss}K"
+                fi
+            fi
+            echo "  PID:  $pid"
+            [[ -n "$mem" ]] && echo "  RSS:  $mem"
+        fi
+        if command -v jq &>/dev/null; then
+            model=$(curl -s --max-time 1 http://localhost:11434/api/ps 2>/dev/null | jq -r '.models[0].name // ""' 2>/dev/null)
+            [[ -n "$model" ]] && echo "  loaded model: $model"
+        fi
+    else
+        echo "ollama: stopped"
+    fi
+}
+
+case "${1:-}" in
+    -h|--help) usage ;;
+    start)
+        brew services start "$SERVICE"
+        sleep 1
+        status
+        ;;
+    stop)
+        brew services stop "$SERVICE"
+        status
+        ;;
+    restart)
+        brew services stop "$SERVICE"
+        sleep 1
+        brew services start "$SERVICE"
+        sleep 1
+        status
+        ;;
+    log)
+        tail -f /opt/homebrew/var/log/ollama.log
+        ;;
+    "")
+        status
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo "Run 'ollama-ctl --help' for usage."
+        exit 1
+        ;;
+esac

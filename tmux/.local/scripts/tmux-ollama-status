@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# tmux-ollama-status — ollama status pill for tmux status bar
+# Called by tmux via #() every status-interval (1s).
+
+ICON="🦙"
+BG="#4f8a8a"
+SURFACE_0="#313244"
+FG="#cdd6f4"
+GREEN="#A6E3A1"
+RED="#F38BA8"
+
+PID=$(pgrep -f "ollama serve" | head -1)
+
+printf '#[fg=%s,bg=%s]#[reverse]#[noreverse]#[fg=%s]%s ' "$SURFACE_0" "$BG" "$FG" "$ICON"
+
+if [[ -z "$PID" ]]; then
+    printf '#[fg=%s,bg=%s]● ' "$RED" "$SURFACE_0"
+    exit 0
+fi
+
+printf '#[fg=%s,bg=%s] ● ' "$GREEN" "$SURFACE_0"
+printf '#[fg=%s,bg=%s]id%s' "$FG" "$SURFACE_0" "$PID"
+
+RSS=$(ps -o rss= -p "$PID" 2>/dev/null)
+if [[ -n "$RSS" ]]; then
+    if (( RSS > 1048576 )); then
+        mem=$(echo "scale=1; $RSS / 1048576" | bc -l)"GB"
+    elif (( RSS > 1024 )); then
+        mem="$((RSS / 1024))MB"
+    else
+        mem="${RSS}KB"
+    fi
+    printf '#[fg=%s,bg=%s] %s' "$FG" "$SURFACE_0" "$mem"
+fi
+
+MODEL=$(curl -s --max-time 0.3 http://localhost:11434/api/ps 2>/dev/null | jq -r '.models[0].name // ""' 2>/dev/null)
+if [[ -n "$MODEL" ]]; then
+    printf '#[fg=%s,bg=%s] %s' "$FG" "$SURFACE_0" "$MODEL"
+fi
+
+printf ' '
