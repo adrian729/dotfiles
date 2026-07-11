@@ -35,16 +35,12 @@ NOTE=""
 
 collect_models() {
   local prov="$1" out line
-  out=$(opencode models "$prov" --format json 2>/dev/null || true)
+  out=$(opencode models "$prov" 2>/dev/null || true)
   if [ -z "$out" ]; then return 1; fi
   while IFS= read -r line; do
+    line="${line%% *}"
     [ -n "$line" ] && ALL_MODELS+=("$line")
-  done < <(echo "$out" | jq -r '.[].name // .[] // empty' 2>/dev/null || true)
-  if [ ${#ALL_MODELS[@]} -eq 0 ]; then
-    while IFS= read -r line; do
-      [ -n "$line" ] && ALL_MODELS+=("$line")
-    done < <(opencode models "$prov" 2>/dev/null | awk 'NR>2 {print $1}' | grep -v '^$' || true)
-  fi
+  done <<<"$out"
 }
 
 AVAILABLE_ANY=false

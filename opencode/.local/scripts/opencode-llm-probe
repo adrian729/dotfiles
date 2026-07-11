@@ -17,7 +17,10 @@ PROBED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # Read relay models from unified config
 if [ -f "$CONFIG_FILE" ]; then
-  mapfile -t PREFERRED < <(jq -r '.relay[]?' "$CONFIG_FILE" 2>/dev/null)
+  PREFERRED=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && PREFERRED+=("$line")
+  done < <(jq -r '.relay[]?' "$CONFIG_FILE" 2>/dev/null)
 else
   echo "opencode-llm-probe: $CONFIG_FILE not found — no relay models" >&2
   PREFERRED=()
@@ -33,19 +36,16 @@ if ! command -v opencode >/dev/null 2>&1; then
   NOTE="opencode CLI not found — using relay list"
   FINAL=("${PREFERRED[@]}")
 
-elif ! output=$(opencode models opencode --format json 2>/dev/null); then
+elif ! output=$(opencode models opencode 2>/dev/null); then
   NOTE="could not reach OpenCode (auth?) — using relay list; run 'opencode providers login'"
   FINAL=("${PREFERRED[@]}")
 
 else
-  mapfile -t ALL_MODELS < <(echo "$output" | jq -r '.[].name // .[] // empty' 2>/dev/null || true)
-  if [ ${#ALL_MODELS[@]} -eq 0 ]; then
-    mapfile -t ALL_MODELS < <(echo "$output" | jq -r '.[] // empty' 2>/dev/null || true)
-  fi
-  if [ ${#ALL_MODELS[@]} -eq 0 ]; then
-    mapfile -t ALL_MODELS < <(opencode models opencode 2>/dev/null \
-      | awk 'NR>2 {print $1}' | grep -v '^$' || true)
-  fi
+  ALL_MODELS=()
+  while IFS= read -r line; do
+    line="${line%% *}"
+    [ -n "$line" ] && ALL_MODELS+=("$line")
+  done <<<"$output"
 
   if [ ${#ALL_MODELS[@]} -eq 0 ]; then
     NOTE="opencode models returned no parseable output — using relay list"

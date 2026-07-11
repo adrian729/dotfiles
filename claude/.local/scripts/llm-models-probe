@@ -45,8 +45,9 @@ NOTE=""
 INSTALLED=()
 
 if curl -sf --max-time 2 "localhost:11434/api/version" >/dev/null 2>&1; then
-  mapfile -t INSTALLED < <( \
-    curl -s "localhost:11434/api/tags" 2>/dev/null \
+  while IFS= read -r line; do
+    [ -n "$line" ] && INSTALLED+=("$line")
+  done < <(curl -s "localhost:11434/api/tags" 2>/dev/null \
     | jq -r '.models[].name' 2>/dev/null || true)
 fi
 
@@ -139,7 +140,10 @@ else
       DISCOVERED_SORTED=$(printf '%s\n' "${DISCOVERED[@]}" \
         | sort -t: -k2 -rn \
         | awk -F: '{print $1}')
-      mapfile -t FILTERED_COMPRESS <<<"$DISCOVERED_SORTED"
+      FILTERED_COMPRESS=()
+      while IFS= read -r line; do
+        [ -n "$line" ] && FILTERED_COMPRESS+=("$line")
+      done <<<"$DISCOVERED_SORTED"
       # Build models map with estimated footprints
       ESTIMATES="{}"
       for item in "${DISCOVERED[@]}"; do
