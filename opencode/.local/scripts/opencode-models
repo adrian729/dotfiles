@@ -13,25 +13,17 @@ USAGE="Usage: opencode-models {relay|free|agents [--list|<name>]}"
 cmd="${1:-}"
 case "$cmd" in
   relay)
-    python3 -c "import json,sys; ms=json.load(open(sys.argv[1]))['relay']; [print(m) for m in ms]" "$CONFIG"
+    jq -r '.relay[]' "$CONFIG"
     ;;
   free)
-    python3 -c "import json,sys; ms=json.load(open(sys.argv[1]))['free_models']; [print(m) for m in ms]" "$CONFIG"
+    jq -r '.free_models[]' "$CONFIG"
     ;;
   agents)
     key="${2:-}"
     if [ "$key" = "--list" ]; then
-      python3 -c "import json,sys; print('\n'.join(json.load(open(sys.argv[1]))['agents'].keys()))" "$CONFIG"
+      jq -r '.agents | keys[]' "$CONFIG"
     elif [ -n "$key" ]; then
-      python3 -c "
-import json,sys
-agents = json.load(open(sys.argv[1]))['agents']
-ms = agents.get(sys.argv[2])
-if ms is None:
-    print(f'Unknown agent: {sys.argv[2]}', file=sys.stderr)
-    sys.exit(1)
-[print(m) for m in ms]
-" "$CONFIG" "$key"
+      jq -r --arg k "$key" '.agents[$k][] // empty' "$CONFIG"
     else
       echo "$USAGE" >&2
       exit 1

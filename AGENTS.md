@@ -47,16 +47,23 @@ claude/
     hooks/             agent-eval, agent-guard, agent-skill-nudge, skill-eval
     skills/            12 SKILL.md dirs
     tmp/
-  .local/scripts/      claude-wt, git-wt, llm, llm-probe, open-wt, opencode-llm, opencode-task
+  .local/scripts/      claude-wt, git-wt, llm, llm-models-probe, llm-probe,
+                       open-wt, opencode-llm, opencode-task
   .stow-local-ignore
   install.sh
 
 opencode/
   .config/opencode/
+    MODELS.md          machine-readable model catalog
     opencode.json      (copied by install.sh, not symlinked)
     AGENTS.md -> ../../../agents/.agents/AGENTS.md (symlink)
     tui.json
-  .local/scripts/      opencode-git-wt, opencode-open-wt, opencode-wt
+    agents/            8 agent .md files (auditor, debugger, implementer, ...)
+  .local/
+    config/            opencode-models.json (unified model config)
+    scripts/           opencode-git-wt, opencode-open-wt, opencode-wt,
+                       opencode-llm-probe, opencode-agent-models-probe,
+                       opencode-models
   .stow-local-ignore
   install.sh
 

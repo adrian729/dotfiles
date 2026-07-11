@@ -7,6 +7,10 @@ AGENT="relay"
 NEUTRAL_DIR="$HOME/.local/state/agents/opencode-llm-cwd"
 STATE_FILE="$HOME/.local/state/agents/opencode-llm.json"
 CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode-models.json"
+if [ ! -f "$CONFIG_FILE" ]; then
+  SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  CONFIG_FILE="$SELF_DIR/../config/opencode-models.json"
+fi
 
 die() { echo "opencode-llm: $*" >&2; exit 1; }
 

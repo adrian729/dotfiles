@@ -14,9 +14,9 @@ secrets, infra. Does not apply to doc/plan targets — reviewer is default.
 
 # Paid model usage
 
-Free models are the default for all agents. To use a paid model for a given task, ask the user for permission first — `y/N/always`. The answer is N (free) unless the user explicitly opts in.
+Free models are the default when delegating to OpenCode subagents (the agents defined in opencode.json's `agent` block). To use a paid model for a given task, ask the user for permission first — `y/N/always`. The answer is N (free) unless the user explicitly opts in.
 
-When asking, list the paid model and its reason (e.g. "auditor needs qwen3.7-max for thorough security analysis, $0.32/session"). If the user says "always" for a model, record their choice per-task.
+When asking, list the paid model and its reason (e.g. "auditor needs qwen3.7-max for thorough security analysis, $0.32/session"). If the user says "always" for a model, remember it for the remainder of the session — re-ask next session.
 
 Query available models:
 - `opencode-models free` — free-tier models only
