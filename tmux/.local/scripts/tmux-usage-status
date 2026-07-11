@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+
+# ── AI usage status for tmux — shows Claude (brain icon) + OpenCode (star_cog icon)
+# Called by tmux via #() in status-right every status-interval (1s).
+# Claude data from /tmp/statusline-rate-limits (written by claude's statusline.sh).
+# OpenCode data from SQLite DB, cached to /tmp/tmux-opencode-cache (60s stale → bg refresh).
+
+# ── Icons ──
+CLAUDE_ICON="󰚩"
+OPENCODE_ICON="󱙺"
+
+# ── Colors ──
+CLAUDE_BG="#FAB387"
+OPENCODE_BG="#CBA6F7"
+SURFACE_0="#313244"
+CRUST="#11111B"
+GREEN="#A6E3A1"
+YELLOW="#F9E2AF"
+RED="#F38BA8"
+
+# ── Limits ──
+WINDOW_5H=18000
+WINDOW_7D=604800
+WINDOW_30D=2592000
+LIMIT_5H=12
+LIMIT_7D=30
+LIMIT_30D=60
+
+CACHE_MAX_AGE=10
+CLAUDE_CACHE="/tmp/statusline-rate-limits"
+OPENCODE_CACHE="/tmp/tmux-opencode-cache"
+OPENCODE_DB="$HOME/.local/share/opencode/opencode.db"
+LOCK_DIR="/tmp/tmux-opencode-refresh.lock"
+
+NOW=$(date +%s)
+
+# ── Percent formatting ──
+fmt_pct() {
+    local raw=$1 v
+    [[ ! "$raw" =~ ^[0-9]+\.?[0-9]*$ ]] && { printf '0%%'; return; }
+    v=$(printf "%.1f" "$raw" 2>/dev/null)
+    if   (( $(echo "$v < 1" | bc -l) ))  2>/dev/null; then printf '0%%'
+    elif (( $(echo "$v < 10" | bc -l) )) 2>/dev/null; then printf '%.1f%%' "$v"
+    else printf '%.0f%%' "$v"
+    fi
+}
+
+# ── Color: hard-cap thresholds (OpenCode — no reset epoch available) ──
+threshold_color() {
+    local used=$1
+    if   (( $(echo "$used > 80" | bc -l) )) 2>/dev/null; then printf '%s' "$RED"
+    elif (( $(echo "$used > 50" | bc -l) )) 2>/dev/null; then printf '%s' "$YELLOW"
+    else printf '%s' "$GREEN"
+    fi
+}
+
+# ── Color: pace-aware (Claude — compares burn rate to elapsed window time) ──
+pace_color() {
+    local used=$1 reset=$2 win=$3 color="$GREEN" left elapsed over
+    (( win <= 0 )) && win=1
+    [[ ! "$used" =~ ^[0-9]+\.?[0-9]*$ ]] && { printf '%s' "$GREEN"; return; }
+    if [[ "$reset" -gt 0 ]] 2>/dev/null; then
+        left=$(( reset - NOW ))
+        (( left < 0 )) && left=0
+        elapsed=$(( (win - left) * 100 / win ))
+        (( elapsed < 0 )) && elapsed=0
+        (( elapsed > 100 )) && elapsed=100
+        over=$(echo "$used - $elapsed" | bc -l)
+        if   (( $(echo "$over >= 20" | bc -l) )) 2>/dev/null; then printf '%s' "$RED"; return
+        elif (( $(echo "$over > 0"   | bc -l) )) 2>/dev/null; then printf '%s' "$YELLOW"; return
+        fi
+    fi
+    if   (( $(echo "$used > 80" | bc -l) )) 2>/dev/null; then printf '%s' "$RED"
+    elif (( $(echo "$used > 50" | bc -l) )) 2>/dev/null && [[ "$color" = "$GREEN" ]]; then printf '%s' "$YELLOW"
+    else printf '%s' "$GREEN"
+    fi
+}
+
+# ── Pill segment: bg hex, icon, left_bg, color1, val1, [color2, val2, ...] ──
+# left_bg is the arc fill color (previous segment's bg) for seamless transitions
+# Each value gets its own color via #[fg=...]
+pill() {
+    local bg=$1 icon=$2 left_bg=${3:-$CRUST}
+    shift 3
+    printf '#[fg=%s,bg=%s]#[reverse]#[noreverse]#[fg=%s]%s ' "$left_bg" "$bg" "$CRUST" "$icon"
+    local sep=""
+    while [[ $# -ge 2 ]]; do
+        printf '#[fg=%s,bg=%s] %s%s' "$1" "$SURFACE_0" "$sep" "$2"
+        sep="| "
+        shift 2
+    done
+    printf ' '
+}
+
+# ── Refresh OpenCode cache (background, mkdir-locked) ──
+refresh_opencode_cache() {
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+        (
+            local cost_5h cost_7d cost_30d ts
+            if [[ -f "$OPENCODE_DB" ]]; then
+                cost_5h=$(sqlite3 "$OPENCODE_DB" \
+                    "SELECT COALESCE(SUM(cost), 0) FROM session
+                     WHERE time_created > (unixepoch('now') - $WINDOW_5H) * 1000
+                     AND json_extract(model, '\$.providerID') = 'opencode-go'" 2>/dev/null) || cost_5h=0
+                cost_7d=$(sqlite3 "$OPENCODE_DB" \
+                    "SELECT COALESCE(SUM(cost), 0) FROM session
+                     WHERE time_created > (unixepoch('now') - $WINDOW_7D) * 1000
+                     AND json_extract(model, '\$.providerID') = 'opencode-go'" 2>/dev/null) || cost_7d=0
+                cost_30d=$(sqlite3 "$OPENCODE_DB" \
+                    "SELECT COALESCE(SUM(cost), 0) FROM session
+                     WHERE time_created > (unixepoch('now') - $WINDOW_30D) * 1000
+                     AND json_extract(model, '\$.providerID') = 'opencode-go'" 2>/dev/null) || cost_30d=0
+            else
+                cost_5h=0; cost_7d=0; cost_30d=0
+            fi
+            ts=$(date +%s)
+            printf '{"cost_5h":%s,"cost_7d":%s,"cost_30d":%s,"ts":%s}\n' \
+                "$cost_5h" "$cost_7d" "$cost_30d" "$ts" > "${OPENCODE_CACHE}.$$" && \
+                mv -f "${OPENCODE_CACHE}.$$" "$OPENCODE_CACHE"
+            rmdir "$LOCK_DIR"
+        ) &
+    fi
+}
+
+# ── Read OpenCode cache, trigger bg refresh if stale ──
+read_opencode() {
+    local stale=1 o_ts
+    if [[ -f "$OPENCODE_CACHE" ]]; then
+        o_ts=$(jq -r '.ts // 0' "$OPENCODE_CACHE" 2>/dev/null)
+        [[ "$o_ts" -gt $((NOW - CACHE_MAX_AGE)) ]] 2>/dev/null && stale=0
+    fi
+    [[ "$stale" -eq 1 ]] && refresh_opencode_cache
+    if [[ -f "$OPENCODE_CACHE" ]]; then
+        o_cost_5h=$(jq -r '.cost_5h // 0'  "$OPENCODE_CACHE" 2>/dev/null) || o_cost_5h=0
+        o_cost_7d=$(jq -r '.cost_7d // 0'  "$OPENCODE_CACHE" 2>/dev/null) || o_cost_7d=0
+        o_cost_30d=$(jq -r '.cost_30d // 0' "$OPENCODE_CACHE" 2>/dev/null) || o_cost_30d=0
+    fi
+    : "${o_cost_5h:=0}" "${o_cost_7d:=0}" "${o_cost_30d:=0}"
+}
+
+# ── Read Claude cache ──
+read_claude() {
+    c_5h_pct=0; c_7d_pct=0; c_5h_reset=0; c_7d_reset=0
+    if [[ -f "$CLAUDE_CACHE" ]]; then
+        IFS='|' read -r c_5h_pct c_7d_pct c_5h_reset c_7d_reset < "$CLAUDE_CACHE" 2>/dev/null
+    fi
+    : "${c_5h_pct:=0}" "${c_7d_pct:=0}" "${c_5h_reset:=0}" "${c_7d_reset:=0}"
+}
+
+# ── Main ──
+read_claude
+read_opencode
+
+# OpenCode percentages (multiply first to avoid bc scale truncation)
+o_5h_pct=$( echo "scale=4; ${o_cost_5h:-0} * 100 / $LIMIT_5H"  | bc -l 2>/dev/null) || o_5h_pct=0
+o_7d_pct=$( echo "scale=4; ${o_cost_7d:-0} * 100 / $LIMIT_7D"  | bc -l 2>/dev/null) || o_7d_pct=0
+o_30d_pct=$(echo "scale=4; ${o_cost_30d:-0} * 100 / $LIMIT_30D" | bc -l 2>/dev/null) || o_30d_pct=0
+
+# Colors
+c_5h_color=$(pace_color "$c_5h_pct" "$c_5h_reset" "$WINDOW_5H")
+c_7d_color=$(pace_color "$c_7d_pct" "$c_7d_reset" "$WINDOW_7D")
+
+o_5h_color=$(threshold_color "$o_5h_pct")
+o_7d_color=$(threshold_color "$o_7d_pct")
+o_30d_color=$(threshold_color "$o_30d_pct")
+
+# Format values
+c_5h_fmt=$(fmt_pct "$c_5h_pct")
+c_7d_fmt=$(fmt_pct "$c_7d_pct")
+o_5h_fmt=$(fmt_pct "$o_5h_pct")
+o_7d_fmt=$(fmt_pct "$o_7d_pct")
+o_30d_fmt=$(fmt_pct "$o_30d_pct")
+
+# Render two pills
+pill "$CLAUDE_BG"   "$CLAUDE_ICON"   "$CRUST"     "$c_5h_color" "$c_5h_fmt" "$c_7d_color" "$c_7d_fmt"
+pill "$OPENCODE_BG" "$OPENCODE_ICON" "$SURFACE_0" "$o_5h_color" "$o_5h_fmt" "$o_7d_color" "$o_7d_fmt" "$o_30d_color" "$o_30d_fmt"
