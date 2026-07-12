@@ -70,5 +70,10 @@
   "skipWorkflowUsageWarning": true,
   "theme": "dark-ansi",
   "editorMode": "vim",
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "skillOverrides": {
+    "autonomous-process": "name-only",
+    "audit-loop": "name-only",
+    "best-of-n": "name-only"
+  }
 }

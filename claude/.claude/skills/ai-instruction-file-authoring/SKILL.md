@@ -1,6 +1,6 @@
 ---
 name: ai-instruction-file-authoring
-description: Author and evaluate AI tool instruction files read by the model itself — skills (SKILL.md), subagents (.claude/agents/*.md or opencode.json agent block), and CLAUDE.md/AGENTS.md memory files — write new, edit existing, or check against authoring rules (valid frontmatter where applicable, sharp triggers/routing, terse AI-directed voice, minimal tokens). Use whenever a SKILL.md, agent file, or CLAUDE.md (global or project) is the subject: creating, editing, auditing/reviewing, or judging well-formedness; explaining why a skill/agent over-/under-fires or mis-routes; or alongside audit-loop when audit targets these files (audit-loop drives loop, this supplies rubric). NOT for running a skill's task, executing/delegating to an agent, merely reading/quoting an instruction file's content, general non-instruction-file audits (audit-loop), nor configuring settings.json/hooks/permissions or harness-enforced automations (update-config).
+description: Author and evaluate AI-read instruction files — skills (SKILL.md), subagents (.claude/agents/*.md or opencode.json agent block), CLAUDE.md/AGENTS.md memory files. Use when creating, editing, auditing/reviewing, or judging well-formedness of any such file; explaining why a skill/agent over-/under-fires or mis-routes; or supplying the rubric while audit-loop drives an audit of these files. NOT for running a skill's task, executing/delegating to an agent, merely reading/quoting an instruction file, non-instruction-file audits (audit-loop), or settings.json/hooks/permissions/harness automations (update-config).
 ---
 
 # AI Instruction-File Authoring
@@ -43,6 +43,12 @@ CLAUDE.md (global `~/.claude/CLAUDE.md` or project `<repo>/CLAUDE.md`): no front
 - Skill/agent inherently tied to one tool (wraps a tool-only mechanism) → say so in its description/body. Don't leave portability ambiguous by omission.
 - A skill genuinely tied to one tool's own mechanism (not just tool-flavored wording) → add an explicit `NOT when <host isn't that tool>` clause to its `description`, so it doesn't fire under a host where it's meaningless or circular — not just document the limit in the body.
 
+## Registration (Claude Code)
+During **create** and **audit**, evaluate whether the skill's description should be `skillOverrides: "name-only"` in `settings.json`:
+- **Recommend name-only** when trigger is narrow + user-driven AND description non-trivial length. Say: `"Recommend skillOverrides: name-only — trigger user-driven, description costs N tokens."`
+- **Don't recommend** when trigger broad/useful with valuable auto-fire, or description short.
+- **Always recommend, never decide** — phrase as suggestion, user sets the key.
+
 ## Token discipline
 Two failure modes:
 - **Bloat** → tokens wasted every trigger. Cut any line that doesn't change behavior.
@@ -57,11 +63,12 @@ Test per line: "delete this — behavior change?" No → cut. Yes → keep, tigh
 5. **Consistency** — body matches description; no contradictions; referenced skills/commands/siblings exist.
 6. **CLAUDE.md** — one topic per header; no cross-hierarchy duplication; automations redirected to hooks/update-config, not memory.
 7. **Portability** — generic by default (Claude Code + OpenCode; Cursor when free); tool-specific only where the mechanism requires it; genuine tool-lock stated explicitly, not left implicit.
+8. **Registration** — flag name-only for skills with narrow user-driven triggers and non-trivial descriptions; don't flag when auto-fire is valuable or savings negligible. Recommend, don't decree.
 
 Report by item; fix safe issues, flag judgment calls.
 
 ## Workflow
-- **Write** → name+location → description (what + Use when/routing + anti-triggers) → body → checklist.
+- **Write** → name+location → description (what + Use when/routing + anti-triggers) → registration mode → body → checklist.
 - **Update** → make the change → re-run checklist (esp. Trigger + Consistency).
 - **Audit** → checklist only → report + fix safe issues.
 - **CLAUDE.md** → skip name/description/frontmatter → header-grouped directives → checklist (minus Frontmatter, plus hook-boundary check).

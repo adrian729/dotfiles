@@ -1,6 +1,6 @@
 ---
 name: audit-loop
-description: Iteratively audit work: find issues, fix safe ones, re-audit until two consecutive clean passes (or given cap). Use when "audit loop", "keep auditing until clean", "iteratively audit"; NOT when one-shot audit/review/harden/double-check (those → reviewer/auditor). User may cap iterations.
+description: Iteratively audit work: find issues, fix safe ones, re-audit until two consecutive clean passes or user-given iteration cap. Use when "audit loop", "keep auditing until clean", "iteratively audit"; NOT when one-shot audit/review/harden/double-check (→ reviewer/auditor).
 ---
 
 # Audit Loop
