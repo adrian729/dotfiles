@@ -1,6 +1,6 @@
 ---
 description: "Implementation plans, API/schema/component design, trade-off analysis — enforced read-only. Use for architecture decisions, planning, or pros/cons analysis without risk of accidental edits. NOT: quick specs."
-mode: subagent
+mode: all
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
 steps: 30
 permission:

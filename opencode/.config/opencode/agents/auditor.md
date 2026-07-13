@@ -1,6 +1,6 @@
 ---
 description: "Security/compliance audit — enforced read-only, restricted bash, best model. Use for security review, vulnerability assessment, compliance checks, sensitive-path audit (auth/crypto/payment/secrets/infra). NOT: standard review (reviewer)."
-mode: subagent
+mode: all
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
 steps: 25
 permission:

@@ -1,6 +1,6 @@
 ---
 description: "Read-only code review — check diffs, plans, docs, verifying correctness. Enforced edit:deny — cannot modify files. Use when you need an isolated review with tool-enforced read-only. NOT: quick triage (reviewer-quick), security audit (auditor)."
-mode: subagent
+mode: all
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
 steps: 30
 permission:

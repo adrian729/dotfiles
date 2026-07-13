@@ -53,6 +53,14 @@ command -v opencode >/dev/null 2>&1 || { echo "opencode-task: opencode CLI not f
 command -v git >/dev/null 2>&1 || { echo "opencode-task: git required" >&2; exit 3; }
 command -v jq >/dev/null 2>&1 || { echo "opencode-task: jq required" >&2; exit 3; }
 
+if [ "$AGENT" != "task" ]; then
+  agent_mode=$(opencode agent list 2>/dev/null | grep -E "^${AGENT} " | head -1 | sed 's/.*(\(.*\))/\1/')
+  case "$agent_mode" in
+    subagent) die "agent '$AGENT' is mode:subagent — cannot be invoked via 'opencode run --agent'. Change its mode to 'all' in the agent .md frontmatter." ;;
+    '') die "agent '$AGENT' not found in 'opencode agent list'" ;;
+  esac
+fi
+
 git check-ref-format --branch "$NAME" >/dev/null 2>&1 || { echo "opencode-task: '$NAME' is not a valid branch name" >&2; exit 2; }
 
 ROOT_COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
@@ -145,7 +153,7 @@ RESP_FILE=$(mktemp "${TMPDIR:-/tmp}/opencode-task.resp.XXXXXX")
 trap 'rm -f "$RESP_FILE"' EXIT
 
 set +e
-run_timed "$TIMEOUT" opencode run "${OC_ARGS[@]+"${OC_ARGS[@]}"}" --agent "$AGENT" --dir "$WT_DIR" --auto --format json -- "$PROMPT" >"$RESP_FILE"
+run_timed "$TIMEOUT" opencode run "${OC_ARGS[@]+"${OC_ARGS[@]}"}" --agent "$AGENT" --dir "$WT_DIR" --auto --format json -- "$PROMPT" </dev/null >"$RESP_FILE"
 rc=$?
 set -e
 
