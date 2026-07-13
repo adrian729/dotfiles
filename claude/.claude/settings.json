@@ -74,6 +74,7 @@
   "skillOverrides": {
     "autonomous-process": "name-only",
     "audit-loop": "name-only",
-    "best-of-n": "name-only"
+    "best-of-n": "name-only",
+    "evaluator-optimizer": "name-only"
   }
 }
