@@ -80,6 +80,28 @@ if [ "${HOURS_RESET:-0}" -gt 0 ] 2>/dev/null || [ "${WEEK_RESET:-0}" -gt 0 ] 2>/
     printf '%s|%s|%s|%s\n' "$HOURS" "$WEEK" "$HOURS_RESET" "$WEEK_RESET" > "${RATE_CACHE}.$$" && mv -f "${RATE_CACHE}.$$" "$RATE_CACHE"
 fi
 
+WEEKLY_LOG="$HOME/.local/share/claude/weekly-usage.log"
+WEEKLY_STATE="$HOME/.local/share/claude/weekly-usage-state"
+if [ "${WEEK_RESET:-0}" -gt 0 ] 2>/dev/null; then
+    [ ! -d "$HOME/.local/share/claude" ] && mkdir -p "$HOME/.local/share/claude"
+    PREV_WEEK_RESET=""
+    PREV_WEEK_PCT=""
+    if [ -f "$WEEKLY_STATE" ]; then
+        IFS='|' read -r PREV_WEEK_PCT PREV_WEEK_RESET < "$WEEKLY_STATE" 2>/dev/null
+    fi
+    if [ -n "${PREV_WEEK_RESET}" ] && [ "${WEEK_RESET}" != "${PREV_WEEK_RESET}" ]; then
+        printf '%s|%s|%s\n' "$(date +%s)" "${PREV_WEEK_PCT}" "${PREV_WEEK_RESET}" >> "$WEEKLY_LOG"
+    fi
+    printf '%s|%s\n' "$WEEK" "$WEEK_RESET" > "${WEEKLY_STATE}.$$" && mv -f "${WEEKLY_STATE}.$$" "$WEEKLY_STATE"
+    if [ $((RANDOM % 50)) -eq 0 ] && [ -f "$WEEKLY_LOG" ]; then
+        CUTOFF=$(( $(date +%s) - 3024000 ))
+        TMPLOG="${WEEKLY_LOG}.trim.$$"
+        while IFS='|' read -r ts pct rst; do
+            [ "${ts:-0}" -gt "$CUTOFF" ] 2>/dev/null && printf '%s|%s|%s\n' "$ts" "$pct" "$rst"
+        done < "$WEEKLY_LOG" > "$TMPLOG" && mv -f "$TMPLOG" "$WEEKLY_LOG"
+    fi
+fi
+
 # Force the values that feed arithmetic to plain integers: guards against jq exponential
 # notation on absurd magnitudes and against a corrupted cache injecting non-numeric text.
 case "$PCT"   in ''|*[!0-9]*) PCT=0 ;;   esac

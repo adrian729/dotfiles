@@ -28,6 +28,7 @@ LIMIT_30D=60
 
 CACHE_MAX_AGE=10
 CLAUDE_CACHE="/tmp/statusline-rate-limits"
+CLAUDE_WEEKLY_LOG="$HOME/.local/share/claude/weekly-usage.log"
 OPENCODE_CACHE="/tmp/tmux-opencode-cache"
 OPENCODE_DB="$HOME/.local/share/opencode/opencode.db"
 LOCK_DIR="/tmp/tmux-opencode-refresh.lock"
@@ -140,11 +141,20 @@ read_opencode() {
 
 # ── Read Claude cache ──
 read_claude() {
-    c_5h_pct=0; c_7d_pct=0; c_5h_reset=0; c_7d_reset=0
+    c_5h_pct=0; c_7d_pct=0; c_5h_reset=0; c_7d_reset=0; c_monthly_pct=0
     if [[ -f "$CLAUDE_CACHE" ]]; then
         IFS='|' read -r c_5h_pct c_7d_pct c_5h_reset c_7d_reset < "$CLAUDE_CACHE" 2>/dev/null
     fi
     : "${c_5h_pct:=0}" "${c_7d_pct:=0}" "${c_5h_reset:=0}" "${c_7d_reset:=0}"
+    if [[ -f "$CLAUDE_WEEKLY_LOG" ]]; then
+        local prev_sum=0 pct
+        while IFS='|' read -r _ pct _; do
+            [[ "$pct" =~ ^[0-9]+\.?[0-9]*$ ]] && prev_sum=$(echo "$prev_sum + $pct" | bc -l 2>/dev/null)
+        done < <(tail -3 "$CLAUDE_WEEKLY_LOG" 2>/dev/null)
+        c_monthly_pct=$(echo "scale=2; ($c_7d_pct + $prev_sum) / 4" | bc -l 2>/dev/null) || c_monthly_pct=0
+    else
+        c_monthly_pct=$(echo "scale=2; $c_7d_pct / 4" | bc -l 2>/dev/null) || c_monthly_pct=0
+    fi
 }
 
 # ── Main ──
@@ -159,6 +169,7 @@ o_30d_pct=$(echo "scale=4; ${o_cost_30d:-0} * 100 / $LIMIT_30D" | bc -l 2>/dev/n
 # Colors
 c_5h_color=$(pace_color "$c_5h_pct" "$c_5h_reset" "$WINDOW_5H")
 c_7d_color=$(pace_color "$c_7d_pct" "$c_7d_reset" "$WINDOW_7D")
+c_monthly_color=$(threshold_color "$c_monthly_pct")
 
 o_5h_color=$(threshold_color "$o_5h_pct")
 o_7d_color=$(threshold_color "$o_7d_pct")
@@ -167,10 +178,11 @@ o_30d_color=$(threshold_color "$o_30d_pct")
 # Format values
 c_5h_fmt=$(fmt_pct "$c_5h_pct")
 c_7d_fmt=$(fmt_pct "$c_7d_pct")
+c_monthly_fmt=$(fmt_pct "$c_monthly_pct")
 o_5h_fmt=$(fmt_pct "$o_5h_pct")
 o_7d_fmt=$(fmt_pct "$o_7d_pct")
 o_30d_fmt=$(fmt_pct "$o_30d_pct")
 
 # Render two pills
-pill "$CLAUDE_BG"   "$CLAUDE_ICON"   "$CRUST"     "$c_5h_color" "$c_5h_fmt" "$c_7d_color" "$c_7d_fmt"
+pill "$CLAUDE_BG"   "$CLAUDE_ICON"   "$CRUST"     "$c_5h_color" "$c_5h_fmt" "$c_7d_color" "$c_7d_fmt" "$c_monthly_color" "$c_monthly_fmt"
 pill "$OPENCODE_BG" "$OPENCODE_ICON" "$SURFACE_0" "$o_5h_color" "$o_5h_fmt" "$o_7d_color" "$o_7d_fmt" "$o_30d_color" "$o_30d_fmt"
