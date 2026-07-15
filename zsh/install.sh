@@ -1,5 +1,9 @@
 #!/bin/bash
 
+if ! command -v brew &>/dev/null && [[ -x /home/linuxbrew/.linuxbrew/bin/brew ]]; then
+  export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+fi
+
 MISSING=()
 command -v bat &>/dev/null || MISSING+=(bat)
 command -v eza &>/dev/null || MISSING+=(eza)

@@ -56,3 +56,18 @@ alias dotfiles='git --git-dir=$HOME/.dotfiles --work-tree=$HOME'
 # =========================================================
 
 alias stream='mpv av://v4l2:/dev/video4 --fullscreen --demuxer-lavf-o=input_format=mjpeg,framerate=30 --profile=low-latency --untimed'
+
+# =========================================================
+# Network
+# =========================================================
+
+nc_tcp_write() {
+  local msg="${1:-Do we have a test?}"
+  local port="${2:-42069}"
+  printf "$msg" | nc -c -w 1 127.0.0.1 "$port"
+}
+
+nc_udp_listen() {
+  local port="${1:-42069}"
+  nc -u -l "$port"
+}

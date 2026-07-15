@@ -45,8 +45,7 @@ eval "$(zoxide init zsh)"
 # Load completion system
 autoload -Uz compinit
 
-# Initialize completion with cached metadata file
-compinit -d "$XDG_CACHE_HOME/zsh/zcompdump"
+compinit -C -d "$XDG_CACHE_HOME/zsh/zcompdump"
 
 # Enable interactive completion menu selection
 zstyle ':completion:*' menu select
@@ -108,5 +107,18 @@ source "$ZDOTDIR/prompt.zsh"
 # =========================================================
 
 export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-[ -s "$NVM_DIR/bash_completion" ] && source "$NVM_DIR/bash_completion"
+
+_load_nvm() {
+  [[ -s "$NVM_DIR/nvm.sh" ]] && source "$NVM_DIR/nvm.sh" --no-use
+  [[ -s "$NVM_DIR/bash_completion" ]] && source "$NVM_DIR/bash_completion"
+}
+for _nvm_cmd in nvm node npm npx; do
+  eval "${_nvm_cmd}() { unset -f nvm node npm npx; _load_nvm; ${_nvm_cmd} \"\$@\"; }"
+done
+unset _nvm_cmd
+
+# =========================================================
+# Local overrides
+# =========================================================
+
+[[ -f "$HOME/.local/.local_profile" ]] && source "$HOME/.local/.local_profile"

@@ -3,8 +3,14 @@
 command -v jq &>/dev/null || brew install jq
 
 if ! command -v claude &>/dev/null; then
-	echo "Installing Claude Code CLI..."
-	npm install -g @anthropic-ai/claude-code
+	echo "Installing Claude Code CLI via Homebrew..."
+	brew install --cask claude-code@latest
+else
+	# Verify binary is real Mach-O, not a stub (e.g. from failed npm postinstall)
+	if [ "$(file "$(command -v claude)" 2>/dev/null | grep -c Mach-O)" -eq 0 ]; then
+		echo "claude binary is a stub — reinstalling via Homebrew..."
+		brew reinstall --cask claude-code@latest
+	fi
 fi
 
 CLAUDE_JSON="$HOME/.claude.json"
