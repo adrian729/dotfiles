@@ -14,6 +14,9 @@ if [ -n "$llvm_root" ]; then
   for tool in clangd; do
     src="$llvm_root/bin/$tool"
     dst="$HOME/.local/bin/$tool"
-    [ -f "$src" ] && [ ! -e "$dst" ] && ln -s "$src" "$dst"
+    if [ -f "$src" ]; then
+      case "$dst" in "$HOME"/.local/bin/*) rm -f "$dst" ;; esac
+      ln -s "$src" "$dst"
+    fi
   done
 fi
