@@ -1,5 +1,7 @@
 #!/bin/bash
 
+command -v ollama &>/dev/null || brew install ollama
+
 ENV_FILE="$HOME/.config/ollama/ollama.env"
 TEMPLATE_FILE="$HOME/.config/ollama/ollama.env.template"
 

@@ -23,7 +23,6 @@ Shared, tool-agnostic behavior rules live in `~/.agents/AGENTS.md` (the `agents/
 - **`claude/.claude/agents/`** — Claude Code agent definitions (implementer, planner, researcher, writer, debugger, reviewer, auditor, analyzer, summarizer, operator, cleaner, explorer, effort-*, most with quick/base/deep tiers). OpenCode does **not** read `.claude/agents/`; its subagents are defined under the `agent` key in `opencode/.config/opencode/opencode.json`.
 - **`claude/.claude/hooks/`** — guard and eval hooks.
 - **`claude/.local/scripts/`** — utility scripts for claude worktree management.
-- **`ai-agent-patterns/`** — reference docs for agent patterns (best-of-n plan, pattern catalog). Not a config directory — design docs only.
 
 ## Rules
 
@@ -163,7 +162,6 @@ Key design: `settings.json`/`opencode.json` are **copied** so tools can modify f
 |---|---|
 | `.claude/worktrees/` | Claude Code worktrees (not stowed) |
 | `.opencode/worktrees/` | OpenCode worktrees (not stowed) |
-| `ai-agent-patterns/` | Agent pattern design docs (not stowed) |
 | `.gitignore` | Excludes `.gitconfig` |
 | `install.sh` | Bootstrap entry point (repo root) |
 | `.ready-tmux` | Script: opens nvim in tmux split layout |

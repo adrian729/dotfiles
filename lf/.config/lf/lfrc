@@ -1,0 +1,3 @@
+map <enter> open
+map Q $touch /tmp/lf-no-cd && lf -remote "send $id quit"
+nmap <esc> $touch /tmp/lf-no-cd && lf -remote "send $id quit"

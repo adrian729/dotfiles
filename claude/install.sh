@@ -1,6 +1,12 @@
 #!/bin/bash
 
-# Claude Code preferences that live in ~/.claude.json (not suitable for stow)
+command -v jq &>/dev/null || brew install jq
+
+if ! command -v claude &>/dev/null; then
+	echo "Installing Claude Code CLI..."
+	npm install -g @anthropic-ai/claude-code
+fi
+
 CLAUDE_JSON="$HOME/.claude.json"
 
 if [ -f "$CLAUDE_JSON" ]; then

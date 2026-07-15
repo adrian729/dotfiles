@@ -1,21 +1,39 @@
 #!/bin/bash
 
+if ! command -v brew &>/dev/null; then
+	echo "Installing Homebrew..."
+	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+	if [ -f /opt/homebrew/bin/brew ]; then
+		eval "$(/opt/homebrew/bin/brew shellenv)"
+	elif [ -f /usr/local/bin/brew ]; then
+		eval "$(/usr/local/bin/brew shellenv)"
+	fi
+fi
+
 if ! command -v stow &>/dev/null; then
-	echo "GNU Stow could not be found, please install it first."
-	exit
+	brew install stow
 fi
 
 directories=(
+  # AI tooling
   "opencode"
   "claude"
   "agents"
-  "kitty"
+  "ollama"
+
+  # Terminals
   "ghostty"
+
+  # Editor
   "nvim"
   "clangd"
+
+  # Shell & multiplexer
   "tmux"
   "zsh"
-  "ollama"
+
+  # Utilities
+  "lf"
 )
 
 read -p "Do you want to stow all directories without asking? (y/n): " stow_all

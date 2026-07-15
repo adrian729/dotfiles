@@ -1,4 +1,12 @@
 #!/bin/bash
+
+command -v jq &>/dev/null || brew install jq
+
+if ! command -v opencode &>/dev/null; then
+	echo "Installing OpenCode CLI..."
+	command -v opencode &>/dev/null || brew install opencode
+fi
+
 config_target="$HOME/.config/opencode/opencode.json"
 [ -L "$config_target" ] && rm "$config_target"
 mkdir -p "$(dirname "$config_target")"

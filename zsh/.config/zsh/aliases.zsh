@@ -1,36 +1,58 @@
-# Custom aliases
+# Better ls
+alias ls='eza --icons'
 
-# Add an "alert" alias for long running commands.  Use like so:
-#   sleep 10; alert
-alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+# Detailed listing
+alias ll='eza -lh --icons --git'
 
-alias ll='ls -alF'
-alias la='ls -A'
-alias l='ls -CF'
+# Detailed listing including hidden files
+alias la='eza -lah --icons --git'
 
-# TODO: check if there is something to stash or not do stash pop
-alias gitstashpull='git stash && git pull && git stash pop'
+# Tree view
+alias tree='eza --tree --icons'
 
-nc_tcp_write() {
-  msg="Do we have a test?"
-  if [ -n "$1" ]; then
-    msg="$1"
-  fi
+# Reuse ls completions for eza (avoids defining a separate completion function)
+compdef eza=ls
 
-  port=42069
-  if [ -n "$2" ]; then
-    port="$2"
-  fi
+# Better cat
+alias cat='bat'
 
-  printf "$msg" | nc -c -w 1 127.0.0.1 "$port"
+# =========================================================
+# Core utilities
+# =========================================================
+
+alias grep='rg --color=auto'
+alias diff='diff --color=auto'
+alias df='df -h'
+
+# =========================================================
+# Navigation
+# =========================================================
+
+alias -- -='cd -'  # -- prevents - being parsed as a flag; cd - jumps to previous directory
+
+lf() {
+    tmp=$(mktemp)
+    rm -f /tmp/lf-no-cd
+    command lf -last-dir-path="$tmp" "$@"
+    if [ -f /tmp/lf-no-cd ]; then
+        rm -f /tmp/lf-no-cd
+    elif [ -f "$tmp" ]; then
+        dir=$(cat "$tmp")
+        [ -d "$dir" ] && [ "$dir" != "$(pwd)" ] && cd "$dir"
+    fi
+    rm -f "$tmp"
 }
 
-nc_udp_listen() {
-  port=42069
-  if [ -n "$1" ]; then
-    port="$1"
-  fi
+# =========================================================
+# Git
+# =========================================================
 
-  nc -u -l "$port"
-}
+alias glog='PAGER="less -F -X" git log'                              # -F quit if one screen, -X no clear on exit
+alias gadog='PAGER="less -F -X" git log --all --decorate --oneline --graph'
+alias dotfiles='git --git-dir=$HOME/.dotfiles --work-tree=$HOME'
 
+# =========================================================
+# Video
+# =========================================================
+
+alias stream='mpv av://v4l2:/dev/video4 --fullscreen --demuxer-lavf-o=input_format=mjpeg,framerate=30 --profile=low-latency --untimed'
