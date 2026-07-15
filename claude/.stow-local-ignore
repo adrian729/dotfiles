@@ -5,3 +5,4 @@
 ^/install\.sh
 settings\.local\.json
 ^/\.claude/settings\.json
+claude\.env

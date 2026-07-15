@@ -35,6 +35,9 @@ export STARSHIP_CONFIG="$ZDOTDIR/starship.toml"
 # ---------- Ollama ----------
 [[ -f "$HOME/.config/ollama/ollama.env" ]] && . "$HOME/.config/ollama/ollama.env"
 
+# ---------- Claude ----------
+[[ -f "$HOME/.claude/claude.env" ]] && . "$HOME/.claude/claude.env"
+
 # ---------- PATH ----------
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.local/scripts:$PATH"
