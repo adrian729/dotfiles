@@ -1,6 +1,7 @@
 ---
 description: "Implement features, fix bugs, write tests, refactor — full tool access. Use when coding work benefits from an isolated worktree with its own model. NOT: quick scaffolding (implementer-quick)."
 mode: all
+hidden: true
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
 steps: 30
 permission:

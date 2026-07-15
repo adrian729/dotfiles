@@ -71,12 +71,11 @@ while [ "$i" -lt "$n" ]; do
     done
     [ "$is_free" -eq 0 ] && continue
     for a in "${ALL_MODELS[@]}"; do
-      [ "$(strip_prov "$a")" = "$p" ] && { found="$m"; break; }
+      [ "$(strip_prov "$a")" = "$p" ] && { found="$a"; break; }
     done
     [ -n "$found" ] && break
   done
-  [ -z "$found" ] && found=$(echo "$models_str" | awk '{print $1}')
-  printf '{"%s":{"model":"%s"}}\n' "$agent" "$found" >> "$OVERRIDES_TMP"
+  [ -n "$found" ] && printf '{"%s":{"model":"%s"}}\n' "$agent" "$found" >> "$OVERRIDES_TMP"
   i=$(( i + 1 ))
 done
 

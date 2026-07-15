@@ -1,6 +1,7 @@
 ---
 description: "Diagnose failures, reproduce bugs, investigate errors — full tool access. Use when debugging benefits from running tests in an isolated worktree without dirtying your checkout. NOT: trivial issues you can resolve directly."
 mode: all
+hidden: true
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
 steps: 40
 permission:

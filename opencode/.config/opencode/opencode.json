@@ -39,6 +39,7 @@
     "relay": {
       "description": "Text-only relay: answer from the given text alone, no tools.",
       "mode": "primary",
+      "hidden": true,
       "permission": {
         "edit": "deny",
         "bash": "deny",
@@ -58,6 +59,7 @@
     "task": {
       "description": "Full coding agent (bash/edit/read) for headless, unattended runs (see opencode-task) — edit/read/glob tools confined to its --dir; the bash tool is not sandboxed by this setting.",
       "mode": "primary",
+      "hidden": true,
       "permission": {
         "external_directory": "deny"
       }
