@@ -167,15 +167,22 @@ read_claude() {
         IFS='|' read -r c_5h_pct c_7d_pct c_5h_reset c_7d_reset < "$CLAUDE_CACHE" 2>/dev/null
     fi
     : "${c_5h_pct:=0}" "${c_7d_pct:=0}" "${c_5h_reset:=0}" "${c_7d_reset:=0}"
+    # "Monthly" = % of a synthetic 4-week budget (Anthropic exposes no monthly window, so
+    # monthly budget := 4x weekly budget). Divisor is ALWAYS 4, deliberately NOT the count
+    # of weeks actually logged: a week missing from the log (not yet accumulated, or predates
+    # this feature) correctly floors to 0% of ITS share of the budget — it's not "unknown
+    # data to average around". This understates monthly until 3 prior weeks have logged
+    # (expected during the first ~3 weeks after this feature ships or after log loss), then
+    # self-corrects into a real trailing 4-week %. Do not change the divisor to (weeks found
+    # + 1) — that swaps the metric to "average weekly pace", which reads as monthly≈weekly
+    # for that entire bootstrap period instead of ramping up.
+    local weeks_logged_sum=0 pct
     if [[ -f "$CLAUDE_WEEKLY_LOG" ]]; then
-        local prev_sum=0 pct
         while IFS='|' read -r _ pct _; do
-            [[ "$pct" =~ ^[0-9]+\.?[0-9]*$ ]] && prev_sum=$(echo "$prev_sum + $pct" | bc -l 2>/dev/null)
+            [[ "$pct" =~ ^[0-9]+\.?[0-9]*$ ]] && weeks_logged_sum=$(echo "$weeks_logged_sum + $pct" | bc -l 2>/dev/null)
         done < <(tail -3 "$CLAUDE_WEEKLY_LOG" 2>/dev/null)
-        c_monthly_pct=$(echo "scale=2; ($c_7d_pct + $prev_sum) / 4" | bc -l 2>/dev/null) || c_monthly_pct=0
-    else
-        c_monthly_pct=$(echo "scale=2; $c_7d_pct / 4" | bc -l 2>/dev/null) || c_monthly_pct=0
     fi
+    c_monthly_pct=$(echo "scale=2; ($c_7d_pct + $weeks_logged_sum) / 4" | bc -l 2>/dev/null) || c_monthly_pct=0
 }
 
 # ── Main ──
