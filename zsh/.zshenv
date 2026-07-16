@@ -12,3 +12,7 @@ if [[ -d "$XDG_CONFIG_HOME/zsh" ]] then
     export ZDOTDIR="$XDG_CONFIG_HOME/zsh"
 fi
 
+# zsh only auto-reads .zshenv once, before ZDOTDIR above takes effect, so the
+# rest of the env setup living under $ZDOTDIR must be pulled in explicitly.
+[[ -n "$ZDOTDIR" && -f "$ZDOTDIR/.zshenv" ]] && source "$ZDOTDIR/.zshenv"
+

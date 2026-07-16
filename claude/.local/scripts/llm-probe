@@ -43,7 +43,10 @@ CATALOG_FILE=""
 [ -z "$CATALOG_FILE" ]   && [ -f "$CATALOG_CONFIG" ] && CATALOG_FILE="$CATALOG_CONFIG"
 
 footprint_gb() {
-  jq -r --arg n "$1" '.models[$n].footprint_gb // empty' "$CATALOG_FILE" 2>/dev/null || true
+  local raw
+  raw=$(jq -r --arg n "$1" '.models[$n].footprint_gb // empty' "$CATALOG_FILE" 2>/dev/null || true)
+  [ -n "$raw" ] || return 0
+  printf '%.0f' "$raw" 2>/dev/null || echo "$raw"
 }
 
 # Does coder $1 genuinely out-code generalist $2?
@@ -187,7 +190,8 @@ for c in $CODER_CANDIDATES; do
 done
 if [ "$POLICY" = "single-model" ]; then
   # Explain why no coder earned a slot (co-fit vs out-code), for the record.
-  best_coder=$(set -- $CODER_CANDIDATES; echo "$1")
+  best_coder=""
+  [ -n "$CODER_CANDIDATES" ] && best_coder=$(set -- $CODER_CANDIDATES; echo "$1")
   if [ -n "$best_coder" ]; then
     best_coder_fp=$(footprint_gb "$best_coder")
   fi

@@ -166,7 +166,6 @@ bind-key    -T prefix       C-r                    run-shell /home/adrian/.tmux/
 bind-key    -T prefix       C-s                    run-shell /home/adrian/.tmux/plugins/tmux-resurrect/scripts/save.sh
 bind-key    -T prefix       C-u                    run-shell "/home/adrian/.tmux/plugins/tmux-copycat/scripts/copycat_mode_start.sh '(https?://|git@|git://|ssh://|ftp://|file:///)[[:alnum:]?=%/_.:,;~@!#$&()*+-]*'"
 bind-key    -T prefix       C-z                    suspend-client
-bind-key    -T prefix       Space                  run-shell "echo -n toggle | nc -U ~/.cache/albert/ipc_socket > /dev/null"
 bind-key    -T prefix       !                      break-pane
 bind-key    -T prefix       \"                     split-window
 bind-key    -T prefix       \#                     list-buffers

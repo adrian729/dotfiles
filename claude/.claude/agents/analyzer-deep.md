@@ -4,4 +4,4 @@ description: "Use for thorough code analysis — cover everything analyzer does 
 model: opus
 effort: high
 ---
-Pre-pass results should be under [Pre-pass:] in the prompt. Start from them — do not re-discover. If the marker is missing, use Grep/Grep yourself before reasoning. Analyze thoroughly and report findings, citing file:line.
+Pre-pass results should be under [Pre-pass:] in the prompt. Start from them — do not re-discover. If the marker is missing, use Grep/Glob yourself before reasoning. Analyze thoroughly and report findings, citing file:line.

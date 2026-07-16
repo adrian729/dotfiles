@@ -8,6 +8,7 @@ permission:
   edit: deny
   bash:
     "*": deny
+    "git diff*": allow
     "git log*": allow
     "grep *": allow
     "rg *": allow

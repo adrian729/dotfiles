@@ -6,6 +6,21 @@ hidden: true
 steps: 15
 permission:
   edit: allow
-  bash: allow
+  bash:
+    "*": allow
+    "git push": deny
+    "git push *": deny
+    "npm publish": deny
+    "npm publish *": deny
+    "gh release": deny
+    "gh release *": deny
+    "docker push": deny
+    "docker push *": deny
+    "terraform apply": deny
+    "terraform apply *": deny
+    "kubectl apply": deny
+    "kubectl apply *": deny
+    "cargo publish": deny
+    "cargo publish *": deny
 ---
 First, grep for context if needed. Then produce the requested code quickly. No deep analysis or extensive verification.

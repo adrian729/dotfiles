@@ -6,6 +6,21 @@ hidden: true
 steps: 40
 permission:
   edit: allow
-  bash: allow
+  bash:
+    "*": allow
+    "git push": deny
+    "git push *": deny
+    "npm publish": deny
+    "npm publish *": deny
+    "gh release": deny
+    "gh release *": deny
+    "docker push": deny
+    "docker push *": deny
+    "terraform apply": deny
+    "terraform apply *": deny
+    "kubectl apply": deny
+    "kubectl apply *": deny
+    "cargo publish": deny
+    "cargo publish *": deny
 ---
 If the input contains long logs or stack traces (>200 lines), summarize them first. Then reproduce the failure, identify root cause with evidence, and report file:line references for problematic code. Rule out alternatives before concluding.

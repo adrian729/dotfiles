@@ -88,7 +88,8 @@ find_session_for() {
     tr '\n' ' ' |
     sed 's/}, */}\n/g' |
     grep -F "\"directory\": \"$dir\"" |
-    sed 's/.*"id": "\([^"]*\)".*/\1/' || true
+    sed 's/.*"id": "\([^"]*\)".*/\1/' |
+    head -1 || true
 }
 
 apply_color() {

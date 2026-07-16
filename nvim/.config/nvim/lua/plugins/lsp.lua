@@ -157,7 +157,6 @@ return {
 				"lua_ls",
 				"clangd",
 				"rust_analyzer",
-				"wgsl_analyzer",
 				"pyright",
 				"marksman",
 			})

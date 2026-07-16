@@ -1,6 +1,6 @@
 ---
 name: auditor-deep
-description: "Use for the most safety-critical or high-stakes audits — auth/crypto/payment/secret-handling paths, pre-release security sign-off — or explicitly maximum or exhaustive rigor (leave no stone unturned). NOT: routine audits (auditor)."
+description: "Use for the most safety-critical or high-stakes audits — cover everything auditor does AND additionally auth/crypto/payment/secret-handling paths, pre-release security sign-off, or explicitly maximum or exhaustive rigor (leave no stone unturned). NOT: routine audits (auditor)."
 model: opus
 effort: xhigh
 ---

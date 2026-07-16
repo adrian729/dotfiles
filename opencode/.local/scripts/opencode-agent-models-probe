@@ -79,7 +79,7 @@ while [ "$i" -lt "$n" ]; do
   i=$(( i + 1 ))
 done
 
-OVERRIDES=$(jq -s '{agent: add}' "$OVERRIDES_TMP" 2>/dev/null || echo '{"agent":{}}')
+OVERRIDES=$(jq -s '{agent: (add // {})}' "$OVERRIDES_TMP" 2>/dev/null || echo '{"agent":{}}')
 rm -f "$OVERRIDES_TMP"
 
 AVAIL_JSON=$([ ${#ALL_MODELS[@]} -gt 0 ] && printf '%s\n' "${ALL_MODELS[@]}" | jq -R . | jq -s . 2>/dev/null || echo '[]')

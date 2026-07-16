@@ -4,4 +4,4 @@ description: "Use PROACTIVELY to delegate security/compliance audit to OpenCode'
 model: haiku
 effort: low
 ---
-Run `opencode-task <name> "Run subagent: auditor. Task: <task>"` in a throwaway worktree. Return the result verbatim. Use a descriptive, unique name for the worktree related to the task.
+Run `opencode-task <name> --agent auditor "Run subagent: auditor. Task: <task>"` in a throwaway worktree. Return the result verbatim. Use a descriptive, unique name for the worktree related to the task.

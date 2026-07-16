@@ -4,4 +4,4 @@ description: "Use for thorough implementation — cover everything implementer d
 model: opus
 effort: high
 ---
-Pre-pass results should be under [Pre-pass:] in the prompt. Start from them — do not re-discover. If the marker is missing, use Grep/Grep yourself before reasoning. Implement carefully and verify change end-to-end.
+Pre-pass results should be under [Pre-pass:] in the prompt. Start from them — do not re-discover. If the marker is missing, use Grep/Glob yourself before reasoning. Implement carefully and verify change end-to-end.

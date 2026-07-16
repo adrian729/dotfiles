@@ -2,15 +2,17 @@
 
 command -v jq &>/dev/null || brew install jq
 
-if ! command -v opencode &>/dev/null; then
-	echo "Installing OpenCode CLI..."
-	command -v opencode &>/dev/null || brew install opencode
-fi
+command -v opencode &>/dev/null || brew install opencode
 
 config_target="$HOME/.config/opencode/opencode.json"
-[ -L "$config_target" ] && rm "$config_target"
 mkdir -p "$(dirname "$config_target")"
-/bin/cp "$(dirname "$0")/.config/opencode/opencode.json" "$config_target"
+tmp_config=$(mktemp "$config_target.XXXXXX")
+if /bin/cp "$(dirname "$0")/.config/opencode/opencode.json" "$tmp_config"; then
+    mv "$tmp_config" "$config_target"
+else
+    rm -f "$tmp_config"
+    echo "opencode/install.sh: failed to copy opencode.json — leaving existing $config_target untouched" >&2
+fi
 
 # Probe opencode's free-tier model availability and record the per-machine
 # filtered list for the opencode-llm script. Non-fatal.
@@ -28,7 +30,7 @@ probe_agent="$HOME/.local/scripts/opencode-agent-models-probe"
 if [ -x "$probe_agent" ]; then
     "$probe_agent" || echo "opencode-agent-models-probe failed — using Markdown defaults"
     overrides="$HOME/.local/state/agents/opencode-agent-model-overrides.json"
-    if [ -f "$overrides" ] && command -v jq >/dev/null 2>&1; then
+    if [ -f "$overrides" ] && command -v jq >/dev/null 2>&1 && jq -e '.agent != null' "$overrides" >/dev/null 2>&1; then
         jq -s '.[0] * .[1]' "$config_target" "$overrides" > "$config_target.tmp" \
           && mv "$config_target.tmp" "$config_target"
     fi

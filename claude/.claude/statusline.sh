@@ -30,11 +30,17 @@ parsed=$(jq -r '
 : "${MODEL:=?}" "${PCT:=0}" "${EXCEEDS_200K:=false}" \
   "${HOURS:=-1}" "${WEEK:=-1}" "${HOURS_RESET:=0}" "${WEEK_RESET:=0}"
 
+# Private per-user cache dir — avoids predictable shared /tmp paths (symlink-follow
+# clobber vector, spoofable reads on multi-user hosts). Shared with tmux-usage-status,
+# which reads RATE_CACHE; keep both scripts' paths in sync if this moves again.
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ai-status"
+mkdir -p -m 700 "$CACHE_DIR"
+
 # Git status, cached per directory so concurrent sessions in the same repo share it.
 DIR_HASH=$(printf '%s' "$DIR" | md5sum 2>/dev/null | cut -d' ' -f1)
 [ -z "$DIR_HASH" ] && DIR_HASH=$(md5 -q -s "$DIR" 2>/dev/null)
 [ -z "$DIR_HASH" ] && DIR_HASH=default
-CACHE_FILE="/tmp/statusline-git-cache-${DIR_HASH}"
+CACHE_FILE="$CACHE_DIR/statusline-git-cache-${DIR_HASH}"
 CACHE_MAX_AGE=5
 
 cache_is_stale() {
@@ -45,7 +51,7 @@ cache_is_stale() {
 
 # clean up cache files older than 1 day (run occasionally, not every invocation)
 if [ $((RANDOM % 20)) -eq 0 ]; then
-    find /tmp -name "statusline-git-cache-*" -mtime +1 -delete 2>/dev/null
+    find "$CACHE_DIR" -name "statusline-git-cache-*" -mtime +1 -delete 2>/dev/null
 fi
 
 # Branch goes LAST in the record (counts are integers, so a '|' in a branch name can't
@@ -55,9 +61,9 @@ if cache_is_stale; then
         BRANCH=$(git branch --show-current 2>/dev/null)
         STAGED=$(git diff --cached --numstat 2>/dev/null | wc -l | tr -d ' ')
         MODIFIED=$(git diff --numstat 2>/dev/null | wc -l | tr -d ' ')
-        printf '%s|%s|%s\n' "$STAGED" "$MODIFIED" "$BRANCH" > "${CACHE_FILE}.$$" && mv -f "${CACHE_FILE}.$$" "$CACHE_FILE"
+        tmp=$(mktemp "${CACHE_FILE}.XXXXXX") && printf '%s|%s|%s\n' "$STAGED" "$MODIFIED" "$BRANCH" > "$tmp" && mv -f "$tmp" "$CACHE_FILE"
     else
-        printf '||\n' > "${CACHE_FILE}.$$" && mv -f "${CACHE_FILE}.$$" "$CACHE_FILE"
+        tmp=$(mktemp "${CACHE_FILE}.XXXXXX") && printf '||\n' > "$tmp" && mv -f "$tmp" "$CACHE_FILE"
     fi
 fi
 
@@ -66,7 +72,7 @@ IFS='|' read -r STAGED MODIFIED BRANCH < "$CACHE_FILE"
 # Shared cache for rate limits (account-level, not per-session). The parse emits -1 for an
 # absent window; fall back to the last known values only then, so a genuine 0% (e.g. right
 # after a reset) is preserved instead of being clobbered by stale data.
-RATE_CACHE="/tmp/statusline-rate-limits"
+RATE_CACHE="$CACHE_DIR/statusline-rate-limits"
 if [ -f "$RATE_CACHE" ]; then
     IFS='|' read -r C_HOURS C_WEEK C_HOURS_RESET C_WEEK_RESET < "$RATE_CACHE"
     [ "$HOURS" -lt 0 ] 2>/dev/null && HOURS="${C_HOURS:-0}"
@@ -77,7 +83,7 @@ fi
 [ "$HOURS" -lt 0 ] 2>/dev/null && HOURS=0
 [ "$WEEK"  -lt 0 ] 2>/dev/null && WEEK=0
 if [ "${HOURS_RESET:-0}" -gt 0 ] 2>/dev/null || [ "${WEEK_RESET:-0}" -gt 0 ] 2>/dev/null; then
-    printf '%s|%s|%s|%s\n' "$HOURS" "$WEEK" "$HOURS_RESET" "$WEEK_RESET" > "${RATE_CACHE}.$$" && mv -f "${RATE_CACHE}.$$" "$RATE_CACHE"
+    tmp=$(mktemp "${RATE_CACHE}.XXXXXX") && printf '%s|%s|%s|%s\n' "$HOURS" "$WEEK" "$HOURS_RESET" "$WEEK_RESET" > "$tmp" && mv -f "$tmp" "$RATE_CACHE"
 fi
 
 WEEKLY_LOG="$HOME/.local/share/claude/weekly-usage.log"

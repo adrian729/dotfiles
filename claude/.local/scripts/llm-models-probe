@@ -130,8 +130,10 @@ else
       param_str="${i##*:}"
       param_b=$(echo "$param_str" | sed -n 's/^\([0-9.]*\)b$/\1/p' || true)
       [ -z "$param_b" ] && continue
-      # Estimate footprint: param_b * 0.7 + 1 GB
+      # Estimate footprint: param_b * 0.7 + 1 GB, rounded to whole GB (downstream
+      # llm-probe does integer-only comparisons on footprint_gb).
       fp_gb=$(echo "$param_b * 0.7 + 1" | bc 2>/dev/null || echo 0)
+      fp_gb=$(printf '%.0f' "$fp_gb" 2>/dev/null || echo 0)
       [ "$(echo "$fp_gb > 0" | bc)" -eq 0 ] && continue
       DISCOVERED+=("$i:$fp_gb")
     done

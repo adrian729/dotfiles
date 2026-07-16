@@ -14,6 +14,18 @@ if ! command -v stow &>/dev/null; then
 	brew install stow
 fi
 
+stow_all=""
+for arg in "$@"; do
+	case "$arg" in
+	-y | --yes) stow_all="y" ;;
+	esac
+done
+
+if [ -z "$stow_all" ] && [ ! -t 0 ]; then
+	echo "install.sh: no controlling terminal and -y/--yes not given; refusing to run with unanswerable prompts." >&2
+	exit 1
+fi
+
 directories=(
   # AI tooling
   "opencode"
@@ -23,6 +35,7 @@ directories=(
 
   # Terminals
   "ghostty"
+  "kitty"
 
   # Editor
   "nvim"
@@ -36,7 +49,9 @@ directories=(
   "lf"
 )
 
-read -p "Do you want to stow all directories without asking? (y/n): " stow_all
+if [ -z "$stow_all" ]; then
+	read -p "Do you want to stow all directories without asking? (y/n): " stow_all
+fi
 echo ""
 
 for dir in "${directories[@]}"; do

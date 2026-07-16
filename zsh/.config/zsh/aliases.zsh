@@ -31,11 +31,12 @@ alias df='df -h'
 alias -- -='cd -'  # -- prevents - being parsed as a flag; cd - jumps to previous directory
 
 lf() {
+    local no_cd_flag="/tmp/lf-no-cd-$(id -u)"
     tmp=$(mktemp)
-    rm -f /tmp/lf-no-cd
+    rm -f "$no_cd_flag"
     command lf -last-dir-path="$tmp" "$@"
-    if [ -f /tmp/lf-no-cd ]; then
-        rm -f /tmp/lf-no-cd
+    if [ -f "$no_cd_flag" ]; then
+        rm -f "$no_cd_flag"
     elif [ -f "$tmp" ]; then
         dir=$(cat "$tmp")
         [ -d "$dir" ] && [ "$dir" != "$(pwd)" ] && cd "$dir"
@@ -64,7 +65,7 @@ alias stream='mpv av://v4l2:/dev/video4 --fullscreen --demuxer-lavf-o=input_form
 nc_tcp_write() {
   local msg="${1:-Do we have a test?}"
   local port="${2:-42069}"
-  printf "$msg" | nc -c -w 1 127.0.0.1 "$port"
+  printf '%s' "$msg" | nc -c -w 1 127.0.0.1 "$port"
 }
 
 nc_udp_listen() {

@@ -17,7 +17,8 @@ CLAUDE_JSON="$HOME/.claude.json"
 
 if [ -f "$CLAUDE_JSON" ]; then
     echo "Setting vim mode in $CLAUDE_JSON..."
-    jq '.editorMode = "vim"' "$CLAUDE_JSON" > /tmp/claude.json.tmp && mv /tmp/claude.json.tmp "$CLAUDE_JSON"
+    tmp_json=$(mktemp "$CLAUDE_JSON.XXXXXX")
+    jq '.editorMode = "vim"' "$CLAUDE_JSON" > "$tmp_json" && mv "$tmp_json" "$CLAUDE_JSON"
     echo "Done."
 else
     echo "~/.claude.json not found, skipping (run claude once first)."
@@ -47,7 +48,12 @@ fi
 # modify it freely without dirtying the dotfiles repo.  Re-run install.sh
 # to reset from the repo version.
 settings_target="$HOME/.claude/settings.json"
-[ -L "$settings_target" ] && rm "$settings_target"
 mkdir -p "$(dirname "$settings_target")"
-/bin/cp "$(dirname "$0")/.claude/settings.json" "$settings_target"
+tmp_settings=$(mktemp "$settings_target.XXXXXX")
+if /bin/cp "$(dirname "$0")/.claude/settings.json" "$tmp_settings"; then
+    mv "$tmp_settings" "$settings_target"
+else
+    rm -f "$tmp_settings"
+    echo "claude/install.sh: failed to copy settings.json — leaving existing $settings_target untouched" >&2
+fi
 

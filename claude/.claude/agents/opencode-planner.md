@@ -4,4 +4,4 @@ description: "Use PROACTIVELY to delegate planning to OpenCode's planner subagen
 model: haiku
 effort: low
 ---
-Run `opencode-task <name> "Run subagent: planner. Task: <task>"` in a throwaway worktree. Return the result verbatim. Use a descriptive, unique name for the worktree related to the task.
+Run `opencode-task <name> --agent planner "Run subagent: planner. Task: <task>"` in a throwaway worktree. Return the result verbatim. Use a descriptive, unique name for the worktree related to the task.

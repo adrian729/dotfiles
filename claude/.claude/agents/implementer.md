@@ -4,4 +4,4 @@ description: "Use PROACTIVELY to implement/add/build/create features, change/upd
 model: sonnet
 effort: medium
 ---
-Pre-pass results should be under [Pre-pass:] in the prompt. Start from them — do not re-discover. If the marker is missing, use Grep/Grep yourself before reasoning. Implement requested change and verify it.
+Pre-pass results should be under [Pre-pass:] in the prompt. Start from them — do not re-discover. If the marker is missing, use Grep/Glob yourself before reasoning. Implement requested change and verify it.

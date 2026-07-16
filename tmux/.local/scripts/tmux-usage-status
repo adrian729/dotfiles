@@ -26,12 +26,17 @@ LIMIT_5H=12
 LIMIT_7D=30
 LIMIT_30D=60
 
+# Shared with claude/.claude/statusline.sh, which writes CLAUDE_CACHE — keep paths in sync.
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ai-status"
+mkdir -p -m 700 "$CACHE_DIR"
+
 CACHE_MAX_AGE=10
-CLAUDE_CACHE="/tmp/statusline-rate-limits"
+LOCK_MAX_AGE=60
+CLAUDE_CACHE="$CACHE_DIR/statusline-rate-limits"
 CLAUDE_WEEKLY_LOG="$HOME/.local/share/claude/weekly-usage.log"
-OPENCODE_CACHE="/tmp/tmux-opencode-cache"
+OPENCODE_CACHE="$CACHE_DIR/tmux-opencode-cache"
 OPENCODE_DB="$HOME/.local/share/opencode/opencode.db"
-LOCK_DIR="/tmp/tmux-opencode-refresh.lock"
+LOCK_DIR="$CACHE_DIR/tmux-opencode-refresh.lock"
 
 NOW=$(date +%s)
 
@@ -49,6 +54,7 @@ fmt_pct() {
 # ── Color: hard-cap thresholds (OpenCode — no reset epoch available) ──
 threshold_color() {
     local used=$1
+    [[ ! "$used" =~ ^[0-9]+\.?[0-9]*$ ]] && { printf '%s' "$GREEN"; return; }
     if   (( $(echo "$used > 80" | bc -l) )) 2>/dev/null; then printf '%s' "$RED"
     elif (( $(echo "$used > 50" | bc -l) )) 2>/dev/null; then printf '%s' "$YELLOW"
     else printf '%s' "$GREEN"
@@ -95,6 +101,12 @@ pill() {
 
 # ── Refresh OpenCode cache (background, mkdir-locked) ──
 refresh_opencode_cache() {
+    # A refresh process that died mid-run leaves LOCK_DIR behind forever — clear it
+    # once it's older than a refresh should ever take, so the next call can retry.
+    if [ -d "$LOCK_DIR" ]; then
+        lock_age=$(( $(date +%s) - $(stat -f %m "$LOCK_DIR" 2>/dev/null || stat -c %Y "$LOCK_DIR" 2>/dev/null || echo "$NOW") ))
+        [ "$lock_age" -gt "$LOCK_MAX_AGE" ] && rmdir "$LOCK_DIR" 2>/dev/null
+    fi
     if mkdir "$LOCK_DIR" 2>/dev/null; then
         (
             local cost_5h cost_7d cost_30d ts
@@ -115,9 +127,10 @@ refresh_opencode_cache() {
                 cost_5h=0; cost_7d=0; cost_30d=0
             fi
             ts=$(date +%s)
-            printf '{"cost_5h":%s,"cost_7d":%s,"cost_30d":%s,"ts":%s}\n' \
-                "$cost_5h" "$cost_7d" "$cost_30d" "$ts" > "${OPENCODE_CACHE}.$$" && \
-                mv -f "${OPENCODE_CACHE}.$$" "$OPENCODE_CACHE"
+            tmp=$(mktemp "${OPENCODE_CACHE}.XXXXXX") && \
+                printf '{"cost_5h":%s,"cost_7d":%s,"cost_30d":%s,"ts":%s}\n' \
+                "$cost_5h" "$cost_7d" "$cost_30d" "$ts" > "$tmp" && \
+                mv -f "$tmp" "$OPENCODE_CACHE"
             rmdir "$LOCK_DIR"
         ) &
     fi
