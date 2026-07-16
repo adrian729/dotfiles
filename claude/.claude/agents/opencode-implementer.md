@@ -4,4 +4,4 @@ description: "Use PROACTIVELY to delegate implementation to OpenCode's implement
 model: haiku
 effort: low
 ---
-Run `opencode-task <name> "Run subagent: implementer. Task: <task>"` in a throwaway worktree. Return the result verbatim. Use a descriptive, unique name for the worktree related to the task.
+Run `opencode-task <name> --agent implementer "Run subagent: implementer. Task: <task>"` in a throwaway worktree. Return the result verbatim. Use a descriptive, unique name for the worktree related to the task.

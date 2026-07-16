@@ -16,6 +16,12 @@ agent=$(printf '%s' "$input" | jq -r '.tool_input.subagent_type // empty' 2>/dev
 # No model override → the agent's frontmatter tier applies. Nothing to enforce.
 [ -z "$model" ] && exit 0
 
+# Agent names are file stems under $AGENTS_DIR — reject anything that could escape it
+# (path separators, '..') before ever using $agent to build a path.
+case "$agent" in
+    *[!A-Za-z0-9_-]*) agent="" ;;
+esac
+
 # Effort carriers exist precisely to combine a caller-chosen model with a pinned effort.
 case "$agent" in
     effort-*) exit 0 ;;
@@ -23,7 +29,7 @@ esac
 
 # Fable quota fallback (CLAUDE.md): retrying a fable-pinned agent with a call-time
 # model:opus override on quota failure is the documented mechanism, not a bypass.
-if [ -n "$agent" ] && grep -q '^model: fable$' "$AGENTS_DIR/$agent.md" 2>/dev/null; then
+if [ "$model" = "opus" ] && [ -n "$agent" ] && grep -q '^model: fable$' "$AGENTS_DIR/$agent.md" 2>/dev/null; then
     exit 0
 fi
 

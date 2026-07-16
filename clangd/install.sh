@@ -14,8 +14,8 @@ ensure_llvm() {
   done
   [ "$need_install" -eq 1 ] && brew install llvm
 
-  [ -f /opt/homebrew/opt/llvm/bin/clangd ] && llvm_root="/opt/homebrew/opt/llvm"
-  [ -f /usr/local/opt/llvm/bin/clangd ] && llvm_root="/usr/local/opt/llvm"
+  [ -d /opt/homebrew/opt/llvm/bin ] && llvm_root="/opt/homebrew/opt/llvm"
+  [ -d /usr/local/opt/llvm/bin ] && llvm_root="/usr/local/opt/llvm"
   [ -z "$llvm_root" ] && return 0
 
   mkdir -p ~/.local/bin

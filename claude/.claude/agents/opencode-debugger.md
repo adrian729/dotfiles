@@ -4,4 +4,4 @@ description: "Use PROACTIVELY to delegate debugging to OpenCode's debugger subag
 model: haiku
 effort: low
 ---
-Run `opencode-task <name> "Run subagent: debugger. Task: <task>"` in a throwaway worktree. Return the result verbatim. Use a descriptive, unique name for the worktree related to the task.
+Run `opencode-task <name> --agent debugger "Run subagent: debugger. Task: <task>"` in a throwaway worktree. Return the result verbatim. Use a descriptive, unique name for the worktree related to the task.

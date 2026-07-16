@@ -18,7 +18,13 @@ CLAUDE_JSON="$HOME/.claude.json"
 if [ -f "$CLAUDE_JSON" ]; then
     echo "Setting vim mode in $CLAUDE_JSON..."
     tmp_json=$(mktemp "$CLAUDE_JSON.XXXXXX")
-    jq '.editorMode = "vim"' "$CLAUDE_JSON" > "$tmp_json" && mv "$tmp_json" "$CLAUDE_JSON"
+    if jq '.editorMode = "vim"' "$CLAUDE_JSON" > "$tmp_json"; then
+        chmod 644 "$tmp_json"
+        mv "$tmp_json" "$CLAUDE_JSON"
+    else
+        rm -f "$tmp_json"
+        echo "claude/install.sh: failed to set editorMode in $CLAUDE_JSON — leaving it untouched" >&2
+    fi
     echo "Done."
 else
     echo "~/.claude.json not found, skipping (run claude once first)."
@@ -51,6 +57,7 @@ settings_target="$HOME/.claude/settings.json"
 mkdir -p "$(dirname "$settings_target")"
 tmp_settings=$(mktemp "$settings_target.XXXXXX")
 if /bin/cp "$(dirname "$0")/.claude/settings.json" "$tmp_settings"; then
+    chmod 644 "$tmp_settings"
     mv "$tmp_settings" "$settings_target"
 else
     rm -f "$tmp_settings"

@@ -29,6 +29,7 @@ LIMIT_30D=60
 # Shared with claude/.claude/statusline.sh, which writes CLAUDE_CACHE — keep paths in sync.
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ai-status"
 mkdir -p -m 700 "$CACHE_DIR"
+chmod 700 "$CACHE_DIR" 2>/dev/null
 
 CACHE_MAX_AGE=10
 LOCK_MAX_AGE=60
@@ -37,6 +38,7 @@ CLAUDE_WEEKLY_LOG="$HOME/.local/share/claude/weekly-usage.log"
 OPENCODE_CACHE="$CACHE_DIR/tmux-opencode-cache"
 OPENCODE_DB="$HOME/.local/share/opencode/opencode.db"
 LOCK_DIR="$CACHE_DIR/tmux-opencode-refresh.lock"
+LOCK_PID_FILE="$LOCK_DIR.pid"
 
 NOW=$(date +%s)
 
@@ -101,11 +103,15 @@ pill() {
 
 # ── Refresh OpenCode cache (background, mkdir-locked) ──
 refresh_opencode_cache() {
-    # A refresh process that died mid-run leaves LOCK_DIR behind forever — clear it
-    # once it's older than a refresh should ever take, so the next call can retry.
+    # A refresh process that died mid-run leaves LOCK_DIR behind forever. Reap it only
+    # once its pid is confirmed dead (age alone can't tell "dead" from "just slow" and
+    # would otherwise let a concurrent invocation steal the lock from a live refresh).
     if [ -d "$LOCK_DIR" ]; then
-        lock_age=$(( $(date +%s) - $(stat -f %m "$LOCK_DIR" 2>/dev/null || stat -c %Y "$LOCK_DIR" 2>/dev/null || echo "$NOW") ))
-        [ "$lock_age" -gt "$LOCK_MAX_AGE" ] && rmdir "$LOCK_DIR" 2>/dev/null
+        lock_pid=$(cat "$LOCK_PID_FILE" 2>/dev/null)
+        if [ -z "$lock_pid" ] || ! kill -0 "$lock_pid" 2>/dev/null; then
+            lock_age=$(( $(date +%s) - $(stat -f %m "$LOCK_DIR" 2>/dev/null || stat -c %Y "$LOCK_DIR" 2>/dev/null || echo "$NOW") ))
+            [ "$lock_age" -gt "$LOCK_MAX_AGE" ] && { rmdir "$LOCK_DIR" 2>/dev/null; rm -f "$LOCK_PID_FILE"; }
+        fi
     fi
     if mkdir "$LOCK_DIR" 2>/dev/null; then
         (
@@ -131,8 +137,10 @@ refresh_opencode_cache() {
                 printf '{"cost_5h":%s,"cost_7d":%s,"cost_30d":%s,"ts":%s}\n' \
                 "$cost_5h" "$cost_7d" "$cost_30d" "$ts" > "$tmp" && \
                 mv -f "$tmp" "$OPENCODE_CACHE"
+            rm -f "$LOCK_PID_FILE"
             rmdir "$LOCK_DIR"
         ) &
+        echo $! > "$LOCK_PID_FILE"
     fi
 }
 

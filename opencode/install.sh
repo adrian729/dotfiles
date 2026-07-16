@@ -8,6 +8,7 @@ config_target="$HOME/.config/opencode/opencode.json"
 mkdir -p "$(dirname "$config_target")"
 tmp_config=$(mktemp "$config_target.XXXXXX")
 if /bin/cp "$(dirname "$0")/.config/opencode/opencode.json" "$tmp_config"; then
+    chmod 644 "$tmp_config"
     mv "$tmp_config" "$config_target"
 else
     rm -f "$tmp_config"
@@ -31,8 +32,13 @@ if [ -x "$probe_agent" ]; then
     "$probe_agent" || echo "opencode-agent-models-probe failed — using Markdown defaults"
     overrides="$HOME/.local/state/agents/opencode-agent-model-overrides.json"
     if [ -f "$overrides" ] && command -v jq >/dev/null 2>&1 && jq -e '.agent != null' "$overrides" >/dev/null 2>&1; then
-        jq -s '.[0] * .[1]' "$config_target" "$overrides" > "$config_target.tmp" \
-          && mv "$config_target.tmp" "$config_target"
+        tmp_merged=$(mktemp "$config_target.XXXXXX")
+        if jq -s '.[0] * .[1]' "$config_target" "$overrides" > "$tmp_merged"; then
+            chmod 644 "$tmp_merged"
+            mv "$tmp_merged" "$config_target"
+        else
+            rm -f "$tmp_merged"
+        fi
     fi
 else
     echo "opencode-agent-models-probe not stowed yet — skipping"

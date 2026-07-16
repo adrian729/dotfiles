@@ -35,6 +35,7 @@ parsed=$(jq -r '
 # which reads RATE_CACHE; keep both scripts' paths in sync if this moves again.
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ai-status"
 mkdir -p -m 700 "$CACHE_DIR"
+chmod 700 "$CACHE_DIR" 2>/dev/null
 
 # Git status, cached per directory so concurrent sessions in the same repo share it.
 DIR_HASH=$(printf '%s' "$DIR" | md5sum 2>/dev/null | cut -d' ' -f1)

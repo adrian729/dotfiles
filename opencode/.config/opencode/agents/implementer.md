@@ -6,6 +6,8 @@ hidden: true
 steps: 30
 permission:
   edit: allow
+  # deny list below fully replaces (doesn't merge with) opencode.json's top-level
+  # bash permission — keep in sync with it and with debugger.md/implementer-quick.md.
   bash:
     "*": allow
     "git push": deny
