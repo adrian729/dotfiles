@@ -46,13 +46,17 @@ collect_models() {
 AVAILABLE_ANY=false
 collect_models opencode && AVAILABLE_ANY=true
 collect_models opencode-go 2>/dev/null && AVAILABLE_ANY=true
+collect_models ollama-cloud 2>/dev/null || true
 
 if ! $AVAILABLE_ANY; then
   NOTE="opencode CLI not reachable (auth?) — using preferred lists unchanged"
   echo "opencode-agent-models-probe: $NOTE" >&2
 fi
 
-strip_prov() { local s="$1"; s="${s#opencode/}"; s="${s#opencode-go/}"; echo "$s"; }
+# Strip provider prefix for cross-provider matching — same model (e.g. deepseek-v4-flash)
+# often appears on multiple providers (opencode-go, ollama-cloud) and the agent's
+# ranked list may pick any provider's variant. Stripping lets us compare bare IDs.
+strip_prov() { echo "${1##*/}"; }
 
 # For each agent, find first free+available model
 mkdir -p "$STATE_DIR" || true

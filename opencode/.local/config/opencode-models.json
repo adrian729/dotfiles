@@ -6,12 +6,11 @@
     "opencode/nemotron-3-ultra-free",
     "opencode/hy3-free",
     "opencode/big-pickle",
-    "gpt-oss:20b-cloud",
-    "gpt-oss:120b-cloud",
-    "gemma4:cloud",
-    "qwen3-coder:480b-cloud",
-    "qwen3.5:cloud",
-    "nemotron-3-super:cloud"
+    "ollama-cloud/gpt-oss:20b",
+    "ollama-cloud/gpt-oss:120b",
+    "ollama-cloud/gemma4:31b",
+    "ollama-cloud/qwen3.5:397b",
+    "ollama-cloud/nemotron-3-super"
   ],
   "relay": [
     "opencode/deepseek-v4-flash-free",
@@ -21,36 +20,36 @@
   ],
   "agents": {
     "auditor": [
-      "qwen3.7-max", "deepseek-v4-pro", "gpt-oss:120b-cloud", "qwen3.7-plus", "nemotron-3-super:cloud",
-      "deepseek-v4-flash", "minimax-m3", "kimi-k2.7-code", "gpt-oss:20b-cloud", "qwen3-coder:480b-cloud"
+      "opencode-go/qwen3.7-max", "opencode-go/deepseek-v4-pro", "ollama-cloud/gpt-oss:120b", "opencode-go/qwen3.7-plus", "ollama-cloud/nemotron-3-super",
+      "opencode-go/deepseek-v4-flash", "opencode-go/minimax-m3", "opencode-go/kimi-k2.7-code", "ollama-cloud/gpt-oss:20b"
     ],
     "debugger": [
-      "deepseek-v4-flash", "deepseek-v4-pro", "qwen3.7-plus", "qwen3.7-max", "minimax-m3",
-      "deepseek-v4-flash-free", "kimi-k2.7-code", "gpt-oss:120b-cloud", "qwen3-coder:480b-cloud", "gpt-oss:20b-cloud"
+      "opencode-go/deepseek-v4-flash", "opencode-go/deepseek-v4-pro", "opencode-go/qwen3.7-plus", "opencode-go/qwen3.7-max", "opencode-go/minimax-m3",
+      "opencode/deepseek-v4-flash-free", "opencode-go/kimi-k2.7-code", "ollama-cloud/gpt-oss:120b", "ollama-cloud/gpt-oss:20b"
     ],
     "implementer": [
-      "deepseek-v4-flash", "deepseek-v4-pro", "qwen3.7-plus", "qwen3.7-max", "minimax-m3",
-      "kimi-k2.7-code", "deepseek-v4-flash-free", "qwen3-coder:480b-cloud", "gpt-oss:120b-cloud", "nemotron-3-super:cloud"
+      "opencode-go/deepseek-v4-flash", "opencode-go/deepseek-v4-pro", "opencode-go/qwen3.7-plus", "opencode-go/qwen3.7-max", "opencode-go/minimax-m3",
+      "opencode-go/kimi-k2.7-code", "opencode/deepseek-v4-flash-free", "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super"
     ],
     "implementer-quick": [
-      "deepseek-v4-flash", "deepseek-v4-flash-free", "mimo-v2.5", "qwen3.7-plus", "minimax-m3",
-      "gpt-oss:20b-cloud", "gpt-oss:120b-cloud", "nemotron-3-super:cloud", "deepseek-v4-pro", "qwen3.5-plus"
+      "opencode-go/deepseek-v4-flash", "opencode/deepseek-v4-flash-free", "opencode-go/mimo-v2.5", "opencode-go/qwen3.7-plus", "opencode-go/minimax-m3",
+      "ollama-cloud/gpt-oss:20b", "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super", "opencode-go/deepseek-v4-pro", "ollama-cloud/qwen3.5:397b"
     ],
     "planner": [
-      "qwen3.7-max", "deepseek-v4-pro", "qwen3.7-plus", "gpt-oss:120b-cloud", "deepseek-v4-flash",
-      "minimax-m3", "nemotron-3-super:cloud", "gpt-oss:20b-cloud", "kimi-k2.7-code", "gemma4:cloud"
+      "opencode-go/qwen3.7-max", "opencode-go/deepseek-v4-pro", "opencode-go/qwen3.7-plus", "ollama-cloud/gpt-oss:120b", "opencode-go/deepseek-v4-flash",
+      "opencode-go/minimax-m3", "ollama-cloud/nemotron-3-super", "ollama-cloud/gpt-oss:20b", "opencode-go/kimi-k2.7-code", "ollama-cloud/gemma4:31b"
     ],
     "researcher": [
-      "deepseek-v4-flash", "qwen3.7-plus", "deepseek-v4-pro", "minimax-m3", "qwen3.7-max",
-      "deepseek-v4-flash-free", "gpt-oss:120b-cloud", "gpt-oss:20b-cloud", "nemotron-3-super:cloud", "gemma4:cloud"
+      "opencode-go/deepseek-v4-flash", "opencode-go/qwen3.7-plus", "opencode-go/deepseek-v4-pro", "opencode-go/minimax-m3", "opencode-go/qwen3.7-max",
+      "opencode/deepseek-v4-flash-free", "ollama-cloud/gpt-oss:120b", "ollama-cloud/gpt-oss:20b", "ollama-cloud/nemotron-3-super", "ollama-cloud/gemma4:31b"
     ],
     "reviewer": [
-      "deepseek-v4-pro", "qwen3.7-max", "qwen3.7-plus", "deepseek-v4-flash", "minimax-m3",
-      "gpt-oss:120b-cloud", "nemotron-3-super:cloud", "kimi-k2.7-code", "gpt-oss:20b-cloud", "gemma4:cloud"
+      "opencode-go/deepseek-v4-pro", "opencode-go/qwen3.7-max", "opencode-go/qwen3.7-plus", "opencode-go/deepseek-v4-flash", "opencode-go/minimax-m3",
+      "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super", "opencode-go/kimi-k2.7-code", "ollama-cloud/gpt-oss:20b", "ollama-cloud/gemma4:31b"
     ],
     "reviewer-quick": [
-      "deepseek-v4-flash", "deepseek-v4-flash-free", "mimo-v2.5", "qwen3.7-plus", "minimax-m3",
-      "gpt-oss:20b-cloud", "gpt-oss:120b-cloud", "nemotron-3-super:cloud", "deepseek-v4-pro", "qwen3.5-plus"
+      "opencode-go/deepseek-v4-flash", "opencode/deepseek-v4-flash-free", "opencode-go/mimo-v2.5", "opencode-go/qwen3.7-plus", "opencode-go/minimax-m3",
+      "ollama-cloud/gpt-oss:20b", "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super", "opencode-go/deepseek-v4-pro", "ollama-cloud/qwen3.5:397b"
     ]
   }
 }
