@@ -62,3 +62,21 @@ vim.diagnostic.config({
 	-- virtual_lines = false,
 	virtual_lines = true,
 })
+
+vim.g.lsp_folding = true
+
+function _G.smart_foldexpr()
+	if vim.g.lsp_folding then
+		local buf = vim.api.nvim_get_current_buf()
+		if next(vim.lsp.get_clients({ bufnr = buf, method = "textDocument/foldingRange" })) then
+			return vim.lsp.foldexpr()
+		end
+	end
+	return vim.treesitter.foldexpr()
+end
+
+opt.foldmethod = "expr"
+opt.foldexpr = "v:lua.smart_foldexpr()"
+opt.foldtext = ""
+opt.foldlevel = 99
+opt.foldlevelstart = 99

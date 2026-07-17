@@ -130,11 +130,6 @@ return {
 						})
 					end, vim.tbl_extend("force", opts, { desc = "Document symbols (Telescope)" }))
 
-					vim.opt_local.foldmethod = "expr"
-					vim.opt_local.foldexpr = "v:lua.vim.treesitter.foldexpr()"
-					vim.opt_local.foldtext = ""
-					vim.opt_local.foldlevel = 99
-
 					vim.opt_local.conceallevel = 2
 					vim.opt_local.concealcursor = ""
 					pcall(vim.treesitter.start, args.buf)
@@ -150,6 +145,29 @@ return {
 					vim.keymap.set("n", "[[", function()
 						vim.fn.search("^#\\+\\s\\+", "bW")
 					end, vim.tbl_extend("force", opts, { desc = "Previous Markdown Header" }))
+				end,
+			})
+
+			local cap_enablers = {
+				{ "textDocument/inlayHint", function(b)
+					vim.lsp.inlay_hint.enable(true, { bufnr = b })
+				end },
+				{ "textDocument/codeLens", function(b)
+					vim.lsp.codelens.enable(true, { bufnr = b })
+				end },
+			}
+			vim.api.nvim_create_autocmd("LspAttach", {
+				group = vim.api.nvim_create_augroup("UserLspCapabilities", { clear = true }),
+				callback = function(args)
+					local client = vim.lsp.get_client_by_id(args.data.client_id)
+					if not client then
+						return
+					end
+					for _, cap in ipairs(cap_enablers) do
+						if client:supports_method(cap[1], args.buf) then
+							cap[2](args.buf)
+						end
+					end
 				end,
 			})
 

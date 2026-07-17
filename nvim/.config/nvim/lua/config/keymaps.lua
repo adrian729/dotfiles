@@ -72,6 +72,7 @@ map("n", "grr", function()
 end, { desc = "Go to LSP references" })
 map("n", "gri", builtin.lsp_implementations, { desc = "Go to LSP implementations" })
 -- gra - native
+-- grx - native (codelens run)
 map("n", "grn", function()
 	return ":IncRename " .. vim.fn.expand("<cword>")
 end, { expr = true, desc = "Incremental Rename" })
@@ -88,10 +89,15 @@ map("n", "[d", function()
 	vim.diagnostic.jump({ count = -1, float = true })
 end, { desc = "Prev Diagnostic" })
 map("n", "<leader>uh", function()
-	local enabled = not vim.lsp.inlay_hint.is_enabled()
+	local enabled = not vim.lsp.inlay_hint.is_enabled({ bufnr = 0 })
 	print("toggle inlay_hint: " .. tostring(enabled))
-	vim.lsp.inlay_hint.enable(enabled)
-end, { desc = "Toggle inlay hints" })
+	vim.lsp.inlay_hint.enable(enabled, { bufnr = 0 })
+end, { desc = "Toggle inlay hints (current buffer)" })
+map("n", "<leader>uf", function()
+	vim.g.lsp_folding = not vim.g.lsp_folding
+	print("LSP folding: " .. tostring(vim.g.lsp_folding) .. " (fallback: treesitter)")
+	vim.cmd("normal! zx")
+end, { desc = "Toggle LSP folding (treesitter fallback)" })
 -- ------------------------------------------------------------------
 -- help
 -- ------------------------------------------------------------------
