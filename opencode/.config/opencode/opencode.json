@@ -39,6 +39,8 @@
       "grep *": "allow",
       "head *": "allow",
       "tail *": "allow",
+      "awk *": "allow",
+      "sed *": "allow",
       "wc *": "allow",
       "sort *": "allow",
       "uniq *": "allow",

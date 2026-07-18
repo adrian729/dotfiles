@@ -2,8 +2,11 @@
   "permissions": {
     "allow": [
       "Read",
+      "Read(//**)",
       "Grep",
+      "Grep(//**)",
       "Glob",
+      "Glob(//**)",
       "WebFetch",
       "WebSearch",
       "Bash(llm *)",
@@ -24,6 +27,8 @@
       "Bash(grep *)",
       "Bash(head *)",
       "Bash(tail *)",
+      "Bash(awk *)",
+      "Bash(sed *)",
       "Bash(wc *)",
       "Bash(sort *)",
       "Bash(uniq *)",
@@ -32,6 +37,7 @@
       "Bash(pwd *)",
       "Bash(which *)",
       "Bash(type *)",
+      "Bash(command -v*)",
       "Bash(whoami *)",
       "Bash(date *)",
       "Bash(ps *)",
