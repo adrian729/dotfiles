@@ -5,7 +5,7 @@ description: Delegate a self-contained coding task to OpenCode CLI as an externa
 
 Real agentic subagent wrapping the `opencode` CLI headlessly — a sibling of `llm`/`opencode-llm`, but with bash/edit/read tools, run unattended against a throwaway worktree.
 
-- `opencode-task NAME "task description"` — runs OpenCode's `task` agent (bash/edit/read tools) headlessly against a throwaway worktree at `<repo>/.opencode/worktrees/NAME`, same convention `opencode-wt` uses. Re-running the same NAME resumes that worktree's session.
+- `opencode-task NAME "task description"` — runs OpenCode's `task` agent (bash/edit/read tools) headlessly against a throwaway worktree at `<repo>/.worktrees/NAME`, same convention `opencode-wt` uses. Re-running the same NAME resumes that worktree's session.
 - `--auto` (unattended permission approval) is not a sandbox — global `opencode.json` denies `git push`/`git push *` for every OpenCode agent, the script never merges the worktree back, and the `task` agent denies `external_directory` so its edit/read/glob tools can't touch paths outside the worktree; its bash tool is NOT confined and can touch anything the OS user can. Treat it like any other subagent whose diff you must review before it matters: inspect with `opencode-git-wt NAME diff`, resume interactively with `opencode-wt NAME`, discard with `opencode-wt -d NAME`.
 - Reuses a worktree by name (same name = same branch/session) — pick a fresh name per task; reusing one mid-flight races with any human `opencode-wt` session of the same name.
 - `-m provider/model`, `--agent A` (default `task`), `-T secs` (default 1800) available. Exit 124 on timeout leaves the worktree in place for inspection, same as any other failure.

@@ -27,11 +27,11 @@ Shared, tool-agnostic behavior rules live in `~/.agents/AGENTS.md` (the `agents/
 
 ## Rules
 
-- claude operational config (agents, skills, hooks, scripts, settings) goes under `claude/.claude/`. Root `.claude/` holds project CLAUDE.md and `worktrees/` only.
+- claude operational config (agents, skills, hooks, scripts, settings) goes under `claude/.claude/`. Root `.claude/` holds project CLAUDE.md only.
 - When creating a new skill, the path is `claude/.claude/skills/<name>/SKILL.md`.
 - Every package has a `.stow-local-ignore` excluding at least its own `install.sh` from stow symlinking — see the exclusions table below for package-specific extras.
 - `install.sh` at repo root is the bootstrap installer.
-- Worktrees for claude go in `.claude/worktrees/` or `.opencode/worktrees/`.
+- Worktrees for claude and opencode share a single root: `.worktrees/<name>/` — either tool can attach to the same worktree/branch/color under one name. Each tool still tracks its own AI conversation state (Claude via `~/.claude/projects/`, OpenCode via its own session DB + the `wt.<name>.session` git-config key) — sharing a name shares the checkout, not a single AI session.
 - OpenCode's agent-level `permission.bash` block fully replaces (does not merge with) `opencode.json`'s top-level one, so the 7-pair bash deny list (`git push`/`npm publish`/`gh release`/`docker push`/`terraform apply`/`kubectl apply`/`cargo publish`) is duplicated verbatim across `opencode.json` and `opencode/.config/opencode/agents/{debugger,implementer,implementer-quick}.md`. Since `opencode.json` is plain JSON (no comments to flag this), if you add to the deny list in one place, add it in all four.
 - When `claude/.claude/settings.json`'s `permissions` block changes, mirror the same rule into `opencode/.config/opencode/opencode.json`'s `permission` block, translated into OpenCode's own schema (bash sub-command patterns, three-state `allow`/`ask`/`deny`). Keep OpenCode's permissive `"*": "allow"` bash default as the baseline unless a change explicitly says otherwise. Exception, deliberately not mirrored: Claude's `allow` list explicitly allowlists `Bash(opencode-task*)`/`Bash(opencode-llm*)` so Claude can shell out to OpenCode; OpenCode has no equivalent entry, since it shouldn't shell out to itself (enforced today only by the `opencode-task`/`opencode-llm` skills' own anti-triggers, not a permission rule). Second exception, also deliberate: `npm publish`/`gh release`/`docker push`/`terraform apply`/`kubectl apply`/`cargo publish` are `ask` in `claude/.claude/settings.json` but `deny` in `opencode.json` — Claude's `ask` works because a human is present to answer the prompt, but OpenCode's unattended `--auto` runs have nobody to ask, so the equivalent safety there is a hard `deny`, not a translated `ask`. Don't "fix" this by loosening opencode.json's `deny` back to `ask`.
 
@@ -201,8 +201,7 @@ Every package now has a `.stow-local-ignore` excluding at least its own `^/insta
 
 | Path | Purpose |
 |---|---|
-| `.claude/worktrees/` | Claude Code worktrees (not stowed) |
-| `.opencode/worktrees/` | OpenCode worktrees (not stowed) |
+| `.worktrees/` | Shared Claude Code / OpenCode session worktrees (not stowed) |
 | `.gitignore` | Excludes `.gitconfig` and `claude/.claude/claude.env` |
 | `install.sh` | Bootstrap entry point (repo root) |
 | `.ready-tmux` | Script: opens nvim in tmux split layout |

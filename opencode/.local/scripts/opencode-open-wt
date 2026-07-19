@@ -11,7 +11,7 @@ Usage:
                                       opencode-open-wt nvim feature-auth
   opencode-open-wt -h, --help       Show this help.
 
-Worktrees live under <repo>/.opencode/worktrees/ (list them: opencode-wt -l).
+Worktrees live under <repo>/.worktrees/ (list them: opencode-wt -l).
 EOF
 }
 
@@ -40,7 +40,7 @@ common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
   die "not inside a git repository"
 root=$(dirname "$common")
 
-wt_dir="$root/.opencode/worktrees/$name"
+wt_dir="$root/.worktrees/$name"
 [ -d "$wt_dir" ] || die "no worktree named '$name' (see opencode-wt -l)"
 [ -f "$wt_dir/.git" ] || die "'$name' exists but is not a worktree (try: git worktree prune)"
 

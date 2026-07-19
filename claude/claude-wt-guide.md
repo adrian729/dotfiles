@@ -84,7 +84,7 @@ One name = one branch = one worktree = one Claude session = one color.
 
 ```
 my-repo/                       ← main checkout
-└── .claude/worktrees/
+└── .worktrees/
     ├── feature-auth/          ← claude-wt feature-auth blue
     └── bugfix-login/          ← claude-wt bugfix-login red
 ```
@@ -168,7 +168,7 @@ from your main checkout. Nothing to sync, pull, or push between them.
 - **Uncommitted edits are the exception** — they exist only as files
   inside the worktree folder, so ask git *in there*. That's what `git-wt`
   is for: `git-wt <name> <args>` runs
-  `git -C .claude/worktrees/<name> <args>` from anywhere in the repo.
+  `git -C .worktrees/<name> <args>` from anywhere in the repo.
 
   ```bash
   git-wt feature-auth status --short             # what's dirty (incl. untracked)
@@ -186,8 +186,8 @@ from your main checkout. Nothing to sync, pull, or push between them.
   and every git-aware tool just works:
 
   ```bash
-  code .claude/worktrees/feature-auth          # VS Code, own window
-  cd .claude/worktrees/feature-auth && nvim    # or any terminal editor
+  code .worktrees/feature-auth          # VS Code, own window
+  cd .worktrees/feature-auth && nvim    # or any terminal editor
   ```
 
   Or with the `open-wt` helper (which `cd`s in for you so cwd-based
@@ -213,7 +213,7 @@ from your main checkout. Nothing to sync, pull, or push between them.
 
 ## Niceties it handles for you
 
-- `.claude/worktrees/` is auto-added to `.git/info/exclude`, so worktrees
+- `.worktrees/` is auto-added to `.git/info/exclude`, so worktrees
   never show up as untracked files — no per-repo `.gitignore` edit needed.
 - **Fetch on create:** new branches start from the latest remote default
   branch, not a stale snapshot (offline → warning, last-known state is

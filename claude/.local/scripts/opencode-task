@@ -17,7 +17,7 @@ Usage: opencode-task NAME PROMPT...
   -m MODEL     provider/model (default: OpenCode's own default)
   --agent A    agent to run (default: task — bash/edit/read, confined to --dir)
   -T SECS      timeout (default 1800)
-Runs in <repo>/.opencode/worktrees/NAME; re-running the same NAME resumes that
+Runs in <repo>/.worktrees/NAME; re-running the same NAME resumes that
 session. Never pushes, never merges into your checkout — inspect with
 `opencode-git-wt NAME diff`, clean up with `opencode-wt -d NAME`.
 Exit: 0 ok · 1 usage · 2 bad name · 3 opencode/git/jq missing · 6 API error · 124 timeout
@@ -65,7 +65,7 @@ git check-ref-format --branch "$NAME" >/dev/null 2>&1 || { echo "opencode-task: 
 
 ROOT_COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
 ROOT=$(dirname "$ROOT_COMMON")
-WT_DIR="$ROOT/.opencode/worktrees/$NAME"
+WT_DIR="$ROOT/.worktrees/$NAME"
 
 # --- portable timeout wrapper (macOS has no `timeout`) ------------------------
 TIMEOUT_BIN=""
@@ -134,11 +134,11 @@ if [ ! -d "$WT_DIR" ]; then
   copy_worktreeinclude "$ROOT" "$WT_DIR"
   exclude="$ROOT/.git/info/exclude"
   mkdir -p "$(dirname "$exclude")"
-  grep -qxF '.opencode/worktrees/' "$exclude" 2>/dev/null || echo '.opencode/worktrees/' >>"$exclude"
+  grep -qxF '.worktrees/' "$exclude" 2>/dev/null || echo '.worktrees/' >>"$exclude"
 elif [ ! -f "$WT_DIR/.git" ]; then
   die "'$NAME' exists but is not a worktree (try: git worktree prune, or pick another name)"
 else
-  SAVED_SESSION=$(git -C "$ROOT" config --get "opencode-wt.$NAME.session" 2>/dev/null || true)
+  SAVED_SESSION=$(git -C "$ROOT" config --get "wt.$NAME.session" 2>/dev/null || true)
   echo "opencode-task: reusing existing worktree '$NAME'${SAVED_SESSION:+ (resuming session $SAVED_SESSION)}" >&2
 fi
 
@@ -163,7 +163,7 @@ if [ "$rc" -eq 124 ]; then
 fi
 
 sid=$(jq -rs 'map(select(.sessionID != null) | .sessionID) | first // empty' "$RESP_FILE" 2>/dev/null)
-[ -n "$sid" ] && git -C "$ROOT" config "opencode-wt.$NAME.session" "$sid"
+[ -n "$sid" ] && git -C "$ROOT" config "wt.$NAME.session" "$sid"
 
 errmsg=$(jq -r 'select(.type=="error") | (.error.data.message // .error.name // "unknown error")' "$RESP_FILE" 2>/dev/null | head -1)
 # Dedupe by part.id, keeping the last (assumed-cumulative) text per id, in

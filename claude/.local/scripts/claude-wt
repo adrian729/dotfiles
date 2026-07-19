@@ -30,7 +30,7 @@ usage() {
   cat <<EOF
 Usage:
   claude-wt <name> [color]    Start or resume Claude session <name> in its own
-                              worktree (<repo>/.claude/worktrees/<name>, branch
+                              worktree (<repo>/.worktrees/<name>, branch
                               <name>). Re-running the same command resumes the
                               session; the color is remembered per name. When
                               the session exits with unpushed commits, offers
@@ -64,8 +64,8 @@ has_origin() {
 ensure_excluded() {
   local exclude="$1/.git/info/exclude"
   mkdir -p "$(dirname "$exclude")"
-  grep -qxF '.claude/worktrees/' "$exclude" 2>/dev/null ||
-    echo '.claude/worktrees/' >>"$exclude"
+  grep -qxF '.worktrees/' "$exclude" 2>/dev/null ||
+    echo '.worktrees/' >>"$exclude"
 }
 
 copy_worktreeinclude() {
@@ -170,7 +170,7 @@ offer_push_pr() {
 
 cmd_list() {
   local root=$1 prefix path branch name color dirty line
-  prefix="$root/.claude/worktrees/"
+  prefix="$root/.worktrees/"
   printf '%-20s %-20s %-8s %s\n' NAME BRANCH COLOR STATE
   git -C "$root" worktree list --porcelain | while IFS= read -r line; do
     case "$line" in
@@ -185,7 +185,7 @@ cmd_list() {
     case "$path" in
       "$prefix"*)
         name=${path#"$prefix"}
-        color=$(git -C "$root" config --get "claude-wt.$name.color" 2>/dev/null || echo -)
+        color=$(git -C "$root" config --get "wt.$name.color" 2>/dev/null || echo -)
         if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then
           dirty=dirty
         else
@@ -199,7 +199,7 @@ cmd_list() {
 
 cmd_done() {
   local root=$1 name=$2 wt_dir ans state="" parent
-  wt_dir="$root/.claude/worktrees/$name"
+  wt_dir="$root/.worktrees/$name"
   [ -d "$wt_dir" ] || die "no worktree named '$name' (see claude-wt -l)"
   [ -f "$wt_dir/.git" ] ||
     die "'$name' exists but is not a worktree (try: git worktree prune)"
@@ -215,11 +215,11 @@ cmd_done() {
   else
     git -C "$root" worktree remove "$wt_dir"
   fi
-  git -C "$root" config --unset "claude-wt.$name.color" 2>/dev/null || true
+  git -C "$root" config --unset "wt.$name.color" 2>/dev/null || true
   # Slashed names (feat/x) leave empty parent dirs behind — remove them up to
   # the worktrees root so they can't shadow future session names.
   parent=$(dirname "$wt_dir")
-  while [ "$parent" != "$root/.claude/worktrees" ] && rmdir "$parent" 2>/dev/null; do
+  while [ "$parent" != "$root/.worktrees" ] && rmdir "$parent" 2>/dev/null; do
     parent=$(dirname "$parent")
   done
   echo "Removed worktree '$name'."
@@ -247,7 +247,7 @@ cmd_start() {
   if [ -n "$color" ]; then
     tint=$(tint_for "$color") || die "unknown color '$color' (valid: $COLOR_NAMES)"
   fi
-  wt_dir="$root/.claude/worktrees/$name"
+  wt_dir="$root/.worktrees/$name"
 
   ensure_excluded "$root"
 
@@ -284,9 +284,9 @@ cmd_start() {
   fi
 
   if [ -n "$color" ]; then
-    git -C "$root" config "claude-wt.$name.color" "$color"
+    git -C "$root" config "wt.$name.color" "$color"
   else
-    color=$(git -C "$root" config --get "claude-wt.$name.color" 2>/dev/null || true)
+    color=$(git -C "$root" config --get "wt.$name.color" 2>/dev/null || true)
     if [ -n "$color" ]; then
       tint=$(tint_for "$color") || true
     fi

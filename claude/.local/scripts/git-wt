@@ -11,7 +11,7 @@ Usage:
                                  git-wt feature-auth log --oneline main..HEAD
   git-wt -h, --help            Show this help.
 
-Worktrees live under <repo>/.claude/worktrees/ (list them: claude-wt -l).
+Worktrees live under <repo>/.worktrees/ (list them: claude-wt -l).
 EOF
 }
 
@@ -41,7 +41,7 @@ root=$(dirname "$common")
 
 name=$1
 shift
-wt_dir="$root/.claude/worktrees/$name"
+wt_dir="$root/.worktrees/$name"
 [ -d "$wt_dir" ] || die "no worktree named '$name' (see claude-wt -l)"
 # A live worktree always has a .git *file*; in a leftover folder without one,
 # `git -C` would fall through and silently report on the main checkout.

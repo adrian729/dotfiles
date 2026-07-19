@@ -1,7 +1,7 @@
 # `opencode-wt` + `opencode-git-wt` — quickstart
 
 `opencode-wt` runs several OpenCode sessions on the same repo in parallel,
-each in its own **git worktree** (`.opencode/worktrees/<name>`), on its own
+each in its own **git worktree** (`.worktrees/<name>`), on its own
 branch (`<name>`), so sessions never touch each other's files — or your main
 checkout. One name = one branch = one worktree = one OpenCode session = one
 color.
@@ -47,7 +47,7 @@ tmux pane runs independently.
 opencode-git-wt feature-auth status --short    # what's dirty
 opencode-git-wt feature-auth diff              # uncommitted edits
 git log main..feature-auth                      # committed work — visible from main
-code .opencode/worktrees/feature-auth           # open the worktree in any editor
+code .worktrees/feature-auth                   # open the worktree in any editor
 opencode-open-wt code feature-auth              # or use the open-wt helper
 ```
 

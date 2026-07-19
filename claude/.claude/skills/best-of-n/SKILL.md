@@ -74,7 +74,7 @@ No Claude models — all workers from opencode agents or ollama.
 ### Tool: Claude Code
 - Spawn Claude workers via Agent tool. Each gets: task + its angle + output path. No worker sees others' outputs.
 - Spawn free workers via `run_in_background` for each bash call, at the same time as Claude workers:
-  - `opencode-task best-of-n-{angle} -T {timeout} "task + angle"` → response on stdout, changes in `.opencode/worktrees/best-of-n-{angle}/`. Write response to `.best-of-n-outputs/{angle}.md`.
+  - `opencode-task best-of-n-{angle} -T {timeout} "task + angle"` → response on stdout, changes in `.worktrees/best-of-n-{angle}/`. Write response to `.best-of-n-outputs/{angle}.md`.
   - `echo "task + angle" | llm --code -o .best-of-n-outputs/{angle}.md "spec"` — local ollama text-only
   - `echo "task + angle" | opencode-llm -o .best-of-n-outputs/{angle}.md "spec"` — free cloud text-only
 - On free worker failure (opencode/ollama unavailable, timeout) → treat as no output, continue with remaining.

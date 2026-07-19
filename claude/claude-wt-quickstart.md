@@ -2,7 +2,7 @@
 
 `claude-wt` runs several Claude Code sessions on the same repo in
 parallel, each in its own **git worktree**: an extra working folder of
-the repo (`.claude/worktrees/<name>`), on its own branch (`<name>`), so
+the repo (`.worktrees/<name>`), on its own branch (`<name>`), so
 sessions never touch each other's files — or your main checkout. One
 name = one branch = one worktree = one Claude session = one color.
 
@@ -46,14 +46,14 @@ another tmux pane runs independently of `feature-auth`.
 
 `git-wt <name> <git args...>` runs any git command *inside* that
 session's worktree, from anywhere in the repo — it's shorthand for
-`git -C .claude/worktrees/<name> <git args...>`. Uncommitted changes
+`git -C .worktrees/<name> <git args...>`. Uncommitted changes
 exist only in the worktree folder, so this is how you peek at them:
 
 ```bash
 git-wt feature-auth status --short    # what's dirty in its worktree
 git-wt feature-auth diff              # uncommitted edits
 git log main..feature-auth            # committed work — visible from the main checkout
-code .claude/worktrees/feature-auth   # open the worktree in any editor
+code .worktrees/feature-auth   # open the worktree in any editor
 open-wt code feature-auth             # or use the open-wt helper
 ```
 

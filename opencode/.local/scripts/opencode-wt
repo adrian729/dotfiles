@@ -28,7 +28,7 @@ usage() {
   cat <<EOF
 Usage:
   opencode-wt <name> [color]    Start or resume OpenCode session <name> in its
-                                own worktree (<repo>/.opencode/worktrees/<name>,
+                                own worktree (<repo>/.worktrees/<name>,
                                 branch <name>). Re-running the same command
                                 resumes the session; the color is remembered
                                 per name. When the session exits with unpushed
@@ -63,8 +63,8 @@ has_origin() {
 ensure_excluded() {
   local exclude="$1/.git/info/exclude"
   mkdir -p "$(dirname "$exclude")"
-  grep -qxF '.opencode/worktrees/' "$exclude" 2>/dev/null ||
-    echo '.opencode/worktrees/' >>"$exclude"
+  grep -qxF '.worktrees/' "$exclude" 2>/dev/null ||
+    echo '.worktrees/' >>"$exclude"
 }
 
 copy_worktreeinclude() {
@@ -166,7 +166,7 @@ offer_push_pr() {
 
 cmd_list() {
   local root=$1 prefix path branch name color dirty line
-  prefix="$root/.opencode/worktrees/"
+  prefix="$root/.worktrees/"
   printf '%-20s %-20s %-8s %s\n' NAME BRANCH COLOR STATE
   git -C "$root" worktree list --porcelain | while IFS= read -r line; do
     case "$line" in
@@ -181,7 +181,7 @@ cmd_list() {
     case "$path" in
       "$prefix"*)
         name=${path#"$prefix"}
-        color=$(git -C "$root" config --get "opencode-wt.$name.color" 2>/dev/null || echo -)
+        color=$(git -C "$root" config --get "wt.$name.color" 2>/dev/null || echo -)
         if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then
           dirty=dirty
         else
@@ -195,7 +195,7 @@ cmd_list() {
 
 cmd_done() {
   local root=$1 name=$2 wt_dir ans state="" parent sid
-  wt_dir="$root/.opencode/worktrees/$name"
+  wt_dir="$root/.worktrees/$name"
   [ -d "$wt_dir" ] || die "no worktree named '$name' (see opencode-wt -l)"
   [ -f "$wt_dir/.git" ] ||
     die "'$name' exists but is not a worktree (try: git worktree prune)"
@@ -213,17 +213,17 @@ cmd_done() {
     git -C "$root" worktree remove "$wt_dir"
   fi
 
-  git -C "$root" config --unset "opencode-wt.$name.color" 2>/dev/null || true
+  git -C "$root" config --unset "wt.$name.color" 2>/dev/null || true
 
   # Clean up orphaned session in opencode's DB
-  sid=$(git -C "$root" config --get "opencode-wt.$name.session" 2>/dev/null || true)
+  sid=$(git -C "$root" config --get "wt.$name.session" 2>/dev/null || true)
   if [ -n "$sid" ] && command -v opencode >/dev/null 2>&1; then
     opencode session delete "$sid" 2>/dev/null || true
   fi
-  git -C "$root" config --unset "opencode-wt.$name.session" 2>/dev/null || true
+  git -C "$root" config --unset "wt.$name.session" 2>/dev/null || true
 
   parent=$(dirname "$wt_dir")
-  while [ "$parent" != "$root/.opencode/worktrees" ] && rmdir "$parent" 2>/dev/null; do
+  while [ "$parent" != "$root/.worktrees" ] && rmdir "$parent" 2>/dev/null; do
     parent=$(dirname "$parent")
   done
   echo "Removed worktree '$name'."
@@ -252,7 +252,7 @@ cmd_start() {
   if [ -n "$color" ]; then
     tint=$(tint_for "$color") || die "unknown color '$color' (valid: $COLOR_NAMES)"
   fi
-  wt_dir="$root/.opencode/worktrees/$name"
+  wt_dir="$root/.worktrees/$name"
 
   ensure_excluded "$root"
 
@@ -284,9 +284,9 @@ cmd_start() {
   fi
 
   if [ -n "$color" ]; then
-    git -C "$root" config "opencode-wt.$name.color" "$color"
+    git -C "$root" config "wt.$name.color" "$color"
   else
-    color=$(git -C "$root" config --get "opencode-wt.$name.color" 2>/dev/null || true)
+    color=$(git -C "$root" config --get "wt.$name.color" 2>/dev/null || true)
     if [ -n "$color" ]; then
       tint=$(tint_for "$color") || true
     fi
@@ -298,10 +298,10 @@ cmd_start() {
 
   # Recover orphaned session after a crash — scan opencode's DB for any session
   # in this worktree directory that wasn't saved to git config.
-  saved=$(git -C "$root" config --get "opencode-wt.$name.session" 2>/dev/null || true)
+  saved=$(git -C "$root" config --get "wt.$name.session" 2>/dev/null || true)
   if [ -z "$saved" ]; then
     saved=$(find_session_for "$wt_dir")
-    [ -n "$saved" ] && git -C "$root" config "opencode-wt.$name.session" "$saved"
+    [ -n "$saved" ] && git -C "$root" config "wt.$name.session" "$saved"
   fi
 
   # Temp tui.json with system theme so opencode's background is transparent
@@ -323,7 +323,7 @@ cmd_start() {
   # After exit — capture the session that was just created
   new=$(find_session_for "$wt_dir")
   if [ -n "$new" ] && [ "$new" != "$saved" ]; then
-    git -C "$root" config "opencode-wt.$name.session" "$new"
+    git -C "$root" config "wt.$name.session" "$new"
   fi
 
   offer_push_pr "$name"

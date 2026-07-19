@@ -63,7 +63,7 @@ One name = one branch = one worktree = one OpenCode session = one color.
 
 ```
 my-repo/
-├── .opencode/worktrees/
+├── .worktrees/
 │   ├── feature-auth/          ← opencode-wt feature-auth blue
 │   └── bugfix-login/          ← opencode-wt bugfix-login red
 └── (main checkout)
@@ -117,7 +117,7 @@ Outside tmux the terminal background is recolored instead (ghostty, kitty).
 opencode-git-wt feature-auth status --short   # what's dirty (incl. untracked)
 opencode-git-wt feature-auth diff             # uncommitted edits
 git log main..feature-auth                     # commits visible from main checkout
-code .opencode/worktrees/feature-auth          # open in any editor
+code .worktrees/feature-auth                   # open in any editor
 opencode-open-wt nvim feature-auth             # or use the helper
 ```
 
@@ -126,7 +126,7 @@ windows into it. Commits are visible from your main checkout immediately.
 
 ## Niceties it handles for you
 
-- `.opencode/worktrees/` is auto-added to `.git/info/exclude`.
+- `.worktrees/` is auto-added to `.git/info/exclude`.
 - **Fetch on create:** new branches start from the latest remote default
   branch. Resume never fetches.
 - **Push + draft PR on exit:** with your consent, after showing what would
