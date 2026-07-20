@@ -81,12 +81,12 @@ while true; do
 
   while true; do
     if [ -n "$color" ]; then
-      printf '\nselected '
+      printf 'selected '
       color_fg "$color"
       printf '■ %s' "$color"
       printf '\033[39m color\n'
     elif [ -n "$saved" ]; then
-      printf '\ncolor: '
+      printf 'color: '
       color_fg "$saved"
       printf '■ %s' "$saved"
       printf '\033[39m (saved)\n'
