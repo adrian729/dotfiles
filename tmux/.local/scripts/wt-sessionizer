@@ -113,6 +113,7 @@ while true; do
       query=""
       continue 2
     fi
+    if [ "$first" = $'\n' ]; then continue; fi
     read -r rest
     choice="$first$rest"
     case "$choice" in
