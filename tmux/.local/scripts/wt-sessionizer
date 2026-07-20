@@ -91,7 +91,7 @@ while true; do
       printf '■ %s' "$saved"
       printf '\033[39m (saved)\n'
     fi
-    printf '[c]laude  [o]pencode  [l]ist  [q]uit  (or type a color): '
+    printf '[c]laude  [o]pencode  [l]ist colors  [q]uit  (type color to pick): '
     read -r choice
     case "$choice" in
       c)
