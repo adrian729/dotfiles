@@ -107,10 +107,11 @@ while true; do
       printf '■ %s' "$saved"
       printf '\033[39m (saved)\n'
     fi
-    printf '[c]laude  [o]pencode  [l]ist colors  [q]uit  (type color to pick): '
+    printf '[c]laude  [o]pencode  [l]ist colors  [b]ack  [q]uit  (type color to pick): '
     read -r choice || exit 0
     case "$choice" in
-      "") continue ;;  # empty Enter — re-prompt
+      "") continue ;;
+      *$'\033'*) query=""; continue 2 ;;
       c)
         final_color=${color:-$saved}
         exec claude-wt "$name" ${final_color:+"$final_color"}
@@ -120,7 +121,7 @@ while true; do
         exec opencode-wt "$name" ${final_color:+"$final_color"}
         ;;
       q) exit 0 ;;
-      $'\033') query=""; continue 2 ;;
+      b) query=""; continue 2 ;;
       l)
         echo ""
         i=0
