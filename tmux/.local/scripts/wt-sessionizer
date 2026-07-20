@@ -22,6 +22,20 @@ color_fg() {
   esac
 }
 
+match_color() {
+  local input=$1 color
+  for color in red maroon peach yellow green teal sky sapphire blue lavender mauve pink flamingo rosewater; do
+    [ "$input" = "$color" ] && { echo "$color"; return 0; }
+  done
+  for color in red maroon peach yellow green teal sky sapphire blue lavender mauve pink flamingo rosewater; do
+    case "$color" in "$input"*) echo "$color"; return 0 ;; esac
+  done
+  for color in red maroon peach yellow green teal sky sapphire blue lavender mauve pink flamingo rosewater; do
+    case "$color" in *"$input"*) echo "$color"; return 0 ;; esac
+  done
+  return 1
+}
+
 command -v fzf >/dev/null 2>&1 || {
   echo "wt-sessionizer: fzf is required (brew install fzf / apt install fzf)" >&2
   sleep 2
@@ -116,24 +130,8 @@ while true; do
         [ "$((i % 7))" -ne 0 ] && echo ""
         ;;
       *)
-        if grep -qxF "$choice" <<'EOF'
-red
-maroon
-peach
-yellow
-green
-teal
-sky
-sapphire
-blue
-lavender
-mauve
-pink
-flamingo
-rosewater
-EOF
-        then
-          color="$choice"
+        if matched=$(match_color "$choice"); then
+          color="$matched"
         else
           echo "wt-sessionizer: unknown color '$choice'"
         fi
