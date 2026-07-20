@@ -2,25 +2,75 @@
 
 # fzf picker over live sessions, most-recently-attached first.
 # Shows truncated path + session name; current session hidden.
-current=$(tmux display-message -p '#S')
-raw=$(
-  tmux list-sessions -F $'#{session_last_attached}\t#{pane_current_path}\t#{session_name}' \
-    | sort -t$'\t' -k1,1rn \
-    | cut -f2,3 \
-    | awk -F'\t' -v cur="$current" '$2 != cur'
-)
-no_sessions=false
-if [[ -z "$raw" ]]; then
-  lines=$'(no other sessions)\t__noop__'
-  no_sessions=true
-else
-  lines=$(
-    while IFS=$'\t' read -r dir name; do
-      short=$(echo "$dir" | awk -F/ 'NF>3{printf ".../%s/%s/%s",$(NF-2),$(NF-1),$NF} NF<=3{print}')
-      printf '%s  (%s)\t%s\n' "$short" "$name" "$name"
-    done <<< "$raw"
+# ctrl-d: delete selected session (with confirmation)
+# ctrl-x: kill all sessions including current (with confirmation)
+# enter: switch to selected session
+
+while true; do
+  current=$(tmux display-message -p '#S')
+  raw=$(
+    tmux list-sessions -F $'#{session_last_attached}\t#{pane_current_path}\t#{session_name}' \
+      | sort -t$'\t' -k1,1rn \
+      | cut -f2,3 \
+      | awk -F'\t' -v cur="$current" '$2 != cur'
   )
-fi
-selected=$(FZF_DEFAULT_OPTS= fzf --delimiter=$'\t' --with-nth=1 --prompt='session> ' <<< "$lines") || exit 0
-$no_sessions && exit 0
-tmux switch-client -t "${selected#*$'\t'}"
+  no_sessions=false
+  if [[ -z "$raw" ]]; then
+    lines=$'(no other sessions)\t__noop__'
+    no_sessions=true
+  else
+    lines=$(
+      while IFS=$'\t' read -r dir name; do
+        short=$(echo "$dir" | awk -F/ 'NF>3{printf ".../%s/%s/%s",$(NF-2),$(NF-1),$NF} NF<=3{print}')
+        printf '%s  (%s)\t%s\n' "$short" "$name" "$name"
+      done <<< "$raw"
+    )
+  fi
+
+  output=$(FZF_DEFAULT_OPTS= fzf --delimiter=$'\t' --with-nth=1 \
+    --prompt='session> ' \
+    --header='ctrl-d: delete  |  ctrl-x: kill all  |  enter: switch' \
+    --expect=ctrl-d,ctrl-x \
+    <<< "$lines") || exit 0
+
+  case "$output" in
+    $'ctrl-d\n'*)
+      key=ctrl-d
+      selected="${output#$'ctrl-d\n'}"
+      ;;
+    $'ctrl-x\n'*)
+      key=ctrl-x
+      selected="${output#$'ctrl-x\n'}"
+      ;;
+    *)
+      key=enter
+      selected="$output"
+      ;;
+  esac
+  selected="${selected%$'\n'}"  # strip trailing newline
+
+  case "$key" in
+    ctrl-d)
+      $no_sessions && continue
+      name="${selected#*$'\t'}"
+      printf 'kill "%s"? [y/N] ' "$name"
+      read -rn1 answer
+      echo
+      [[ "$answer" == [yY] ]] && tmux kill-session -t "$name"
+      continue
+      ;;
+    ctrl-x)
+      printf 'kill ALL sessions including current? [y/N] '
+      read -rn1 answer
+      echo
+      [[ "$answer" == [yY] ]] && tmux kill-server
+      continue
+      ;;
+    *)
+      $no_sessions && exit 0
+      name="${selected#*$'\t'}"
+      tmux switch-client -t "$name"
+      exit 0
+      ;;
+  esac
+done
