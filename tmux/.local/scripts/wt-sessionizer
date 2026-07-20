@@ -56,11 +56,52 @@ while true; do
       ;;
   esac
 
-  printf '\nOpen with: [c]laude  [o]pencode  [q]uit: '
-  read -r tool
-  case "$tool" in
-    c) exec claude-wt "$name" ;;
-    o) exec opencode-wt "$name" ;;
-    *) continue ;;
-  esac
+  color=""
+  saved=$(git config --get "wt.$name.color" 2>/dev/null || true)
+
+  while true; do
+    if [ -n "$color" ]; then
+      printf '\nColor: %s.  ' "$color"
+    elif [ -n "$saved" ]; then
+      printf '\nColor: %s (saved).  ' "$saved"
+    else
+      printf '\n'
+    fi
+    printf '[c]laude  [o]pencode  [q]uit  (or type a color): '
+    read -r choice
+    case "$choice" in
+      c)
+        final_color=${color:-$saved}
+        exec claude-wt "$name" ${final_color:+"$final_color"}
+        ;;
+      o)
+        final_color=${color:-$saved}
+        exec opencode-wt "$name" ${final_color:+"$final_color"}
+        ;;
+      q) query=""; continue 2 ;;
+      *)
+        if grep -qxF "$choice" <<'EOF'
+red
+maroon
+peach
+yellow
+green
+teal
+sky
+sapphire
+blue
+lavender
+mauve
+pink
+flamingo
+rosewater
+EOF
+        then
+          color="$choice"
+        else
+          echo "wt-sessionizer: unknown color '$choice'"
+        fi
+        ;;
+    esac
+  done
 done
