@@ -2,6 +2,8 @@
 # wt-sessionizer — fzf picker over worktrees; select, then choose claude or opencode.
 set -euo pipefail
 
+COLORS="red maroon peach yellow green teal sky sapphire blue lavender mauve pink flamingo rosewater"
+
 color_fg() {
   case "$1" in
     red)       printf '\033[38;2;243;139;168m' ;;
@@ -24,13 +26,13 @@ color_fg() {
 
 match_color() {
   local input=$1 color
-  for color in red maroon peach yellow green teal sky sapphire blue lavender mauve pink flamingo rosewater; do
+  for color in $COLORS; do
     [ "$input" = "$color" ] && { echo "$color"; return 0; }
   done
-  for color in red maroon peach yellow green teal sky sapphire blue lavender mauve pink flamingo rosewater; do
+  for color in $COLORS; do
     case "$color" in "$input"*) echo "$color"; return 0 ;; esac
   done
-  for color in red maroon peach yellow green teal sky sapphire blue lavender mauve pink flamingo rosewater; do
+  for color in $COLORS; do
     case "$color" in *"$input"*) echo "$color"; return 0 ;; esac
   done
   return 1
@@ -120,7 +122,7 @@ while true; do
       l)
         echo ""
         i=0
-        for c in red maroon peach yellow green teal sky sapphire blue lavender mauve pink flamingo rosewater; do
+        for c in $COLORS; do
           color_fg "$c"
           printf '■ %s' "$c"
           printf '\033[39m  '
