@@ -2,6 +2,26 @@
 # wt-sessionizer — fzf picker over worktrees; select, then choose claude or opencode.
 set -euo pipefail
 
+color_fg() {
+  case "$1" in
+    red)       printf '\033[38;2;243;139;168m' ;;
+    maroon)    printf '\033[38;2;235;160;172m' ;;
+    peach)     printf '\033[38;2;250;179;135m' ;;
+    yellow)    printf '\033[38;2;249;226;175m' ;;
+    green)     printf '\033[38;2;166;227;161m' ;;
+    teal)      printf '\033[38;2;148;226;213m' ;;
+    sky)       printf '\033[38;2;137;220;235m' ;;
+    sapphire)  printf '\033[38;2;116;199;236m' ;;
+    blue)      printf '\033[38;2;137;180;250m' ;;
+    lavender)  printf '\033[38;2;180;190;254m' ;;
+    mauve)     printf '\033[38;2;203;166;247m' ;;
+    pink)      printf '\033[38;2;245;194;231m' ;;
+    flamingo)  printf '\033[38;2;242;205;205m' ;;
+    rosewater) printf '\033[38;2;245;224;220m' ;;
+    *) return 1 ;;
+  esac
+}
+
 command -v fzf >/dev/null 2>&1 || {
   echo "wt-sessionizer: fzf is required (brew install fzf / apt install fzf)" >&2
   sleep 2
@@ -61,11 +81,15 @@ while true; do
 
   while true; do
     if [ -n "$color" ]; then
-      printf '\nColor: %s.  ' "$color"
+      printf '\nselected '
+      color_fg "$color"
+      printf '■ %s' "$color"
+      printf '\033[39m color\n'
     elif [ -n "$saved" ]; then
-      printf '\nColor: %s (saved).  ' "$saved"
-    else
-      printf '\n'
+      printf '\ncolor: '
+      color_fg "$saved"
+      printf '■ %s' "$saved"
+      printf '\033[39m (saved)\n'
     fi
     printf '[c]laude  [o]pencode  [q]uit  (or type a color): '
     read -r choice
