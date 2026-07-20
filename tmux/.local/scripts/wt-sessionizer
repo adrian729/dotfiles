@@ -120,6 +120,7 @@ while true; do
         exec opencode-wt "$name" ${final_color:+"$final_color"}
         ;;
       q) exit 0 ;;
+      $'\033') query=""; continue 2 ;;
       l)
         echo ""
         i=0
