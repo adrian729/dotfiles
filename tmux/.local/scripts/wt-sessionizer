@@ -102,7 +102,7 @@ while true; do
         final_color=${color:-$saved}
         exec opencode-wt "$name" ${final_color:+"$final_color"}
         ;;
-      q) query=""; continue 2 ;;
+      q) exit 0 ;;
       *)
         if grep -qxF "$choice" <<'EOF'
 red
