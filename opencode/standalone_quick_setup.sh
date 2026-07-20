@@ -80,12 +80,19 @@ else
   pkg_install tmux || echo "(optional) no tmux — background tint fallback" >&2
 fi
 
+if have fzf; then
+  echo "fzf - ok"
+else
+  pkg_install fzf ||
+    echo "(optional) no fzf — opencode-wt-sessionizer's picker won't start until it's installed" >&2
+fi
+
 say "Scripts"
 
 src=$(cd "$(dirname "$0")" && pwd)
 scripts_dir=""
 for d in "$src" "$src/.local/scripts"; do
-  if [ -f "$d/opencode-wt" ] && [ -f "$d/opencode-git-wt" ]; then
+  if [ -f "$d/opencode-wt" ] && [ -f "$d/opencode-git-wt" ] && [ -f "$d/opencode-wt-sessionizer" ]; then
     scripts_dir=$d
     break
   fi
@@ -93,9 +100,9 @@ done
 [ -n "$scripts_dir" ] || die "opencode-wt scripts not found next to this one"
 
 mkdir -p "$BIN_DIR"
-rm -f "$BIN_DIR/opencode-wt" "$BIN_DIR/opencode-git-wt" "$BIN_DIR/opencode-open-wt"
-cp "$scripts_dir/opencode-wt" "$scripts_dir/opencode-git-wt" "$scripts_dir/opencode-open-wt" "$BIN_DIR/"
-chmod +x "$BIN_DIR/opencode-wt" "$BIN_DIR/opencode-git-wt" "$BIN_DIR/opencode-open-wt"
+rm -f "$BIN_DIR/opencode-wt" "$BIN_DIR/opencode-git-wt" "$BIN_DIR/opencode-open-wt" "$BIN_DIR/opencode-wt-sessionizer"
+cp "$scripts_dir/opencode-wt" "$scripts_dir/opencode-git-wt" "$scripts_dir/opencode-open-wt" "$scripts_dir/opencode-wt-sessionizer" "$BIN_DIR/"
+chmod +x "$BIN_DIR/opencode-wt" "$BIN_DIR/opencode-git-wt" "$BIN_DIR/opencode-open-wt" "$BIN_DIR/opencode-wt-sessionizer"
 echo "installed to $BIN_DIR"
 
 case ":$PATH:" in

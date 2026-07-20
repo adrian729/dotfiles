@@ -12,12 +12,14 @@ automagically.
 ## Commands
 
 ```bash
-claude-wt <name> [color]    # start OR resume session <name>
-claude-wt -l                # list this repo's sessions (branch, color, clean/dirty)
-claude-wt -d <name>         # remove a worktree when you're done
-claude-wt -h                # help + valid colors
-open-wt <editor> <name>     # open an editor in session worktree <name>
+claude-wt <name> [color]       # start OR resume session <name>
+claude-wt -l                   # list this repo's sessions (branch, color, clean/dirty)
+claude-wt -d <name>            # remove a worktree when you're done
+claude-wt -h                   # help + valid colors
+claude-wt-sessionizer          # fzf picker — select or create a worktree (ctrl-n)
+open-wt <editor> <name>        # open an editor in session worktree <name>
 ```
+Tmux: `prefix+W c` opens the sessionizer picker in a new window.
 
 The same command is both start and resume: the first run creates the
 worktree + branch + Claude session; running it again later continues

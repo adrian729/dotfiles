@@ -6,12 +6,14 @@ with its own pane color. Run several sessions on one repo in parallel, with
 zero cross-contamination.
 
 ```bash
-claude-wt <name> [color]    # start OR resume session <name>
-claude-wt -l                # list this repo's session worktrees
-claude-wt -d <name>         # remove a worktree when you're done
-claude-wt -h                # help + valid colors
-git-wt <name> <git args...> # run git in that session's worktree
+claude-wt <name> [color]       # start OR resume session <name>
+claude-wt -l                   # list this repo's session worktrees
+claude-wt -d <name>            # remove a worktree when you're done
+claude-wt -h                   # help + valid colors
+claude-wt-sessionizer          # fzf picker over existing worktrees (ctrl-n to create)
+git-wt <name> <git args...>    # run git in that session's worktree
 ```
+Tmux: `prefix+W c` opens the sessionizer picker ins a new window.
 
 ## Setup (one-time)
 
@@ -39,6 +41,9 @@ guide) tries to do all of the below automagically.
   macOS: `brew install tmux`. Linux: `sudo apt install tmux` /
   `sudo dnf install tmux`. Outside tmux the terminal background is
   tinted instead (see Colors below).
+- **fzf** (optional) — powers `claude-wt-sessionizer`'s picker.
+  macOS: `brew install fzf`. Linux: `sudo apt install fzf` /
+  `sudo dnf install fzf`.
 
 ### 2. Install the scripts
 
@@ -47,9 +52,9 @@ them executable:
 
 ```bash
 mkdir -p ~/.local/bin
-cp claude-wt git-wt ~/.local/bin/
-chmod +x ~/.local/bin/claude-wt ~/.local/bin/git-wt
-command -v claude-wt git-wt   # should print both paths
+cp claude-wt git-wt claude-wt-sessionizer ~/.local/bin/
+chmod +x ~/.local/bin/claude-wt ~/.local/bin/git-wt ~/.local/bin/claude-wt-sessionizer
+command -v claude-wt git-wt claude-wt-sessionizer   # should print all paths
 ```
 
 If `command -v` prints nothing, add the directory to your PATH — in
@@ -103,6 +108,9 @@ cd my-repo && claude-wt feature-auth blue
 # tmux pane 2
 cd my-repo && claude-wt bugfix-login red
 ```
+
+Or: `prefix+W c` in tmux opens an fzf picker over existing worktrees
+(type a name and press `ctrl-n` to create a new one).
 
 Two isolated sessions, each pane tinted with its color so you always know
 which one you're typing into. The tint resets when the session ends (after

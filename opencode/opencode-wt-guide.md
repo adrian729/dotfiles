@@ -6,13 +6,15 @@ with its own pane color. Run several sessions on one repo in parallel, with
 zero cross-contamination.
 
 ```bash
-opencode-wt <name> [color]      # start OR resume session <name>
-opencode-wt -l                  # list this repo's session worktrees
-opencode-wt -d <name>           # remove a worktree when done
-opencode-wt -h                  # help + valid colors
-opencode-git-wt <name> <args>   # run git in that session's worktree
-opencode-open-wt <editor> <name>  # open editor in that session's worktree
+opencode-wt <name> [color]         # start OR resume session <name>
+opencode-wt -l                     # list this repo's session worktrees
+opencode-wt -d <name>              # remove a worktree when done
+opencode-wt -h                     # help + valid colors
+opencode-wt-sessionizer            # fzf picker over existing worktrees (ctrl-n to create)
+opencode-git-wt <name> <args>      # run git in that session's worktree
+opencode-open-wt <editor> <name>   # open editor in that session's worktree
 ```
+Tmux: `prefix+W o` opens the sessionizer picker in a new window.
 
 ## Setup (one-time)
 
@@ -27,14 +29,16 @@ guide) tries to do all of the below automagically.
   or `brew install anomalyco/tap/opencode`. Run `opencode` once to log in.
 - **gh, the GitHub CLI** (optional) — `brew install gh` / `sudo apt install gh`.
   `gh auth login` for draft-PR automation.
+- **fzf** (optional) — powers `opencode-wt-sessionizer`'s picker.
+  `brew install fzf` / `sudo apt install fzf`.
 - **tmux** (optional) — pane tints and window renaming. Outside tmux the
   terminal background is tinted instead.
 
 ### 2. Install the scripts
 
 ```bash
-cp opencode-wt opencode-git-wt opencode-open-wt ~/.local/bin/
-chmod +x ~/.local/bin/opencode-wt ~/.local/bin/opencode-git-wt ~/.local/bin/opencode-open-wt
+cp opencode-wt opencode-git-wt opencode-open-wt opencode-wt-sessionizer ~/.local/bin/
+chmod +x ~/.local/bin/opencode-wt ~/.local/bin/opencode-git-wt ~/.local/bin/opencode-open-wt ~/.local/bin/opencode-wt-sessionizer
 export PATH="$HOME/.local/bin:$PATH"  # add to ~/.zshrc or ~/.bashrc
 ```
 
@@ -82,6 +86,9 @@ cd my-repo && opencode-wt feature-auth blue
 # tmux pane 2
 cd my-repo && opencode-wt bugfix-login red
 ```
+
+Or: `prefix+W o` in tmux opens an fzf picker over existing worktrees
+(type a name and press `ctrl-n` to create a new one).
 
 Two isolated sessions, each pane tinted with its color. The tint resets when
 the session ends.
