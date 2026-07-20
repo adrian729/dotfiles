@@ -95,7 +95,7 @@ tmux/
     default_KBs_lists.txt (static `tmux list-keys` reference dump, unreferenced)
     .gitignore         excludes plugins/* (installed by TPM)
   .local/scripts/      ready-tmux, tmux-sessionizer, tmux-session-tracker,
-                       tmux-ollama-status,
+                       tmux-keymaps, tmux-ollama-status,
                        tmux-usage-status
   .stow-local-ignore
   install.sh
