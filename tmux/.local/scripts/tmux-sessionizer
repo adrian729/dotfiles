@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# TODO: add parameter for custom path init
-selected=$(find ~/ -mindepth 1 -maxdepth 3 -type d | fzf)
+root="${1:-$HOME}"
+selected=$(find "$root" -mindepth 1 -maxdepth 3 -type d 2>/dev/null | FZF_DEFAULT_OPTS= fzf --prompt='dir> ')
 if [[ -z "$selected" ]]; then
   exit 0
 fi
@@ -20,8 +20,7 @@ if tmux has-session -t="$selected_name" 2> /dev/null; then
   switch_to
 else
   tmux new-session -ds "$selected_name" -c "$selected"
-  switch_to
-
   tmux send-keys -t "$selected_name" "ready-tmux" ^M
+  switch_to
 fi
 
