@@ -108,7 +108,13 @@ while true; do
       printf '\033[39m (saved)\n'
     fi
     printf '[c]laude  [o]pencode  [l]ist colors  [q]uit  (type color to pick): '
-    read -r choice
+    read -rs -n 1 first 2>/dev/null || exit 0
+    if [ "$first" = $'\033' ]; then
+      query=""
+      continue 2
+    fi
+    read -r rest
+    choice="$first$rest"
     case "$choice" in
       c)
         final_color=${color:-$saved}
@@ -119,7 +125,6 @@ while true; do
         exec opencode-wt "$name" ${final_color:+"$final_color"}
         ;;
       q) exit 0 ;;
-      $'\033') query=""; continue 2 ;;
       l)
         echo ""
         i=0
