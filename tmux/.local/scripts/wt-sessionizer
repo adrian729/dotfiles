@@ -111,7 +111,6 @@ while true; do
     read -r choice || exit 0
     case "$choice" in
       "") continue ;;
-      *$'\033'*) query=""; continue 2 ;;
       c)
         final_color=${color:-$saved}
         exec claude-wt "$name" ${final_color:+"$final_color"}
