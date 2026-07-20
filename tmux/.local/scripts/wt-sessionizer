@@ -91,7 +91,7 @@ while true; do
       printf '■ %s' "$saved"
       printf '\033[39m (saved)\n'
     fi
-    printf '[c]laude  [o]pencode  [q]uit  (or type a color): '
+    printf '[c]laude  [o]pencode  [l]ist  [q]uit  (or type a color): '
     read -r choice
     case "$choice" in
       c)
@@ -103,6 +103,18 @@ while true; do
         exec opencode-wt "$name" ${final_color:+"$final_color"}
         ;;
       q) exit 0 ;;
+      l)
+        echo ""
+        i=0
+        for c in red maroon peach yellow green teal sky sapphire blue lavender mauve pink flamingo rosewater; do
+          color_fg "$c"
+          printf '■ %s' "$c"
+          printf '\033[39m  '
+          i=$((i + 1))
+          [ "$((i % 7))" -eq 0 ] && echo ""
+        done
+        [ "$((i % 7))" -ne 0 ] && echo ""
+        ;;
       *)
         if grep -qxF "$choice" <<'EOF'
 red
