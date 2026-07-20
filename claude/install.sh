@@ -1,7 +1,6 @@
 #!/bin/bash
 
 command -v jq &>/dev/null || brew install jq
-command -v fzf &>/dev/null || brew install fzf
 
 if ! command -v claude &>/dev/null; then
 	echo "Installing Claude Code CLI via Homebrew..."

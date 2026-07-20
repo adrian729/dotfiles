@@ -12,15 +12,14 @@ automagically.
 ## Commands
 
 ```bash
-opencode-wt <name> [color]      # start OR resume session <name>
-opencode-wt -l                  # list this repo's sessions (branch, color, clean/dirty)
-opencode-wt -d <name>           # remove a worktree when you're done
-opencode-wt -h                  # help + valid colors
-opencode-wt-sessionizer         # fzf picker — select or create a worktree (ctrl-n)
-opencode-git-wt <name> <args>   # run git in session worktree <name>
+opencode-wt <name> [color]    # start OR resume session <name>
+opencode-wt -l                # list this repo's sessions (branch, color, clean/dirty)
+opencode-wt -d <name>         # remove a worktree when you're done
+opencode-wt -h                # help + valid colors
+opencode-git-wt <name> <args> # run git in session worktree <name>
 opencode-open-wt <editor> <name>  # open editor in session worktree <name>
 ```
-Tmux: `prefix+W o` opens the sessionizer picker in a new window.
+Tmux: `prefix+w t` opens an fzf picker over worktrees — select, then choose claude or opencode.
 
 The same command is both start and resume: the first run creates the worktree
 + branch + OpenCode session; running it again later continues that same

@@ -3,7 +3,6 @@
 command -v jq &>/dev/null || brew install jq
 
 command -v opencode &>/dev/null || brew install opencode
-command -v fzf &>/dev/null || brew install fzf
 
 config_target="$HOME/.config/opencode/opencode.json"
 mkdir -p "$(dirname "$config_target")"

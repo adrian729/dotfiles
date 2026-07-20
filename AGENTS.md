@@ -49,9 +49,8 @@ claude/
     hooks/             agent-eval, agent-guard, agent-skill-nudge, skill-eval
     skills/            12 SKILL.md dirs
     tmp/
-   .local/scripts/      claude-wt, claude-wt-sessionizer, git-wt, llm,
-                        llm-models-probe, llm-probe, open-wt,
-                        opencode-llm, opencode-task
+   .local/scripts/      claude-wt, git-wt, llm, llm-models-probe, llm-probe,
+                        open-wt, opencode-llm, opencode-task
   .stow-local-ignore
   install.sh
 
@@ -67,8 +66,8 @@ opencode/
   .local/
     config/            opencode-models.json (unified model config)
     scripts/           opencode-git-wt, opencode-open-wt, opencode-wt,
-                        opencode-wt-sessionizer, opencode-llm-probe,
-                        opencode-agent-models-probe, opencode-models
+                        opencode-llm-probe, opencode-agent-models-probe,
+                        opencode-models
   .stow-local-ignore
   install.sh
 
@@ -95,9 +94,9 @@ tmux/
     tmux.conf          TPM-based, catppuccin theme, plugins managed at runtime
     default_KBs_lists.txt (static `tmux list-keys` reference dump, unreferenced)
     .gitignore         excludes plugins/* (installed by TPM)
-  .local/scripts/      ready-tmux, tmux-sessionizer, tmux-session-tracker,
-                       tmux-keymaps, tmux-ollama-status,
-                       tmux-usage-status
+   .local/scripts/      ready-tmux, tmux-sessionizer, tmux-session-tracker,
+                        tmux-keymaps, tmux-ollama-status,
+                        tmux-usage-status, wt-sessionizer
   .stow-local-ignore
   install.sh
 

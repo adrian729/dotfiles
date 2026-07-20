@@ -97,13 +97,6 @@ else
     echo "(optional) no tmux — pane tints fall back to the terminal background" >&2
 fi
 
-if have fzf; then
-  echo "fzf - ok"
-else
-  pkg_install fzf ||
-    echo "(optional) no fzf — claude-wt-sessionizer's picker won't start until it's installed" >&2
-fi
-
 say "Scripts"
 
 # Find claude-wt + git-wt next to this script (flat copy) or in the repo
@@ -111,19 +104,19 @@ say "Scripts"
 src=$(cd "$(dirname "$0")" && pwd)
 scripts_dir=""
 for d in "$src" "$src/.local/scripts"; do
-  if [ -f "$d/claude-wt" ] && [ -f "$d/git-wt" ] && [ -f "$d/claude-wt-sessionizer" ]; then
+  if [ -f "$d/claude-wt" ] && [ -f "$d/git-wt" ]; then
     scripts_dir=$d
     break
   fi
 done
-[ -n "$scripts_dir" ] || die "claude-wt + git-wt + claude-wt-sessionizer not found next to this script"
+[ -n "$scripts_dir" ] || die "claude-wt + git-wt not found next to this script"
 
 mkdir -p "$BIN_DIR"
 # rm first: cp would write THROUGH an existing symlink (stow users) and die
 # outright on a dangling one.
-rm -f "$BIN_DIR/claude-wt" "$BIN_DIR/git-wt" "$BIN_DIR/claude-wt-sessionizer"
-cp "$scripts_dir/claude-wt" "$scripts_dir/git-wt" "$scripts_dir/claude-wt-sessionizer" "$BIN_DIR/"
-chmod +x "$BIN_DIR/claude-wt" "$BIN_DIR/git-wt" "$BIN_DIR/claude-wt-sessionizer"
+rm -f "$BIN_DIR/claude-wt" "$BIN_DIR/git-wt"
+cp "$scripts_dir/claude-wt" "$scripts_dir/git-wt" "$BIN_DIR/"
+chmod +x "$BIN_DIR/claude-wt" "$BIN_DIR/git-wt"
 echo "installed to $BIN_DIR"
 
 case ":$PATH:" in

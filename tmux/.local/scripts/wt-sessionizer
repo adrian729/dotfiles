@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# opencode-wt-sessionizer — fzf picker over opencode-wt's worktrees; ctrl-n creates a new one.
+# wt-sessionizer — fzf picker over worktrees; select, then choose claude or opencode.
 set -euo pipefail
 
 command -v fzf >/dev/null 2>&1 || {
-  echo "opencode-wt-sessionizer: fzf is required (brew install fzf / apt install fzf)" >&2
+  echo "wt-sessionizer: fzf is required (brew install fzf / apt install fzf)" >&2
   sleep 2
   exit 1
 }
 
 git rev-parse --path-format=absolute --git-common-dir >/dev/null 2>&1 || {
-  echo "opencode-wt-sessionizer: not inside a git repository" >&2
+  echo "wt-sessionizer: not inside a git repository" >&2
   sleep 2
   exit 1
 }
 
 query=""
 while true; do
-  listing=$(opencode-wt -l)
+  listing=$(claude-wt -l)
   rows=$(awk 'NR>1' <<<"$listing")
   names=$(awk 'NR>1{print $1}' <<<"$listing")
 
   if result=$(fzf --print-query --expect=ctrl-n --query="$query" \
-      --header='enter: open   ctrl-n: create new (type name above)' <<<"$rows"); then
+      --header='enter: select   ctrl-n: create new (type name above)' <<<"$rows"); then
     rc=0
   else
     rc=$?
@@ -30,29 +30,37 @@ while true; do
   query=$(sed -n 1p <<<"$result")
   key=$(sed -n 2p <<<"$result")
   sel=$(sed -n 3p <<<"$result")
+  name=""
 
   case "$key" in
     ctrl-n)
       name=$(sed 's/^[[:space:]]*//;s/[[:space:]]*$//' <<<"$query")
       if ! git check-ref-format --branch "$name" >/dev/null 2>&1; then
-        echo "opencode-wt-sessionizer: '$name' is not a valid worktree/branch name" >&2
+        echo "wt-sessionizer: '$name' is not a valid worktree/branch name" >&2
         sleep 1.5; continue
       fi
       if grep -qxF "$name" <<<"$names"; then
-        echo "opencode-wt-sessionizer: '$name' already exists — select it from the list" >&2
+        echo "wt-sessionizer: '$name' already exists — select it from the list" >&2
         sleep 1.5; continue
       fi
-      exec opencode-wt "$name"
       ;;
     *)
       if [ -n "$sel" ]; then
-        exec opencode-wt "$(awk '{print $1}' <<<"$sel")"
+        name=$(awk '{print $1}' <<<"$sel")
       elif [ -n "$query" ]; then
-        echo "opencode-wt-sessionizer: no match — press ctrl-n to create '$query'" >&2
+        echo "wt-sessionizer: no match — press ctrl-n to create '$query'" >&2
         sleep 1.5; continue
       else
         exit 0
       fi
       ;;
+  esac
+
+  printf '\nOpen with: [c]laude  [o]pencode  [q]uit: '
+  read -r tool
+  case "$tool" in
+    c) exec claude-wt "$name" ;;
+    o) exec opencode-wt "$name" ;;
+    *) continue ;;
   esac
 done
