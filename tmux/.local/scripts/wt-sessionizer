@@ -108,15 +108,9 @@ while true; do
       printf '\033[39m (saved)\n'
     fi
     printf '[c]laude  [o]pencode  [l]ist colors  [q]uit  (type color to pick): '
-    read -rs -n 1 first 2>/dev/null || exit 0
-    if [ "$first" = $'\033' ]; then
-      query=""
-      continue 2
-    fi
-    if [ "$first" = $'\n' ]; then continue; fi
-    read -r rest
-    choice="$first$rest"
+    read -r choice || exit 0
     case "$choice" in
+      "") continue ;;  # empty Enter — re-prompt
       c)
         final_color=${color:-$saved}
         exec claude-wt "$name" ${final_color:+"$final_color"}
