@@ -1,2 +1,3 @@
 .gitconfig
 claude/.claude/claude.env
+tmux-client-*.log
