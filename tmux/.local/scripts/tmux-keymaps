@@ -1,13 +1,52 @@
 #!/usr/bin/env bash
+# fzf-searchable tmux keymap viewer — all tables, search by key, command, or description.
 
-# fzf-searchable tmux keymap viewer — all tables, search by key or command.
+parse_keyspec() {
+  local table=prefix
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      bind|bind-key) shift ;;
+      -r|-n) shift ;;
+      -T) table=$2; shift 2 ;;
+      *)
+        local key=$1
+        shift
+        echo "$table $key $*"
+        return
+        ;;
+    esac
+  done
+}
+
+descs=""
+pending=""
+while IFS= read -r line; do
+  line="${line#"${line%%[![:space:]]*}"}"
+  if [[ "$line" =~ ^#desc[[:space:]]+(.*) ]]; then
+    pending="${BASH_REMATCH[1]}"
+  elif [[ -n "$pending" ]]; then
+    if [[ "$line" =~ ^bind(-key)?[[:space:]] ]]; then
+      read -r table key _ <<< "$(parse_keyspec $line)"
+      descs="$descs"$'\n'"$table $key $pending"
+    fi
+    pending=""
+  fi
+done < "$HOME/.config/tmux/tmux.conf"
+
 {
-  printf '%-20s  %-12s  %s\n' 'KEY' 'TABLE' 'COMMAND'
-  tmux list-keys -a \
-    | sed -E 's/  +/ /g' \
-    | while read -r _ _ table key rest; do
-        printf '%-20s  %-12s  %s\n' "$key" "$table" "$rest"
-      done
+  printf '%-20s  %-12s  %-16s  %s\n' 'KEY' 'TABLE' 'DESCRIPTION' 'COMMAND'
+  while IFS= read -r line; do
+    line=$(echo "$line" | sed -E 's/  +/ /g')
+    read -r table key rest <<< "$(parse_keyspec $line)"
+    desc=""
+    while IFS= read -r dline; do
+      case "$dline" in "$table $key "*)
+        desc="${dline#$table $key }"
+        break
+      esac
+    done <<< "$descs"
+    printf '%-20s  %-12s  %-16s  %s\n' "$key" "$table" "$desc" "$rest"
+  done < <(tmux list-keys -a)
 } | FZF_DEFAULT_OPTS= fzf \
     --prompt='keymap> ' \
     --header-lines=1
