@@ -34,7 +34,7 @@ while IFS= read -r line; do
 done < "$HOME/.config/tmux/tmux.conf"
 
 {
-  printf '%-20s  %-12s  %-16s  %s\n' 'KEY' 'TABLE' 'DESCRIPTION' 'COMMAND'
+  printf '%-12s  %-20s  %-16s  %s\n' 'TABLE' 'KEY' 'DESCRIPTION' 'COMMAND'
   while IFS= read -r line; do
     line=$(echo "$line" | sed -E 's/  +/ /g')
     read -r table key rest <<< "$(parse_keyspec $line)"
@@ -45,7 +45,7 @@ done < "$HOME/.config/tmux/tmux.conf"
         break
       esac
     done <<< "$descs"
-    printf '%-20s  %-12s  %-16s  %s\n' "$key" "$table" "$desc" "$rest"
+    printf '%-12s  %-20s  %-16s  %s\n' "$table" "$key" "$desc" "$rest"
   done < <(tmux list-keys -a)
 } | FZF_DEFAULT_OPTS= fzf \
     --prompt='keymap> ' \
