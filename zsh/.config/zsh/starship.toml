@@ -4,6 +4,8 @@ palette = "catppuccin_mocha"
 
 add_newline = false
 
+scan_timeout = 100
+
 format = """
 [λ ](pink)\
 $directory\
