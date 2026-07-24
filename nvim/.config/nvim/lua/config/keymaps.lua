@@ -2,6 +2,7 @@ local map = vim.keymap.set
 local select = require("nvim-treesitter-textobjects.select").select_textobject
 local req_swap = require("nvim-treesitter-textobjects.swap")
 local builtin = require("telescope.builtin")
+local harpoon = require("harpoon")
 
 -- ------------------------------------------------------------------
 -- explorer
@@ -62,6 +63,23 @@ map("n", "]b", ":bnext<CR>", { desc = "Next Buffer" })
 map("n", "[b", ":bprev<CR>", { desc = "Prev Buffer" })
 map("n", "]q", ":cnext<CR>", { desc = "Next Quickfix" })
 map("n", "[q", ":cprev<CR>", { desc = "Prev Quickfix" })
+-- ------------------------------------------------------------------
+-- harpoon
+-- ------------------------------------------------------------------
+map("n", "<leader>aa", function() harpoon:list():add() end, { desc = "Harpoon add buffer" })
+map("n", "<leader>ae", function() harpoon.ui:toggle_quick_menu(harpoon:list()) end, { desc = "Harpoon toggle menu" })
+map("n", "<leader>ah", function() harpoon:list():select(1) end, { desc = "Harpoon select 1" })
+map("n", "<leader>aj", function() harpoon:list():select(2) end, { desc = "Harpoon select 2" })
+map("n", "<leader>ak", function() harpoon:list():select(3) end, { desc = "Harpoon select 3" })
+map("n", "<leader>al", function() harpoon:list():select(4) end, { desc = "Harpoon select 4" })
+map("n", "<leader>ap", function() harpoon:list():prev() end, { desc = "Harpoon prev" })
+map("n", "<leader>an", function() harpoon:list():next() end, { desc = "Harpoon next" })
+map("n", "<leader>as", function()
+	local alt = vim.fn.bufnr("#")
+	if alt > 0 and vim.api.nvim_buf_is_loaded(alt) then
+		vim.api.nvim_set_current_buf(alt)
+	end
+end, { desc = "Swap to last buffer" })
 -- ------------------------------------------------------------------
 -- LSP Actions
 -- ------------------------------------------------------------------
