@@ -10,12 +10,14 @@ ensure_llvm() {
     command -v "$tool" &>/dev/null && continue
     [ -f "/opt/homebrew/opt/llvm/bin/$tool" ] && continue
     [ -f "/usr/local/opt/llvm/bin/$tool" ] && continue
+    [ -f "/home/linuxbrew/.linuxbrew/opt/llvm/bin/$tool" ] && continue
     need_install=1
   done
   [ "$need_install" -eq 1 ] && brew install llvm
 
   [ -d /opt/homebrew/opt/llvm/bin ] && llvm_root="/opt/homebrew/opt/llvm"
   [ -d /usr/local/opt/llvm/bin ] && llvm_root="/usr/local/opt/llvm"
+  [ -d /home/linuxbrew/.linuxbrew/opt/llvm/bin ] && llvm_root="/home/linuxbrew/.linuxbrew/opt/llvm"
   [ -z "$llvm_root" ] && return 0
 
   mkdir -p ~/.local/bin

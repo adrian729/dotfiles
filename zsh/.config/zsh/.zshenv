@@ -42,4 +42,9 @@ export STARSHIP_CONFIG="$ZDOTDIR/starship.toml"
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.local/scripts:$PATH"
 export PATH="$HOME/.opencode/bin:$PATH"
-[[ -d /opt/homebrew/bin ]] && export PATH="/opt/homebrew/bin:$PATH"
+# ---------- Homebrew ----------
+if [[ -d /opt/homebrew/bin ]]; then
+	export PATH="/opt/homebrew/bin:$PATH"
+elif [[ -d /home/linuxbrew/.linuxbrew/bin ]]; then
+	export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+fi

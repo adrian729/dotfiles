@@ -9,7 +9,7 @@ FG="#cdd6f4"
 GREEN="#A6E3A1"
 RED="#F38BA8"
 
-PID=$(pgrep -f "ollama serve" | head -1)
+PID=$(pgrep -x ollama | head -1)
 
 printf '#[fg=%s,bg=%s]#[reverse]#[noreverse]#[fg=%s]%s ' "$SURFACE_0" "$BG" "$FG" "$ICON"
 

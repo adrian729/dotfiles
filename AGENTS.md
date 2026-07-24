@@ -15,6 +15,7 @@ This is a [GNU Stow](https://www.gnu.org/software/stow/) dotfiles farm. Each top
 | `ollama/` | `~/.config/ollama/` | Ollama config |
 | `clangd/` | `~/.config/clangd/` | clangd config |
 | `lf/` | `~/.config/lf/` | lf file manager config |
+| `bettercmdtab/` | `~/.config/bettercmdtab/` | BetterCmdTab config (copied, not symlinked) |
 
 Shared, tool-agnostic behavior rules live in `~/.agents/AGENTS.md` (the `agents/` package). Claude Code pulls them into `claude/.claude/CLAUDE.md` via a relative `@import`; OpenCode's `~/.config/opencode/AGENTS.md` is a symlink to the same file.
 
@@ -85,7 +86,6 @@ nvim/
     lua/config/        options.lua, keymaps.lua, autocmds.lua, lazy.lua
     lua/plugins/       autocomplete, catppuccin, codecompanion, core, fzf, git, lsp, markdown, rename, telescope, treesitter
     .claude/settings.local.json
-    lorem-ipsum.txt
   .stow-local-ignore
   install.sh
 
@@ -157,18 +157,25 @@ lf/
     icons
   .stow-local-ignore
   install.sh
+
+bettercmdtab/
+  .config/bettercmdtab/
+    config.json        (copied by install.sh, not symlinked — live two-way sync)
+  .stow-local-ignore
+  install.sh
 ```
 
 ## install.sh flow (repo root)
 
 1. Bootstraps Homebrew if missing, then verifies/installs `stow`
-2. Stows all 11 packages from its `directories` array (or prompts per-package unless answering "y" to "stow all")
-3. Runs each package's own `install.sh` if present — all 11 packages have one now, mostly an idempotent `brew install <tool>` guard (`command -v` check; `agents/install.sh` is a no-op placeholder). Notable exceptions:
+2. Stows all 12 packages from its `directories` array (or prompts per-package unless answering "y" to "stow all")
+3. Runs each package's own `install.sh` if present — all 12 packages have one now, mostly an idempotent `brew install <tool>` guard (`command -v` check; `agents/install.sh` is a no-op placeholder). Notable exceptions:
    - **claude/install.sh**: also brew-installs the `claude` CLI itself, copies `settings.json` (not symlink → tool can modify freely), sets `editorMode: "vim"` in `~/.claude.json`, probes local LLM
    - **opencode/install.sh**: copies `opencode.json` (not symlink), probes free-tier model availability
+   - **bettercmdtab/install.sh**: brew-installs `bettercmdtab`, copies `config.json` (not symlink → app writes back live), sets trigger hotkeys via `defaults write` (⌥Tab/⌥` to leave ⌘Tab/⌘` native)
    - **ollama/install.sh**: checks `ollama.env` exists, prints reminder if not
 
-Key design: `settings.json`/`opencode.json` are **copied** so tools can modify freely without dirtying the repo. Re-running install.sh resets from repo version.
+Key design: `settings.json`/`opencode.json`/`config.json` are **copied** so tools can modify freely without dirtying the repo. Re-running install.sh resets from repo version.
 
 ## `.stow-local-ignore` exclusions
 
@@ -181,6 +188,7 @@ Every package now has a `.stow-local-ignore` excluding at least its own `^/insta
 | `agents/` | `ARCHITECTURE.md` | design doc, not deployed |
 | `ollama/` | `.gitignore`, `ollama.env` | not meant to be symlinked out |
 | `zsh/` | `.gitignore` | not meant to be symlinked out |
+| `bettercmdtab/` | `config.json` | must be copied (live two-way sync) |
 
 ## Task→Package map
 
@@ -214,3 +222,4 @@ Every package now has a `.stow-local-ignore` excluding at least its own `^/insta
 - `~/.config/ollama/ollama.env` — Ollama API key (gitignored, template provided)
 - `~/.config/opencode/opencode.json` — copied from repo (tool may modify)
 - `~/.claude/settings.json` — copied from repo (tool may modify)
+- `~/.config/bettercmdtab/config.json` — copied from repo (app writes back live)

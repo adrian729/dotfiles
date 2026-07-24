@@ -7,6 +7,8 @@ if ! command -v brew &>/dev/null; then
 		eval "$(/opt/homebrew/bin/brew shellenv)"
 	elif [ -f /usr/local/bin/brew ]; then
 		eval "$(/usr/local/bin/brew shellenv)"
+	elif [ -f /home/linuxbrew/.linuxbrew/bin/brew ]; then
+		eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 	fi
 fi
 
@@ -47,6 +49,7 @@ directories=(
 
   # Utilities
   "lf"
+  "bettercmdtab"
 )
 
 if [ -z "$stow_all" ]; then

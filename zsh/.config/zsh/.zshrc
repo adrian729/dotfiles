@@ -82,6 +82,12 @@ if [[ -f /usr/share/doc/fzf/examples/key-bindings.zsh ]]; then
   source /usr/share/doc/fzf/examples/completion.zsh
 fi
 
+# Linuxbrew
+if [[ -f /home/linuxbrew/.linuxbrew/opt/fzf/shell/key-bindings.zsh ]]; then
+  source /home/linuxbrew/.linuxbrew/opt/fzf/shell/key-bindings.zsh
+  source /home/linuxbrew/.linuxbrew/opt/fzf/shell/completion.zsh
+fi
+
 # =========================================================
 # Modular Config Files
 # =========================================================
