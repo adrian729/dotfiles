@@ -54,6 +54,9 @@
     "task": [
       "opencode-go/deepseek-v4-flash", "opencode-go/deepseek-v4-pro", "opencode-go/qwen3.7-plus", "opencode-go/qwen3.7-max", "opencode-go/minimax-m3",
       "opencode-go/kimi-k2.7-code", "opencode/deepseek-v4-flash-free", "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super"
+    ],
+    "relay": [
+      "opencode/deepseek-v4-flash-free", "opencode/mimo-v2.5-free", "opencode/hy3-free", "opencode/big-pickle"
     ]
   }
 }
