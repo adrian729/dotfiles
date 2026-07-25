@@ -5,6 +5,10 @@
 # it can't do for you. Safe to re-run — every step skips itself when done.
 set -euo pipefail
 
+# Same destination the dotfiles repo stows to, so a machine that later gets the
+# repo stowed has one canonical location for these scripts instead of two.
+SCRIPTS_DIR="$HOME/.local/scripts"
+# Where the Claude installer puts its own binary — unrelated to SCRIPTS_DIR.
 BIN_DIR="$HOME/.local/bin"
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -100,25 +104,24 @@ for d in "$src" "$src/.local/scripts"; do
 done
 [ -n "$scripts_dir" ] || die "claude-wt + git-wt not found next to this script"
 
-mkdir -p "$BIN_DIR"
+mkdir -p "$SCRIPTS_DIR"
 # rm first: cp would write THROUGH an existing symlink (stow users) and die
 # outright on a dangling one.
-rm -f "$BIN_DIR/claude-wt" "$BIN_DIR/git-wt"
-cp "$scripts_dir/claude-wt" "$scripts_dir/git-wt" "$BIN_DIR/"
-chmod +x "$BIN_DIR/claude-wt" "$BIN_DIR/git-wt"
-echo "installed to $BIN_DIR"
+rm -f "$SCRIPTS_DIR/claude-wt" "$SCRIPTS_DIR/git-wt"
+cp "$scripts_dir/claude-wt" "$scripts_dir/git-wt" "$SCRIPTS_DIR/"
+chmod +x "$SCRIPTS_DIR/claude-wt" "$SCRIPTS_DIR/git-wt"
+echo "installed to $SCRIPTS_DIR"
 
 case ":$PATH:" in
-  *":$BIN_DIR:"*) echo "$BIN_DIR already on PATH - ok" ;;
+  *":$SCRIPTS_DIR:"*) echo "$SCRIPTS_DIR already on PATH - ok" ;;
   *)
     rc="$HOME/.bashrc"
     case "${SHELL:-}" in */zsh) rc="$HOME/.zshrc" ;; esac
-    line='export PATH="$HOME/.local/bin:$PATH"'
-    # Match $HOME/${HOME}/~ forms, skip commented lines, and don't match
-    # longer paths like ~/.local/binaries.
-    if grep -qsE '^[^#]*(\$\{?HOME\}?|~)/\.local/bin([:"/ ]|$)' "$rc"; then
-      echo "$rc already puts ~/.local/bin on PATH — restart your shell to pick it up"
-    elif ask "$BIN_DIR is not on PATH — append the export to $rc?"; then
+    line='export PATH="$HOME/.local/scripts:$PATH"'
+    # Match $HOME/${HOME}/~ forms and skip commented lines.
+    if grep -qsE '^[^#]*(\$\{?HOME\}?|~)/\.local/scripts([:"/ ]|$)' "$rc"; then
+      echo "$rc already puts ~/.local/scripts on PATH — restart your shell to pick it up"
+    elif ask "$SCRIPTS_DIR is not on PATH — append the export to $rc?"; then
       printf '\n%s # claude-wt setup\n' "$line" >>"$rc"
       echo "added to $rc — restart your shell (or run: $line)"
     else

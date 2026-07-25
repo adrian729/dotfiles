@@ -50,6 +50,10 @@
     "reviewer-quick": [
       "opencode-go/deepseek-v4-flash", "opencode/deepseek-v4-flash-free", "opencode-go/mimo-v2.5", "opencode-go/qwen3.7-plus", "opencode-go/minimax-m3",
       "ollama-cloud/gpt-oss:20b", "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super", "opencode-go/deepseek-v4-pro", "ollama-cloud/qwen3.5:397b"
+    ],
+    "task": [
+      "opencode-go/deepseek-v4-flash", "opencode-go/deepseek-v4-pro", "opencode-go/qwen3.7-plus", "opencode-go/qwen3.7-max", "opencode-go/minimax-m3",
+      "opencode-go/kimi-k2.7-code", "opencode/deepseek-v4-flash-free", "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super"
     ]
   }
 }

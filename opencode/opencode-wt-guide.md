@@ -36,13 +36,13 @@ guide) tries to do all of the below automagically.
 ### 2. Install the scripts
 
 ```bash
-cp opencode-wt opencode-git-wt opencode-open-wt ~/.local/bin/
-chmod +x ~/.local/bin/opencode-wt ~/.local/bin/opencode-git-wt ~/.local/bin/opencode-open-wt
-export PATH="$HOME/.local/bin:$PATH"  # add to ~/.zshrc or ~/.bashrc
+mkdir -p ~/.local/scripts
+cp opencode-wt opencode-git-wt opencode-open-wt ~/.local/scripts/
+chmod +x ~/.local/scripts/opencode-wt ~/.local/scripts/opencode-git-wt ~/.local/scripts/opencode-open-wt
+export PATH="$HOME/.local/scripts:$PATH"  # add to ~/.zshrc or ~/.bashrc
 ```
 
-Or via GNU Stow from the dotfiles repo: `stow opencode` places the scripts
-in `~/.local/scripts/`.
+Or via GNU Stow from the dotfiles repo: `stow opencode` places the scripts in the same `~/.local/scripts/`.
 
 ### 3. Permissions
 

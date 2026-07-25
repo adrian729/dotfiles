@@ -50,17 +50,19 @@ Put `claude-wt` and its companion `git-wt` somewhere on your PATH and make
 them executable:
 
 ```bash
-mkdir -p ~/.local/bin
-cp claude-wt git-wt ~/.local/bin/
-chmod +x ~/.local/bin/claude-wt ~/.local/bin/git-wt
+mkdir -p ~/.local/scripts
+cp claude-wt git-wt ~/.local/scripts/
+chmod +x ~/.local/scripts/claude-wt ~/.local/scripts/git-wt
 command -v claude-wt git-wt   # should print both paths
 ```
+
+`~/.local/scripts` is also where `stow` puts them, so both install routes land in the same place.
 
 If `command -v` prints nothing, add the directory to your PATH — in
 `~/.zshrc` (macOS default shell) or `~/.bashrc` (most Linux distros):
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/.local/scripts:$PATH"
 ```
 
 Alternatively, via the dotfiles repo it ships in

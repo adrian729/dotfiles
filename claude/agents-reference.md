@@ -37,6 +37,22 @@ Reference table for the custom agents in `.claude/agents/`. Generated from each 
 | `writer-quick` | sonnet | low | PR descriptions, commit messages, changelogs, release notes, short routine text | READMEs/reports/diagrams → `writer`; ADRs or high-stakes documents → `writer-deep` |
 | `writer-deep` | opus | medium | ADRs, design docs, proposals, runbooks, postmortems, onboarding guides, documents where quality and completeness matter most. Pre-pass: explore codebase structure with explorer agent. | Everyday docs → `writer` |
 
+## OpenCode delegation wrappers
+
+Thin dispatchers, not workers: each one shells out to `opencode-task`, which runs the named OpenCode subagent headlessly in a throwaway git worktree and returns its output verbatim. The `haiku`/`low` pairing is deliberate — the wrapper only has to format one command, so the real model is whichever one OpenCode resolves on its side (see `opencode/.local/config/opencode-models.json`).
+
+| Agent | Model | Effort | Dispatches to | Used for (triggers) | Routed elsewhere for |
+|---|---|---|---|---|---|
+| `opencode-general` | haiku | low | `task` (OpenCode default) | Catch-all delegation for work that matches no specialist, in an isolated worktree with a separate model | Anything a specialist covers → the matching `opencode-*` agent |
+| `opencode-implementer` | haiku | low | `--agent implementer` | Features, bug fixes, tests, refactoring — coding that benefits from an isolated worktree and a separate model | Catch-all delegation → `opencode-general` |
+| `opencode-implementer-quick` | haiku | low | `--agent implementer-quick` | Stubs, skeletons, small self-contained edits — mechanical coding, cheap model, fewer steps | Real implementation → `opencode-implementer`; catch-all → `opencode-general` |
+| `opencode-reviewer` | haiku | low | `--agent reviewer` | Isolated review pass with tool-enforced file immutability (read-only, `edit:deny`) | Security audits → `opencode-auditor`; catch-all → `opencode-general` |
+| `opencode-reviewer-quick` | haiku | low | `--agent reviewer-quick` | Quick sanity check or triage of small/routine diffs, "does this look right", classifying issues | Standard review → `opencode-reviewer`; audits → `opencode-auditor`; catch-all → `opencode-general` |
+| `opencode-auditor` | haiku | low | `--agent auditor` | Security review, vulnerability assessment, compliance, sensitive-path audit (auth/crypto/payment/secrets/infra). Read-only, restricted bash, best model | Standard review → `opencode-reviewer` |
+| `opencode-debugger` | haiku | low | `--agent debugger` | Diagnosing failures, reproducing bugs, investigating errors — isolated worktree so test runs don't dirty the checkout | Trivial issues you can resolve directly |
+| `opencode-planner` | haiku | low | `--agent planner` | Implementation plans, API/component design, trade-off analysis — read-only, `edit:deny`, so it explores without edit risk | Catch-all delegation → `opencode-general` |
+| `opencode-researcher` | haiku | low | `--agent researcher` | Web research, documentation lookups, library comparisons — web-enabled, read-only | Codebase exploration → Claude's own tools or `explorer` |
+
 ## Effort carriers
 
 These have no fixed `model` — they inherit whatever model the caller passes at spawn time (per this repo's routing convention) and only exist to force a specific reasoning effort.

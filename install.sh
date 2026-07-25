@@ -57,25 +57,31 @@ if [ -z "$stow_all" ]; then
 fi
 echo ""
 
+# Stow a package, letting it clear its own way first: a package may ship a
+# pre_stow.sh for anything that has to happen while the target files are still
+# unstowed (stow refuses to overwrite a real file it didn't create).
+stow_pkg() {
+	local dir=$1
+	echo "🔗 Stowing $dir..."
+	if [ -f "$dir/pre_stow.sh" ]; then
+		bash "$dir/pre_stow.sh" || echo "⚠️  $dir/pre_stow.sh failed — stowing anyway."
+	fi
+	if stow -t "$HOME" "$dir"; then
+		echo "✅ $dir stowed successfully!"
+	else
+		echo "❌ Failed to stow $dir (see warnings above)."
+	fi
+}
+
 for dir in "${directories[@]}"; do
 	if [ -d "$dir" ]; then
 		if [[ "$stow_all" =~ ^[Yy]$ ]]; then
-			echo "🔗 Stowing $dir..."
-			if stow -t "$HOME" "$dir"; then
-				echo "✅ $dir stowed successfully!"
-			else
-				echo "❌ Failed to stow $dir (see warnings above)."
-			fi
+			stow_pkg "$dir"
 		else
 			read -p "Do you want to stow $dir? (y/n): " choice
 			case "$choice" in
 			y | Y)
-				echo "🔗 Stowing $dir..."
-				if stow -t "$HOME" "$dir"; then
-					echo "✅ $dir stowed successfully!"
-				else
-					echo "❌ Failed to stow $dir (see warnings above)."
-				fi
+				stow_pkg "$dir"
 				;;
 			*)
 				echo "⏭️ Skipping $dir."

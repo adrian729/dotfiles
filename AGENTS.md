@@ -35,6 +35,7 @@ Shared, tool-agnostic behavior rules live in `~/.agents/AGENTS.md` (the `agents/
 - Worktrees for claude and opencode share a single root: `.worktrees/<name>/` — either tool can attach to the same worktree/branch/color under one name. Each tool still tracks its own AI conversation state (Claude via `~/.claude/projects/`, OpenCode via its own session DB + the `wt.<name>.session` git-config key) — sharing a name shares the checkout, not a single AI session.
 - OpenCode's agent-level `permission.bash` block fully replaces (does not merge with) `opencode.json`'s top-level one, so the 7-pair bash deny list (`git push`/`npm publish`/`gh release`/`docker push`/`terraform apply`/`kubectl apply`/`cargo publish`) is duplicated verbatim across `opencode.json` and `opencode/.config/opencode/agents/{debugger,implementer,implementer-quick}.md`. Since `opencode.json` is plain JSON (no comments to flag this), if you add to the deny list in one place, add it in all four.
 - When `claude/.claude/settings.json`'s `permissions` block changes, mirror the same rule into `opencode/.config/opencode/opencode.json`'s `permission` block, translated into OpenCode's own schema (bash sub-command patterns, three-state `allow`/`ask`/`deny`). Keep OpenCode's permissive `"*": "allow"` bash default as the baseline unless a change explicitly says otherwise. Exception, deliberately not mirrored: Claude's `allow` list explicitly allowlists `Bash(opencode-task*)`/`Bash(opencode-llm*)` so Claude can shell out to OpenCode; OpenCode has no equivalent entry, since it shouldn't shell out to itself (enforced today only by the `opencode-task`/`opencode-llm` skills' own anti-triggers, not a permission rule). Second exception, also deliberate: `npm publish`/`gh release`/`docker push`/`terraform apply`/`kubectl apply`/`cargo publish` are `ask` in `claude/.claude/settings.json` but `deny` in `opencode.json` — Claude's `ask` works because a human is present to answer the prompt, but OpenCode's unattended `--auto` runs have nobody to ask, so the equivalent safety there is a hard `deny`, not a translated `ask`. Don't "fix" this by loosening opencode.json's `deny` back to `ask`.
+- Every OpenCode agent that needs a pinned model must have an entry in `opencode/.local/config/opencode-models.json`'s `agents` map: `opencode-agent-models-probe` only iterates that map's keys, and `opencode/install.sh` jq-merges the resulting `{agent: {<name>: {model: …}}}` into the copied `~/.config/opencode/opencode.json`. An agent missing from the map gets no `model` and falls through to OpenCode's ambient default, which may be a paid model. Covered today: the 8 specialists plus `task`. `relay` is deliberately absent — `opencode-llm` always passes `-m`. Paid (`opencode-go/*`) entries inside a list are inert ranking hints: the probe skips any candidate that isn't also in `free_models`, so a list can express preference order without ever selecting a paid model.
 - The manual-only skill list is duplicated: `skillOverrides` in `claude/.claude/settings.json` (which sets them `name-only` in the harness listing) and `MANUAL_ONLY` in `claude/.claude/hooks/lib/skill-names.sh` (which keeps the nudge hooks from suggesting them). Both currently hold the same four — `audit-loop`, `autonomous-process`, `best-of-n`, `evaluator-optimizer`. Adding or removing a manual-only skill means editing both; they serve different mechanisms and neither derives from the other.
 
 ## Per-package file layout
@@ -58,6 +59,7 @@ claude/
                        open-wt, opencode-llm, opencode-task
   .stow-local-ignore
   install.sh
+  pre_stow.sh          clears standalone script copies out of ~/.local/scripts
 
 opencode/
   .config/opencode/
@@ -75,6 +77,7 @@ opencode/
                         opencode-models
   .stow-local-ignore
   install.sh
+  pre_stow.sh          clears standalone script copies out of ~/.local/scripts
 
 agents/
   .agents/
@@ -172,7 +175,7 @@ bettercmdtab/
 ## install.sh flow (repo root)
 
 1. Bootstraps Homebrew if missing, then verifies/installs `stow`
-2. Stows all 12 packages from its `directories` array (or prompts per-package unless answering "y" to "stow all")
+2. Stows all 12 packages from its `directories` array (or prompts per-package unless answering "y" to "stow all"), via a `stow_pkg` helper that runs the package's `pre_stow.sh` first if it has one. `pre_stow.sh` is for work that must happen while the target files are still unstowed — the two that exist (`claude/`, `opencode/`) delete the plain script copies `standalone_quick_setup.sh` leaves in `~/.local/scripts`, which stow would otherwise refuse to overwrite. Keep this hook generic in root `install.sh`; package-specific logic belongs in the package's own `pre_stow.sh`. A failing `pre_stow.sh` warns and stows anyway.
 3. Runs each package's own `install.sh` if present — all 12 packages have one now, mostly an idempotent `brew install <tool>` guard (`command -v` check; `agents/install.sh` is a no-op placeholder). Notable exceptions:
    - **claude/install.sh**: also installs the `claude` CLI itself (brew cask on macOS, `claude.ai/install.sh` on Linux — Linuxbrew has no cask support), copies `settings.json` (not symlink → tool can modify freely), sets `editorMode: "vim"` in `~/.claude.json`, probes local LLM
    - **opencode/install.sh**: copies `opencode.json` (not symlink), probes free-tier model availability
@@ -187,8 +190,8 @@ Every package now has a `.stow-local-ignore` excluding at least its own `^/insta
 
 | Package | Extra exclusions | Reason |
 |---|---|---|
-| `claude/` | guides, `settings.json`, `settings.local.json`, `claude.env` | docs, per-machine, or must be copied/gitignored |
-| `opencode/` | guides, `opencode.json` | docs, or must be copied |
+| `claude/` | guides, `pre_stow.sh`, `settings.json`, `settings.local.json`, `claude.env` | docs, installer-only, per-machine, or must be copied/gitignored |
+| `opencode/` | guides, `pre_stow.sh`, `opencode.json` | docs, installer-only, or must be copied |
 | `agents/` | `ARCHITECTURE.md` | design doc, not deployed |
 | `nvim/` | `.config/nvim/.claude/` | per-project Claude settings, not deployed |
 | `ollama/` | `.gitignore`, `ollama.env` | not meant to be symlinked out |

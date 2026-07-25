@@ -3,3 +3,4 @@
 ^/standalone_quick_setup\.sh
 ^/\.config/opencode/opencode\.json
 ^/install\.sh
+^/pre_stow\.sh

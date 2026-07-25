@@ -14,7 +14,7 @@ usage() {
   cat >&2 <<'EOF'
 Usage: opencode-task NAME PROMPT...
   NAME         worktree/branch/session name (same convention as opencode-wt)
-  -m MODEL     provider/model (default: OpenCode's own default)
+  -m MODEL     provider/model (overrides the agent's pinned model in opencode.json)
   --agent A    agent to run (default: task — bash/edit/read, confined to --dir)
   -T SECS      timeout (default 1800)
 Runs in <repo>/.worktrees/NAME; re-running the same NAME resumes that

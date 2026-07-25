@@ -5,6 +5,7 @@
 ^/agent-optimization-analysis\.md
 ^/standalone_quick_setup\.sh
 ^/install\.sh
+^/pre_stow\.sh
 settings\.local\.json
 ^/\.claude/settings\.json
 claude\.env
