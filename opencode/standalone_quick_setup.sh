@@ -37,23 +37,13 @@ pkg_install() {
   $PKG "$1"
 }
 
-git_recent_enough() {
-  have git || return 1
-  local v major minor
-  v=$(git version | awk '{print $3}')
-  major=${v%%.*}
-  minor=${v#*.}
-  minor=${minor%%.*}
-  [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 31 ]; }
-}
-
 say "Dependencies"
 
-if git_recent_enough; then
+if have git; then
   echo "git $(git version | awk '{print $3}') - ok"
 else
-  echo "git >= 2.31 missing."
-  pkg_install git || die "git >= 2.31 is required"
+  echo "git missing."
+  pkg_install git || die "git is required"
 fi
 
 if have_opencode; then

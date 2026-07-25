@@ -30,7 +30,7 @@ export GPG_TTY=$(tty)
 export STARSHIP_CONFIG="$ZDOTDIR/starship.toml"
 
 # ---------- Rust/Cargo ----------
-. "$HOME/.cargo/env"
+[[ -f "$HOME/.cargo/env" ]] && . "$HOME/.cargo/env"
 
 # ---------- Ollama ----------
 [[ -f "$HOME/.config/ollama/ollama.env" ]] && . "$HOME/.config/ollama/ollama.env"

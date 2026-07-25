@@ -35,6 +35,7 @@ Shared, tool-agnostic behavior rules live in `~/.agents/AGENTS.md` (the `agents/
 - Worktrees for claude and opencode share a single root: `.worktrees/<name>/` — either tool can attach to the same worktree/branch/color under one name. Each tool still tracks its own AI conversation state (Claude via `~/.claude/projects/`, OpenCode via its own session DB + the `wt.<name>.session` git-config key) — sharing a name shares the checkout, not a single AI session.
 - OpenCode's agent-level `permission.bash` block fully replaces (does not merge with) `opencode.json`'s top-level one, so the 7-pair bash deny list (`git push`/`npm publish`/`gh release`/`docker push`/`terraform apply`/`kubectl apply`/`cargo publish`) is duplicated verbatim across `opencode.json` and `opencode/.config/opencode/agents/{debugger,implementer,implementer-quick}.md`. Since `opencode.json` is plain JSON (no comments to flag this), if you add to the deny list in one place, add it in all four.
 - When `claude/.claude/settings.json`'s `permissions` block changes, mirror the same rule into `opencode/.config/opencode/opencode.json`'s `permission` block, translated into OpenCode's own schema (bash sub-command patterns, three-state `allow`/`ask`/`deny`). Keep OpenCode's permissive `"*": "allow"` bash default as the baseline unless a change explicitly says otherwise. Exception, deliberately not mirrored: Claude's `allow` list explicitly allowlists `Bash(opencode-task*)`/`Bash(opencode-llm*)` so Claude can shell out to OpenCode; OpenCode has no equivalent entry, since it shouldn't shell out to itself (enforced today only by the `opencode-task`/`opencode-llm` skills' own anti-triggers, not a permission rule). Second exception, also deliberate: `npm publish`/`gh release`/`docker push`/`terraform apply`/`kubectl apply`/`cargo publish` are `ask` in `claude/.claude/settings.json` but `deny` in `opencode.json` — Claude's `ask` works because a human is present to answer the prompt, but OpenCode's unattended `--auto` runs have nobody to ask, so the equivalent safety there is a hard `deny`, not a translated `ask`. Don't "fix" this by loosening opencode.json's `deny` back to `ask`.
+- The manual-only skill list is duplicated: `skillOverrides` in `claude/.claude/settings.json` (which sets them `name-only` in the harness listing) and `MANUAL_ONLY` in `claude/.claude/hooks/lib/skill-names.sh` (which keeps the nudge hooks from suggesting them). Both currently hold the same four — `audit-loop`, `autonomous-process`, `best-of-n`, `evaluator-optimizer`. Adding or removing a manual-only skill means editing both; they serve different mechanisms and neither derives from the other.
 
 ## Per-package file layout
 
@@ -48,10 +49,13 @@ claude/
     statusline.sh
     agents/            44 agent defs — YAML-frontmatter .md (incl. 9 opencode-* delegation wrappers)
     hooks/             agent-eval, agent-guard, agent-skill-nudge, skill-eval
+                       lib/skill-names.sh (shared skill listing, sourced by two of them)
     skills/            12 SKILL.md dirs
     tmp/
-   .local/scripts/      claude-wt, git-wt, llm, llm-models-probe, llm-probe,
-                        open-wt, opencode-llm, opencode-task
+   .local/
+    config/            local-llm-models.json (static ollama model catalog)
+    scripts/           claude-wt, git-wt, llm, llm-models-probe, llm-probe,
+                       open-wt, opencode-llm, opencode-task
   .stow-local-ignore
   install.sh
 
@@ -84,7 +88,7 @@ nvim/
     init.lua
     lazy-lock.json
     lua/config/        options.lua, keymaps.lua, autocmds.lua, lazy.lua
-    lua/plugins/       autocomplete, catppuccin, codecompanion, core, fzf, git, lsp, markdown, rename, telescope, treesitter
+    lua/plugins/       autocomplete, catppuccin, codecompanion, colorizer, core, fzf, git, harpoon, lsp, markdown, rename, telescope, treesitter
     .claude/settings.local.json
   .stow-local-ignore
   install.sh
@@ -95,7 +99,7 @@ tmux/
     default_KBs_lists.txt (static `tmux list-keys` reference dump, unreferenced)
     .gitignore         excludes plugins/* (installed by TPM)
    .local/scripts/      ready-tmux, tmux-sessionizer, tmux-session-tracker,
-                        tmux-keymaps, tmux-ollama-status,
+                        tmux-keymaps, tmux-clipboard, tmux-ollama-status,
                         tmux-usage-status, wt-sessionizer
   .stow-local-ignore
   install.sh
@@ -170,7 +174,7 @@ bettercmdtab/
 1. Bootstraps Homebrew if missing, then verifies/installs `stow`
 2. Stows all 12 packages from its `directories` array (or prompts per-package unless answering "y" to "stow all")
 3. Runs each package's own `install.sh` if present — all 12 packages have one now, mostly an idempotent `brew install <tool>` guard (`command -v` check; `agents/install.sh` is a no-op placeholder). Notable exceptions:
-   - **claude/install.sh**: also brew-installs the `claude` CLI itself, copies `settings.json` (not symlink → tool can modify freely), sets `editorMode: "vim"` in `~/.claude.json`, probes local LLM
+   - **claude/install.sh**: also installs the `claude` CLI itself (brew cask on macOS, `claude.ai/install.sh` on Linux — Linuxbrew has no cask support), copies `settings.json` (not symlink → tool can modify freely), sets `editorMode: "vim"` in `~/.claude.json`, probes local LLM
    - **opencode/install.sh**: copies `opencode.json` (not symlink), probes free-tier model availability
    - **bettercmdtab/install.sh**: brew-installs `bettercmdtab`, copies `config.json` (not symlink → app writes back live), sets trigger hotkeys via `defaults write` (⌥Tab/⌥` to leave ⌘Tab/⌘` native)
    - **ollama/install.sh**: checks `ollama.env` exists, prints reminder if not
@@ -186,6 +190,7 @@ Every package now has a `.stow-local-ignore` excluding at least its own `^/insta
 | `claude/` | guides, `settings.json`, `settings.local.json`, `claude.env` | docs, per-machine, or must be copied/gitignored |
 | `opencode/` | guides, `opencode.json` | docs, or must be copied |
 | `agents/` | `ARCHITECTURE.md` | design doc, not deployed |
+| `nvim/` | `.config/nvim/.claude/` | per-project Claude settings, not deployed |
 | `ollama/` | `.gitignore`, `ollama.env` | not meant to be symlinked out |
 | `zsh/` | `.gitignore` | not meant to be symlinked out |
 | `bettercmdtab/` | `config.json` | must be copied (live two-way sync) |
@@ -211,9 +216,12 @@ Every package now has a `.stow-local-ignore` excluding at least its own `^/insta
 | Path | Purpose |
 |---|---|
 | `.worktrees/` | Shared Claude Code / OpenCode session worktrees (not stowed) |
-| `.gitignore` | Excludes `.gitconfig` and `claude/.claude/claude.env` |
+| `.gitignore` | Excludes `.gitconfig`, `claude/.claude/claude.env`, `**/settings.local.json`, `.worktrees/` |
 | `install.sh` | Bootstrap entry point (repo root) |
-| `.ready-tmux` | Script: opens nvim in tmux split layout |
+| `.ready-tmux` | Script: opens nvim in tmux split layout. `tmux/`'s `ready-tmux` looks for it in the cwd, so it only fires inside this repo — nothing stows it to `$HOME` |
+| `_ai-agent-patterns/` | Reference notes on agent patterns (tracked, not stowed) |
+| `codecompanion_plan.md` | WIP plan for the nvim CodeCompanion integration (tracked, not stowed) |
+| `.opencode/` | OpenCode's project-local dir, created when OpenCode runs here. Its own `.opencode/.gitignore` (tracked) excludes the generated `node_modules`/`package.json`/`package-lock.json`/`bun.lock` plus `state/` and `plans/`; the seven config subdirs (`agents`, `commands`, `modes`, `plugins`, `skills`, `tools`, `themes`) stay trackable |
 
 ## Non-stowed config files (per-machine)
 

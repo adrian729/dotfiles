@@ -2,14 +2,29 @@
 
 command -v jq &>/dev/null || brew install jq
 
-if ! command -v claude &>/dev/null; then
-	echo "Installing Claude Code CLI via Homebrew..."
-	brew install --cask claude-code@latest
+# Homebrew ships claude-code as a cask, which Linuxbrew does not support, so
+# Linux goes through the official installer (drops the binary in ~/.local/bin).
+if [ "$(uname)" = Darwin ]; then
+	claude_native_fmt="Mach-O"
+	install_claude() { brew install --cask claude-code@latest; }
+	reinstall_claude() { brew reinstall --cask claude-code@latest; }
+	claude_install_desc="Homebrew"
 else
-	# Verify binary is real Mach-O, not a stub (e.g. from failed npm postinstall)
-	if [ "$(file "$(command -v claude)" 2>/dev/null | grep -c Mach-O)" -eq 0 ]; then
-		echo "claude binary is a stub — reinstalling via Homebrew..."
-		brew reinstall --cask claude-code@latest
+	claude_native_fmt="ELF"
+	install_claude() { curl -fsSL https://claude.ai/install.sh | bash; }
+	reinstall_claude() { install_claude; }
+	claude_install_desc="claude.ai/install.sh"
+fi
+
+if ! command -v claude &>/dev/null; then
+	echo "Installing Claude Code CLI via $claude_install_desc..."
+	install_claude
+else
+	# Verify binary is a real native executable, not a stub (e.g. from failed
+	# npm postinstall). -L so a symlinked binary reports the target's format.
+	if ! file -L "$(command -v claude)" 2>/dev/null | grep -q "$claude_native_fmt"; then
+		echo "claude binary is a stub — reinstalling via $claude_install_desc..."
+		reinstall_claude
 	fi
 fi
 

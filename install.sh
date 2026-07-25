@@ -61,7 +61,7 @@ for dir in "${directories[@]}"; do
 	if [ -d "$dir" ]; then
 		if [[ "$stow_all" =~ ^[Yy]$ ]]; then
 			echo "🔗 Stowing $dir..."
-			if stow "$dir"; then
+			if stow -t "$HOME" "$dir"; then
 				echo "✅ $dir stowed successfully!"
 			else
 				echo "❌ Failed to stow $dir (see warnings above)."
@@ -71,7 +71,7 @@ for dir in "${directories[@]}"; do
 			case "$choice" in
 			y | Y)
 				echo "🔗 Stowing $dir..."
-				if stow "$dir"; then
+				if stow -t "$HOME" "$dir"; then
 					echo "✅ $dir stowed successfully!"
 				else
 					echo "❌ Failed to stow $dir (see warnings above)."

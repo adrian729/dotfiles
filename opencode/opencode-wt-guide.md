@@ -23,7 +23,7 @@ guide) tries to do all of the below automagically.
 
 ### 1. Dependencies
 
-- **git ≥ 2.31** (required) — `brew install git` / `sudo apt install git`.
+- **git** (required) — `brew install git` / `sudo apt install git`.
 - **OpenCode** (required) — https://opencode.ai — `npm install -g opencode-ai`
   or `brew install anomalyco/tap/opencode`. Run `opencode` once to log in.
 - **gh, the GitHub CLI** (optional) — `brew install gh` / `sudo apt install gh`.

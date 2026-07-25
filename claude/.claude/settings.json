@@ -58,7 +58,6 @@
       "Bash(cargo publish*)"
     ]
   },
-  "model": "sonnet",
   "hooks": {
     "UserPromptSubmit": [
       {

@@ -47,27 +47,16 @@ pkg_install() {
   $PKG "$1"
 }
 
-git_recent_enough() {
-  have git || return 1
-  local v major minor
-  v=$(git version | awk '{print $3}')
-  major=${v%%.*}
-  minor=${v#*.}
-  minor=${minor%%.*}
-  [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 31 ]; }
-}
-
 say "Dependencies"
 
-if git_recent_enough; then
+if have git; then
   echo "git $(git version | awk '{print $3}') - ok"
 else
-  echo "git >= 2.31 missing."
+  echo "git missing."
   pkg_install git || {
     [ "$(uname)" = Darwin ] && echo "  hint: xcode-select --install" >&2
-    die "git >= 2.31 is required"
+    die "git is required"
   }
-  git_recent_enough || die "installed git is still < 2.31 — upgrade it manually"
 fi
 
 if have_claude; then

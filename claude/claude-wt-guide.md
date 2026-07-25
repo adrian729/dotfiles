@@ -22,7 +22,7 @@ guide) tries to do all of the below automagically.
 
 ### 1. Dependencies
 
-- **git ≥ 2.31** (required) — check with `git --version`.
+- **git** (required).
   macOS: `brew install git` (or the Xcode Command Line Tools).
   Linux: `sudo apt install git` / `sudo dnf install git`.
 - **Claude Code** (required) — same installer on both OSes:
