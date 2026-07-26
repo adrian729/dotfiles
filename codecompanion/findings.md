@@ -1,0 +1,224 @@
+# CodeCompanion rebuild — verified findings
+
+Evidence base for the step files in this directory. Nothing here is a decision; every claim is either a measurement taken on this machine or a citation into the installed plugin source.
+
+Two sources. Live probes of `claude-agent-acp` 0.59.0, `opencode acp` 1.18.0, the ollama cloud API and the repo's own `opencode-llm` relay — facts marked *measured* were timed here, not assumed. And an audit of the installed plugin at commit `d34edce`, checking that CodeCompanion's ACP **client** can do what the protocol allows and that its stock adapters behave the way the probes did. Several did not. Citations of the form `acp/init.lua:685` are relative to `~/.local/share/nvim/lazy/codecompanion.nvim/lua/codecompanion/`.
+
+**This file is perishable.** Agent versions move and ambient models drift — `claude-agent-acp` went 0.55 → 0.59 mid-investigation and gained the whole `configOptions` mechanism the status panel depends on, and opencode's tool-use behaviour changed between two probe runs days apart. Step 07 builds the script that regenerates the tables here. Treat any number as stale until it has re-run.
+
+## Inline cannot use ACP adapters (built-in)
+
+`interactions/inline/init.lua:208` hard-gates on `self.adapter.type ~= "http"`, same gate in `interactions/cmd.lua:29`, and `doc/configuration/inline.md` states it. Inline goes through `codecompanion.http` (curl); ACP is a stdio JSON-RPC subprocess. Not a config problem.
+
+**But every API needed to build ACP inline ourselves is public and chat-agnostic:**
+
+- `require("codecompanion.acp").new({ adapter = ... })` → `:connect_and_authenticate()` → `:session_prompt(messages)` returns a builder with `:on_message_chunk()`, `:on_tool_call()`, `:on_permission_request()`, `:on_complete()`, `:on_error()`, `:with_options({ bufnr, interaction })`, `:send()` (pattern from `interactions/chat/acp/handler.lua:207`).
+- `require("codecompanion.helpers").show_diff({ bufnr, from_lines, to_lines, inline = true, banner, keymaps = { on_accept, on_reject }, skip_default_keymaps = true })` renders the same inline diff the built-in uses. `skip_default_keymaps` is what lets us own `g2`/`g3` for concurrency.
+
+`show_diff` **renders and tracks a diff; it does not apply or revert anything.** `DiffUI` has no accept or reject method — `diff/keymaps.lua:67-85` dispatches to the `on_accept`/`on_reject` callbacks *we* supply, exactly as the built-in does at `interactions/inline/init.lua:817-821`. All buffer mutation is ours to write.
+
+## The `fs` capability is inert for both agents (measured)
+
+The stock claude adapter advertises full filesystem access:
+
+```lua
+-- adapters/acp/claude_code.lua:31-36
+parameters = {
+  protocolVersion = 1,
+  clientCapabilities = {
+    fs = { readTextFile = true, writeTextFile = true },
+  },
+```
+
+Withholding it changes nothing, and advertising it changes nothing either. Probed across both agents — capability granted and withheld, targets inside and outside cwd, and with writes permitted — **neither `claude-agent-acp` nor `opencode acp` ever sent `fs/read_text_file` or `fs/write_text_file`:**
+
+| agent | reads via | writes via | client `fs/*` calls |
+|---|---|---|---|
+| `claude-agent-acp` 0.59.0 | own `Read File` tool | own `Edit` tool, straight to disk | **none, in any configuration probed** |
+| `opencode acp` 1.18.0 | own `read`/`grep`/`glob` | own `edit` tool, straight to disk | **none, in any configuration probed** |
+
+The capability advertises a service *we* offer. Neither agent wants it; both go to the filesystem themselves. Two consequences follow, and they point in opposite directions from an earlier draft of this plan.
+
+**Withholding the capability is not a constraint.** With `readTextFile = false`, claude read a file *outside* cwd and echoed its contents back, and no session mode prevents that:
+
+| session mode | read outside cwd | contents echoed into the reply | permission requests |
+|---|---|---|---|
+| (unset) | yes | yes | 0 |
+| `plan` | yes | yes | 0 |
+| `dontAsk` | yes | yes | 0 |
+| `default` | yes | yes | 0 |
+| `acceptEdits` | yes | yes | 0 |
+
+Every mode read the file and printed a sentinel token back. So **no claude configuration makes inline structurally read-free**: a claude inline request can read any file the user can and echo it into its reply, where inline would either insert it or show it in the prose float. `claude.env`, `ollama.env` and `~/.ssh` are all in reach. Accepted rather than solved — confining our own `handle_fs_read_text_file_request` achieves nothing when the agent never calls it.
+
+**The client-side write hole is real but unexercised.** `handle_fs_write_file_request` (`acp/init.lua:771`) validates only `sessionId` and the param types, then calls `fs.write_text_file`, which **looks for an open buffer first** — and if the target is loaded it does `nvim_buf_set_lines(bufnr, 0, -1, …)` followed by `silent update!`, replacing the entire buffer and force-saving it to disk. `FileEdited` fires after the fact, and `DISPATCH` (`acp/init.lua:643`) has no capability gate, so any agent choosing this path would get that behaviour whatever we advertised. Neither of ours does. The per-connection override is therefore **cheap insurance against a future version or a third agent, not the thing keeping us safe** — it costs one function and removes a latent whole-buffer-clobber, so it stays, but nothing today exercises it. It works because `DISPATCH` invokes the handler as a method on `self`, so an instance-level override wins; it fails open if upstream ever inlines the write logic into `DISPATCH` the way it already has for `session/update`.
+
+**What actually prevents writes is the session mode or permission set** — `dontAsk` for claude, an `OPENCODE_PERMISSION` deny set for opencode. Those govern the agents' *own* tools, which is the only path either one uses.
+
+And the real predictor of tool use is the **prompt**, not the capability. The six-case spike saw no tool use because its prompts were self-contained, not because `fs` was off. Measured on opencode with tools fully available: a self-contained edit drew zero tools at 4.5s, while "match the error-handling pattern used elsewhere in this repository" drew `glob`+`grep` at 10.0s. Prompt steering is the same lever the relay exploits, and for the ACP transports it is the only one inline has.
+
+`PromptBuilder:on_write_text_file` is **not** a veto point despite the name: it fires after the bytes have landed and `send_result` has gone out, and only when `_active_prompt` is set — which the plugin's own comment notes need not be the case. It is a notification. Do not wire it as protection.
+
+## Transport reach (measured)
+
+Canonical table — steps 03 and 05 cite this rather than restating it. Whether inline can touch the filesystem is a property of the **transport**, not of which keymap was pressed.
+
+| Provider / transport | can read the filesystem | can write | what stops writes |
+|---|---|---|---|
+| ollama local or cloud (HTTP) | **no** | **no** | structural — no tool plumbing exists |
+| opencode via the `opencode-llm` relay | **no** | **no** | structural — deny-all agent in a neutral cwd |
+| claude over ACP | yes, anywhere the user can | no | session mode `dontAsk` |
+| opencode over ACP | yes, anywhere the user can | no | `OPENCODE_PERMISSION` denying `edit`/`write`/`patch`/`bash` |
+
+## Spike result: the text-only contract holds
+
+Six cases per agent — long-selection rename, conversational question, deliberate tool temptation, cursor-insert, impossible request, no-op — plus the same rename against the cloud models. Every ACP row was probed with `fs` explicitly **off** which, per the finding above, steers the agent rather than constraining it.
+
+| Backend | 57-line rename | verbatim? | fences | tools used |
+|---|---|---|---|---|
+| ollama cloud `gpt-oss:20b` | **2.22s** | yes | no | n/a |
+| ollama cloud `gpt-oss:120b` | **3.93s** | yes | no | n/a |
+| claude ACP (`fs` off) | **5.12s** | yes | ` ```lua ` | **none, in all 6 cases** |
+| opencode ACP | 9.45s → 10.42s | yes | no → yes | see below, and drifted |
+| opencode relay (`opencode-llm`) | ~9.3s (small edit) | yes | no | none, by construction |
+| ollama local `qwen3-coder:30b` | ~119s (from log) | — | — | n/a |
+
+**The opencode row has already drifted between probe runs.** The first pass saw it run `grep`/`read`/`glob`/`bash` and return bare code; a later pass on the same prompts saw no tools at all and fenced code, at comparable latency. Most likely its ambient default model changed. Treat every opencode number here as perishable.
+
+Four behaviours the design has to accommodate:
+
+1. **Claude returns prose when it shouldn't edit** — 3 of 6 cases. It explained the code when asked a question, and *refused* rather than guessing when asked to match a repo pattern with tools off. Correct behaviour, but prose must never be inserted into a buffer.
+2. **Fence handling differs and is not stable.** Claude wraps in ` ```lua `, the ollama models return bare code, and opencode has been observed doing both. With tools enabled claude also prefixes prose before the fence. The parser must extract the fenced block when one is present, not trust the whole reply.
+3. **opencode over ACP cannot be made cleanly tool-*free*, but it can be made write-free.** It ignored "do not use any tools", ran `grep`/`read`/`glob`/**`bash`** against the repo, and raised **zero** permission requests — so auto-denial never gets a say. Setting session mode to `plan` did not stop it. `OPENCODE_PERMISSION` does reach an ACP session, but denying everything backfires: the model still attempts a tool, nothing parses the attempt, and raw `<tool_call><function=grep>…` leaks into the message text where inline would insert it into the buffer. Denying only the *mutating* tools avoids the leak entirely.
+4. **Neither agent asks permission for reads, so permission handling is not a safety mechanism.** With `fs` advertised, claude ran Terminal tools and raised zero permission requests too (27s, prose prefixed before the fenced code). Denying writes cannot rely on answering `session/request_permission` — nothing arrives to answer.
+
+## `dontAsk` refuses writes, including shell escapes (measured)
+
+Whether claude's `dontAsk` mode genuinely refuses writes gated the whole repo-reading inline path. Tested three ways, with the verdict taken from the bytes on disk rather than from what the agent claimed:
+
+| Configuration | Agent behaviour | File on disk |
+|---|---|---|
+| `fs` write **true** + `dontAsk` | ran `Terminal` (read-only `ls`/`cat`), `Read`, then `Edit` — Edit denied by the harness | **unmodified** |
+| `fs` write **false** + `dontAsk` | `Read`, then `Edit` — denied | **unmodified** |
+| `fs` write **false** + `dontAsk`, explicitly instructed to write via `echo … >> file` | Bash denied outright: *"Permission to use Bash has been denied because Claude Code is running in don't ask mode"* | **unmodified** |
+
+Zero permission requests in all three.
+
+The third row is the decisive one. In the first row a read-only Bash command *succeeded* under the same mode, so `dontAsk` is not a blanket tool block — it classifies per invocation and denies the mutating ones, shell redirects included. That makes claude inline **structurally** safe against writes rather than safe-by-model-restraint. It says nothing about reads, which no mode restricts at all.
+
+Caveat: this enforcement lives in `claude-agent-acp`'s permission classifier, not in our client. It is version-dependent, which is why step 07's probe tracks it.
+
+## opencode over ACP: three permission configurations (measured)
+
+Same two prompts, `cwd` on this repo.
+
+| `OPENCODE_PERMISSION` | repo-hungry prompt | self-contained prompt | repo modified |
+|---|---|---|---|
+| none — all tools allowed | 10.0s, `glob`+`grep`, clean fenced code | 4.5s, no tools, clean fenced code | no |
+| the relay's full deny set | failed to `initialize` at all this run; leaked raw `<tool_call>` markup on an earlier one | — | no |
+| reads allowed, `edit`/`write`/`patch`/`bash` denied | 40.0s, 14 tool calls, returned **prose** | 13.1s, `grep`+`read`, bare code | no |
+
+The leak trigger is denying a tool the model reaches for. Allow reads and it disappears — no configuration with reads permitted produced markup. Each row is one sample against a drifting ambient model; treat the latencies as measured, not typical.
+
+The unrestricted row is **not** an option despite being the fastest and cleanest: with tools open, opencode edited a file on disk with zero permission requests in the write-path probe. Denying mutation is not optional.
+
+## Concurrency: one session per connection, so concurrency means processes
+
+ACP the protocol multiplexes sessions over one process — measured: two prompts on **two** sessions of one process run genuinely in parallel (claude 2.73s + 4.11s of work in 4.11s wall; opencode 2.56s wall). Two prompts on **one** session cannot be attributed, since `session/update` carries only a `sessionId`.
+
+CodeCompanion's client cannot do that multiplexing. `Connection` holds `session_id` as a scalar and `_active_prompt` as a single slot, `start_agent_process()` spawns a subprocess per `Connection`, and `handle_incoming_request_or_notification` (`acp/init.lua:685`) **drops every message whose `sessionId` isn't the active one** — notifications silently, requests with an `invalid sessionId` error.
+
+Multiplexing anyway was evaluated and rejected. It requires overriding `handle_incoming_request_or_notification` and `store_rpc_response`, managing `_active_prompt` and `session_id` by hand around every send, and relying on the *ordering* of the `stopReason` check inside `handle_rpc_message:585` — which, if upstream reorders it, silently stops completions from ever firing. It also leaves `_config_options` connection-global (`acp/init.lua:821`), so per-request mode or model selection would read the wrong option set.
+
+**So concurrent inline means concurrent connections.** Measured marginal cost, which gets no page-sharing benefit — each process costs full price, and the system-wide delta is worse than the RSS sum:
+
+| Processes | RSS each | Cumulative system delta |
+|---|---|---|
+| 1 | 132.8 MB | 140 MiB |
+| 2 | 131.8 MB | 354 MiB |
+| 3 | 132.0 MB | 655 MiB |
+
+This constraint applies to **both ACP transports** — claude, and opencode when `cI` runs on it. ollama cloud is plain HTTP with no sessions, and the opencode relay forks a subprocess per call, so those two are already unboundedly concurrent. Note opencode's idle RSS is ~536 MB against claude's ~133 MB, so an opencode overflow connection is four times the memory of a claude one; the cap matters more there.
+
+## Process and session costs (measured)
+
+| | claude-agent-acp | opencode acp |
+|---|---|---|
+| spawn → `initialize` | 0.13s | 0.56s |
+| `session/new`, cold process | 1.31s | 0.20s |
+| `session/new`, warm process | 0.95s | 0.00s |
+| spawn + handshake + session, end to end | 1.12–1.26s | — |
+| idle RSS | 133 MB | **536 MB** (667 MB after two prompts) |
+
+Claude reported `cachedWriteTokens: 19151` on a session's first prompt — every new claude session loads the Claude Code system prompt plus this repo's `CLAUDE.md`/`AGENTS.md`. Sessions are cheap in time on a warm process, but not free in tokens, and a reused session accumulates every prior edit in its history.
+
+## Provider capability matrix (probed)
+
+| | claude-agent-acp 0.59.0 | opencode acp 1.18.0 | ollama local | ollama cloud |
+|---|---|---|---|---|
+| model | `default`/`sonnet`/`fable`/`opus`/`haiku` | 41 ids | 4 installed | free tier of the account key |
+| effort | `thought_level`: default→max | — | — | — |
+| fast mode | `model_config`: on/off | — | — | — |
+| permission mode | auto/default/acceptEdits/plan/dontAsk/bypassPermissions | build/plan | — | — |
+| tool restriction | `dontAsk` denies mutating tools incl. shell; **no mode restricts reads** | `OPENCODE_PERMISSION` per tool: denying reads leaks tool-call text, denying only mutation works | — | — |
+| read confinement | none — any path, any mode, no prompt | none — any path, no prompt | n/a | n/a |
+| client `fs/*` used | never | never | n/a | n/a |
+| agent | all 45 local subagents | no `--agent` flag on `opencode acp` | — | — |
+| thinking | — | — | `think` bool | ignored |
+| structured output (`format`) | n/a | n/a | yes | **no** |
+| sessions | list/resume/fork/delete/close | list/resume/fork/close | — | — |
+| auth | `authMethods: []` → **no OAuth token needed** | shortcircuited in adapter | — | `OLLAMA_API_KEY`, already in env |
+
+ollama cloud is reachable at `https://ollama.com/api/chat` with `Authorization: Bearer $OLLAMA_API_KEY`, same wire format as local — the stock `ollama` HTTP adapter works against it with only an `env.url` and header change. The **local** server cannot proxy cloud models (`Unauthorized`). Free-tier models confirmed reachable: `gpt-oss:20b`, `gpt-oss:120b`, `gemma4:31b`, `nemotron-3-super`.
+
+## Session config options are settable declaratively
+
+`interactions/chat/acp/defaults.lua:49` applies `adapter.defaults.session_config_options` keyed by **category** (`model`, `mode`, `thought_level`, `model_config`), resolving values by id *or* display name, case-insensitively, and accepting functions evaluated at call time (so they can read `vim.g`). Model is applied first because it changes which other options exist. `adapters/acp/init.lua:106-130` merges the option set into the resolved adapter, and `Chat.new{ adapter = … }` accepts the result.
+
+Exception: claude's `agent` option has `category: null`, so it is unreachable that way — it must be set with `conn:set_config_option("agent", name)` after the session exists.
+
+Note that `_apply_config_options` (`acp/init.lua:821`) does a wholesale `self._config_options = config_options`, connection-global. With one session per connection that is harmless, and it is what makes per-request model and mode selection possible.
+
+## Session listing works and is cross-tool
+
+`session/list` on claude returned 84 sessions with `sessionId`, `cwd`, `title`, `updatedAt` — including sessions started in the terminal, not just from nvim. Filterable by `cwd`. opencode supports list/resume/fork too.
+
+`_establish_session` hardcodes `cwd = vim.fn.getcwd()` at creation time, so filtering the picker by `getcwd()` makes sessions vanish whenever nvim is opened in a subdirectory or the user `:cd`s. Filter by git root, matching session `cwd` as a prefix.
+
+## Plugin-source gotchas
+
+Each of these bit, or would have. Grouped by the step that has to deal with it.
+
+**Adapters and connections (step 01)**
+
+- The old `_establish_session` timeouts in `codecompanion.log` are **not** explained by cold start — `session/new` measures 1.3s today. The likely cause is the adapter's `env.CLAUDE_CODE_OAUTH_TOKEN` declaration: resolving a missing or keychain-backed variable stalls, and the token is unnecessary since `authMethods` is empty. Override `env = {}` and keep the 90s timeout as insurance.
+- The stock claude adapter declares `timeout = 20000`; the 90s value this config relies on is set in our own adapter definition, so **every** new adapter definition must restate it or silently inherit 20s.
+- The claude adapter also ships `commands.yolo` (`claude-agent-acp --yolo`) — the exact opposite of what inline wants. Do not wire it.
+- `Connection:disconnect()` is `assert(self._state.handle):kill(9)` — it **throws** on an already-dead process, which an idle reaper hits every cycle. `pcall` it and clear our own state regardless.
+- The plugin registers a `VimLeavePre` autocmd per connection inside `connect_and_authenticate` (`acp/init.lua:149`) in a `clear = false` group and never removes it, so spawn/reap cycles accumulate one dead closure each. Harmless — every one is `pcall`ed onto a dead handle — but our own teardown uses a separate augroup we control.
+- `send_rpc_request` yields via `async.wait` when `coroutine.running()`, and otherwise falls back to `wait_for_rpc_response`, which busy-waits on `vim.wait` up to the adapter timeout — 90s in this config. **All connection and session setup must run inside a coroutine** or the editor freezes.
+- A `session/request_permission` arriving with no `_active_prompt` is dropped without any JSON-RPC reply at all (`acp/init.lua:666-670`), leaving the agent waiting forever on a connection that looks idle. Nothing arrives today, but this is another reason the per-request watchdog owns the timeout rather than trusting the agent to finish.
+- Chat connections must stay separate from the inline pool: the `_loading_session and _on_session_update` branch (`acp/init.lua:660`) takes priority over `_active_prompt`, so a chat restoring history on a shared connection would swallow inline updates.
+- Every spawn calls `log.new_response_file()`, so RPC logs accumulate one per spawn and want occasional pruning.
+
+**Diffs and keymaps (step 03)**
+
+- `DiffUI:setup_keymaps` binds `}` and `{` buffer-locally **even when `skip_default_keymaps` is set** (`diff/ui.lua:193-195`), shadowing the core paragraph motions while a diff is pending, and the second concurrent diff clobbers the first's. Delete both and rebind hunk navigation ourselves.
+- That same branch binds *only* those two, so `g1` (always-accept) **disappears** from inline diffs, where it works today. Dropped deliberately: "always accept in this buffer" has no clear meaning once several diffs can be pending at once in one buffer.
+- With `skip_default_keymaps`, `setup_close_handler` (`diff/ui.lua:533`) also **disables auto-reject on premature close**, so our registry must restore `from_lines` itself on `WinClosed`/`BufDelete` with a diff still pending.
+- Diff accept/reject are `g1`/`g2`/`g3` from `interactions.shared.keymaps` (`config.lua:938-957`); the docs' `gda`/`gdr` are stale.
+- Built-in `display.input` (`interactions/shared/input.lua`) is a cursor-relative floating input with prompt history; reused for the inline prompt.
+
+**General**
+
+- `strategies` is silently aliased to `interactions` (`config.lua:1377`).
+- A third built-in interaction exists that the old plan predates: `interactions.cli`, which runs the real `claude`/`opencode` TUI in a terminal buffer. **Deliberately unused** — the ACP chat buffer is our single chat surface.
+- `<leader>c` is free of conflicts in `lua/config/keymaps.lua`, whose comment block at lines 150-158 documents the current bindings and must be updated alongside them.
+- `lazy.nvim` imports `lua/plugins/*.lua` non-recursively, so implementation modules must live outside that directory.
+- `plenary.nvim` is already installed as a CodeCompanion dependency, so a test runner is available at no cost.
+
+## Dependencies
+
+`claude-agent-acp` is what the `claude_code` ACP adapter executes, and on this machine it is a global npm install (`/opt/homebrew/bin/claude-agent-acp` → `@agentclientprotocol/claude-agent-acp`). It was referenced in no installer, so a machine bootstrapped from this repo got no ACP bridge and every claude chat and inline request failed at spawn — the `ENOENT: 'claude-agent-acp'` already visible in `codecompanion.log`. `claude/install.sh` now guards it, alongside an `opencode` presence check, since the opencode chat adapter and the inline relay both shell out to it.
+
+`OLLAMA_API_KEY` is already handled — sourced from `~/.config/ollama/ollama.env` by zsh's nested `.zshenv` — but the ollama **cloud** inline backend depends on it, so nvim must be started from a shell that has it exported.
