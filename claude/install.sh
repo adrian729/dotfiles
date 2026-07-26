@@ -28,6 +28,23 @@ else
 	fi
 fi
 
+# nvim's claude_code ACP adapter execs `claude-agent-acp` directly, so without it
+# every ACP chat and inline request dies at spawn with ENOENT. npm-only: there is
+# no brew formula, and neither the cask nor claude.ai/install.sh bundles it.
+if ! command -v claude-agent-acp &>/dev/null; then
+	if command -v npm &>/dev/null; then
+		echo "Installing claude-agent-acp (ACP bridge for nvim)..."
+		npm install -g @agentclientprotocol/claude-agent-acp ||
+			echo "claude/install.sh: claude-agent-acp install failed — nvim ACP chat and inline will not work" >&2
+	else
+		echo "claude/install.sh: npm not found — skipping claude-agent-acp; nvim ACP chat and inline will not work until it is installed" >&2
+	fi
+fi
+
+# nvim's opencode chat adapter and its inline relay both shell out to `opencode`.
+command -v opencode &>/dev/null ||
+	echo "claude/install.sh: opencode not on PATH — nvim's opencode chat and inline relay will not work (see opencode/install.sh)" >&2
+
 CLAUDE_JSON="$HOME/.claude.json"
 
 if [ -f "$CLAUDE_JSON" ]; then
