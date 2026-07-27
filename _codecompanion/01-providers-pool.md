@@ -44,7 +44,9 @@ One ACP adapter per provider, not per keymap — `ci` and `cI` differ only in pr
 
 `model` and `think` were functions reading `vim.g.ollama_inline_model` / `vim.g.ollama_think`; they now read `providers.lua` instead, and those globals do not come back.
 
-**Default strategies.** Adapter definitions alone do not make `:CodeCompanionChat` work — the plugin still picks its own default, which this machine has no credentials for. Set `interactions.chat.adapter = "claude_code"` in `setup()` as well. This is what actually ends the blackout; step 04 later creates chats programmatically and stops depending on the default, but the default still backs the plain `:CodeCompanionChat` command and step 03's degraded prose fallback.
+**Default strategies.** Adapter definitions alone do not make `:CodeCompanionChat` work — the plugin still picks its own default, which is `copilot` and which this machine has no credentials for. Set `interactions.chat.adapter = "claude_code"` in `setup()` as well. This is what actually ends the blackout; step 04 later creates chats programmatically and stops depending on the default, but the default still backs the plain `:CodeCompanionChat` command and step 03's degraded prose fallback.
+
+Set `interactions.inline.adapter` and `interactions.cmd.adapter` to plain `ollama` for the same reason. Both the `:CodeCompanion` and `:CodeCompanionCmd` commands survive the strip and would otherwise inherit that same `copilot` default. The built-in inline is superseded by step 03 and the `ollama_inline` JSON-schema variant does not come back, but `:CodeCompanionCmd` is explicitly kept (step 03 → *Out of scope*) and needs a working HTTP adapter.
 
 On every inline ACP connection, override `handle_fs_write_file_request` to refuse. Nothing exercises that path today, so this is insurance against a future version rather than protection — but it removes a latent whole-buffer clobber for one function. Assert the method exists at pool init; if upstream has renamed or inlined it, the override silently stops working, so fail loudly rather than fail open.
 

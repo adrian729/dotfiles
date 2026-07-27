@@ -28,11 +28,13 @@ Everything in `codecompanion.lua` except the lazy spec itself. This table is the
 | the `ollama_inline` JSON-schema `format` body | nothing — its job is done by the prompt, per the contract |
 | `ollama_adapter`'s `num_ctx = 16384` and `keep_alive = "30m"` | step 01, explicitly. Losing `num_ctx` truncates long refactors with no error |
 | `ollama_adapter`'s `env.url`, `model` and `think` schema functions | step 01's adapters, reading `providers.lua` instead of `vim.g` |
+| the hardcoded `ollama_models` list | step 01, as a live `/api/tags` query rather than a literal |
 | `pick_ollama_model`, `toggle_ollama_think`, `vim.g.ollama_inline_model`, `vim.g.ollama_think` | steps 01 and 05; the globals do not return |
 | `new_chat`, `close_all_chats`, `chat_model`, `show_status` | steps 04 and 05 |
 | the whole `keys` table — all nine bindings | steps 01, 03, 04, 05, 06, per README's *Key bindings* Step column |
 | the `adapters` block | step 01 |
 | the `strategies` block, including `chat.adapter = "claude_code"` | step 01 — without the default, `:CodeCompanionChat` picks an adapter this machine has no credentials for |
+| `strategies.inline.adapter` and `strategies.cmd.adapter`, both `ollama_inline` | step 01, pointed at plain `ollama` — the `ollama_inline` variant does not come back. The `:CodeCompanion` and `:CodeCompanionCmd` commands survive the strip and would otherwise inherit the same credential-less default as chat |
 | `opts = { log_level = "DEBUG" }` | nothing — it was a temporary aid for debugging the ACP handshake, which is done |
 
 Two things deliberately do not come back: `<leader>ct`, since `think` becomes a status-panel row like every other provider option, and the JSON `format` schema, since nvim now owns placement.
