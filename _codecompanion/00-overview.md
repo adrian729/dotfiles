@@ -32,6 +32,7 @@ nvim/.config/nvim/
   lua/ai/
     providers.lua                 single source of truth: providers, option schemas, defaults, current selection
     acp_pool.lua                  lazy connections, overflow spawning, idle reaping
+    debug.lua                     :AiPoolStatus and :AiDebugSend — smoke harness, kept past step 01
     inline/init.lua               prompt, placement, extmark anchoring, request registry, diff, accept/reject dispatch
     inline/parse.lua              fence stripping, prose and tool-call-leak detection
     inline/http.lua               ollama_local + ollama_cloud
@@ -107,6 +108,32 @@ The spike that gated this plan is **done**, and so are the questions it left ope
 | 08 | `08-retire-old.md` | old config retired, keymap comment block updated | 03–06 |
 
 Two notes on the ordering. Adapter definitions moved into **01**, not 04 where an earlier draft had them: the pool spawns connections *from* adapters, so inline (03) would otherwise depend on a step that comes after it. And **07 has no dependencies and should be pulled early** — its assertions are what keep `findings.md` honest, and three of them currently exist only as throwaway scripts in a session scratchpad.
+
+## Working state after each step
+
+Steps 01 and 02 build libraries with no entry point, so neither leaves anything to press. Everything from 03 onwards does. The old configuration keeps working throughout — see *Switchover* below.
+
+| After | Usable end to end | How to exercise it | Still served by the old config |
+|---|---|---|---|
+| 01 | nothing user-facing | `:AiPoolStatus` and `:AiDebugSend` (built in this step for exactly this reason) | everything |
+| 02 | nothing user-facing | `plenary` specs over `tests/fixtures/` | everything |
+| 03 | **inline, fully** — `ci`, `cI`, `cx`, `cj`/`ck`, `g2`/`g3`, all four transports | real edits in real buffers | chat, chat list, status |
+| 04 | new-style chat — `cn`, `cc`, `cq`; the prose float's `<CR>` stops degrading | real chats, `gd` debug window | chat list, status |
+| 05 | status panel — `cs` | panel plus `gd` to confirm it reached the session | chat list |
+| 06 | chat list — `cl` | picker, including a session started in a terminal | nothing |
+| 07 | the probe script | run it; independent of nvim entirely | — |
+| 08 | no new behaviour — cleanup only | keymap audit against the table above | — |
+
+So the answer to "can I stop after 03 and use it": yes, and that is the intended first milestone. Inline is the pain point this rebuild exists for, which is why it comes before chat despite chat being simpler.
+
+## Switchover
+
+The old `codecompanion.lua` stays functional until step 08, so there is always something working to fall back to. Two rules keep that from turning into a keymap collision:
+
+1. **New bindings ship under their final names.** No temporary prefix — you should not have to unlearn anything.
+2. **As each step lands, flip that feature's `keys` entry from the old handler to the new one.** The old *function* stays in the file, dead but present, until step 08. Rollback for a bad step is therefore flipping one line back, not reverting a commit.
+
+That means step 01 adds adapter definitions to `codecompanion.lua` **alongside** the existing ones without touching the old inline path — adding is safe, editing the old handlers is not until their step arrives.
 
 ## Open items
 

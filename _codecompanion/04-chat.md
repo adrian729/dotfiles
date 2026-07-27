@@ -26,6 +26,7 @@ Kept from the current config: the 90s ACP timeout, and `<leader>cq` to close all
 
 ## Done when
 
+- **step 03's prose float is upgraded**: `<CR>` now opens a chat pre-loaded with the selection and the exchange, instead of the bare `:CodeCompanionChat` fallback it shipped with
 - a new chat on each provider comes up with the preset model/effort/mode already applied — confirm in the `gd` debug window, not by asking the model
 - claude's `agent` is applied and visible in `gd` after session creation
 - `ga` and `/acp_session_options` still work on a programmatically created chat

@@ -10,7 +10,9 @@
 - `nvim/.config/nvim/lua/ai/inline/relay.lua` — opencode via `opencode-llm`
 - `nvim/.config/nvim/lua/ai/ui.lua` — spinner/virt-text, message float
 
-**Depends on** 01 (pool, adapters, providers) and 02 (parse).
+**Depends on** 01 (pool, adapters, providers) and 02 (parse). Soft dependency on 04 for one thing only — see *Prose fallback*.
+
+**Leaves a working state**: after this step inline is complete on every transport and the old inline path can be retired from the keymap. This is the intended first milestone.
 
 **Evidence** `findings.md` → *Inline cannot use ACP adapters*, *Transport reach*, *The `fs` capability is inert*, *opencode over ACP: three permission configurations*, *Plugin-source gotchas → Diffs and keymaps*.
 
@@ -38,6 +40,8 @@ A per-buffer registry tracks pending requests and rendered diffs.
 ## Prose fallback
 
 When the model answers instead of editing — which claude does on questions and on refusals, correctly — the buffer is left untouched and the message appears in a floating window anchored at the target range. `<CR>` opens a chat pre-loaded with the selection and the exchange; `q` dismisses.
+
+That `<CR>` is the **only** part of this step that needs step 04. Until `ai/chat.lua` exists, degrade it to the plugin-native `:CodeCompanionChat` without the pre-loaded exchange, and leave a marker so step 04 upgrades it. Do not reorder the steps for this — inline is the milestone worth reaching first, and the degraded path is a few lines.
 
 This is also where a leaked-tool-call reply lands, per step 02.
 
@@ -90,3 +94,5 @@ For `cI`, repo reading is the point, so ACP is right and the leak is avoidable �
 - **`cI` refuses on a tool-incapable provider**: select ollama, press `<leader>cI`, get a message naming the ACP transports, and no request sent
 - **no leaked markup under the opencode deny set**: run `cI` on opencode against a repo-hungry prompt; the reply contains no `<tool_call>`/`<function=` markup
 - failure paths — ollama cloud 401 and 429, relay non-zero exit, relay `-T` timeout — each surface as a notification and clear their virtual text
+- the `keys` entries for `<leader>ci`/`<leader>cx`/`<leader>cm` now point at this module, while the old handlers remain in the file unreferenced — flipping one line back restores the old behaviour
+- chat, chat list and status are untouched and still behave as they did before this step

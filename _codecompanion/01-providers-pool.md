@@ -6,7 +6,8 @@
 
 - `nvim/.config/nvim/lua/ai/providers.lua`
 - `nvim/.config/nvim/lua/ai/acp_pool.lua`
-- adapter definitions in `nvim/.config/nvim/lua/plugins/codecompanion.lua`
+- `nvim/.config/nvim/lua/ai/debug.lua` — the smoke harness below
+- adapter definitions in `nvim/.config/nvim/lua/plugins/codecompanion.lua`, **added alongside the existing ones**; the old inline path is not touched until step 08
 
 **Depends on** nothing. Everything else depends on this.
 
@@ -52,13 +53,25 @@ On every inline ACP connection, override `handle_fs_write_file_request` to refus
 
 Because each connection owns exactly one session, a crashed agent takes down exactly one request, and `PromptBuilder:cancel()` is correct without a workaround. Hook crash handling to the adapter's public `handlers.on_exit`.
 
+## Smoke harness
+
+This step has no user-facing entry point — inline arrives in 03 — so it ships its own way to be exercised. Without this, step 01 cannot be verified when it is finished, only much later and tangled with inline's own bugs.
+
+- `:AiPoolStatus` — one line per live connection: provider, state, session id, age, idle time, whether it is primary or overflow, and the queue depth.
+- `:AiDebugSend {provider} {prompt}` — sends a prompt through the pool and shows the raw reply in a scratch buffer. No parsing, no placement, no buffer mutation. This is the seam where a transport problem is distinguishable from a parsing or placement problem, which is worth keeping well past step 03.
+
+Both stay in the final build. They cost little and they are the first thing to reach for when a later step misbehaves.
+
 ## Done when
 
-- nothing is spawned at nvim startup (`ps` clean until first use)
-- first inline request on a provider spawns one connection in ~1.2s and reuses it on the next request
-- three concurrent claude inline requests produce exactly three connections, with no cross-talk between them, and a fourth queues rather than spawning
-- overflow connections are gone ~60s after going idle; the primary is gone after 15 minutes; the next request respawns transparently
-- killing an agent process mid-prompt fails only its own request — the others complete
+Every check below is runnable with only this step built.
+
+- nothing is spawned at nvim startup — `:AiPoolStatus` is empty and `ps` is clean until the first `:AiDebugSend`
+- one `:AiDebugSend claude …` spawns a connection in ~1.2s and returns the reply; a second reuses it, visible as an unchanged session id
+- three concurrent `:AiDebugSend` calls produce exactly three connections with no cross-talk — each reply matches its own prompt — and a fourth shows as queued rather than spawning
+- overflow connections disappear ~60s after going idle and the primary after 15 minutes, both visible in `:AiPoolStatus`; the next send respawns transparently
+- `kill -9` on one agent process mid-prompt fails only its own request; the others complete
 - a request whose agent never replies is resolved as an error by the watchdog, not left hanging
 - pool init aborts with a clear message if `handle_fs_write_file_request` is missing from the client
-- spawning an overflow connection never blocks the UI (verify by typing during the spawn)
+- spawning an overflow connection never blocks the UI — type during the spawn and confirm no freeze
+- the old `<leader>c*` bindings still behave exactly as before, since nothing in this step touches them

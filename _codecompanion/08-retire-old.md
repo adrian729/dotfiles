@@ -9,9 +9,11 @@
 
 **Depends on** 03–06. Do not start until the replacements work, or there is no rollback.
 
+By the time this step runs, every `keys` entry has already been flipped to the new modules one step at a time, per `00-overview.md` → *Switchover*. So this step deletes **dead code**, not live behaviour — nothing here should change what any keypress does. If retiring a function changes behaviour, a keymap was missed and that is the bug to fix first.
+
 ## What goes
 
-The old inline machinery in `codecompanion.lua` — the ollama `format` JSON schema, `FULL_SELECTION_HINT`, the busy flag and its reset, the ad-hoc per-provider model pickers, the thinking toggle. All of it is superseded: placement is now nvim's, the prompt carries the context the JSON schema was faking, and options come from the shared schema.
+The old inline machinery in `codecompanion.lua` — the ollama `format` JSON schema, `FULL_SELECTION_HINT`, the busy flag and its reset, the ad-hoc per-provider model pickers, the thinking toggle. All of it is superseded: placement is now nvim's, the prompt carries the context the JSON schema was faking, and options come from the shared schema. All of it is also unreferenced by this point.
 
 What stays in that file: the lazy spec — dependencies, keymaps, `setup()`, and the adapter definitions from step 01.
 

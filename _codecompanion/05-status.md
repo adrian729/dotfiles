@@ -2,7 +2,7 @@
 
 **Goal** One interactive surface for every provider option, generated from the schema so it never needs per-provider code.
 
-**Files** `nvim/.config/nvim/lua/ai/status.lua`
+**Files** `nvim/.config/nvim/lua/ai/status.lua`, plus the option-cycling widget added to `nvim/.config/nvim/lua/ai/ui.lua` (created by step 03)
 
 **Depends on** 01 (schema, reach) and 04 (a live chat to apply changes to).
 
