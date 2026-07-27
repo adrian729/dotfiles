@@ -29,6 +29,9 @@ export GPG_TTY=$(tty)
 # ---------- Starship ----------
 export STARSHIP_CONFIG="$ZDOTDIR/starship.toml"
 
+# ---------- eza ----------
+export EZA_CONFIG_DIR="$XDG_CONFIG_HOME/eza"
+
 # ---------- Rust/Cargo ----------
 [[ -f "$HOME/.cargo/env" ]] && . "$HOME/.cargo/env"
 
