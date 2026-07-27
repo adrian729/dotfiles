@@ -7,7 +7,7 @@ local providers = require("ai.providers")
 
 local M = {}
 
-local DEFAULT_TIMEOUT_MS = 120 * 1000
+local DEFAULT_TIMEOUT_MS = 90 * 1000
 
 ---@param ctx { prompt: string, bufnr: number, timeout?: number }
 ---@param cb { on_done: fun(text: string), on_error: fun(msg: string) }

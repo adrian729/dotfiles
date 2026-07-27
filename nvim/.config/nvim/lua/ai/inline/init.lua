@@ -360,13 +360,17 @@ local function watch_buffer(bufnr)
 			-- this buffer closed" — not "the buffer went away". Without the count below, closing
 			-- one split of two throws away a finished edit the user had not accepted yet.
 			-- WinClosed fires before the window is gone, so the closing one still counts.
+			-- Deferred: a fast split/close cycle can fire WinClosed before the new window for the
+			-- same buffer exists, so checking immediately would count zero and reject.
 			local closing = tonumber(args.match)
-			for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
-				if win ~= closing then
-					return
+			vim.defer_fn(function()
+				for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+					if win ~= closing then
+						return
+					end
 				end
-			end
-			reject_pending()
+				reject_pending()
+			end, 50)
 		end,
 	})
 
@@ -578,7 +582,7 @@ function M.submit(opts)
 	-- request on a transport that cannot read would otherwise silently run as a shallow one.
 	if opts.deep and not providers.transports[transport].read then
 		vim.notify(
-			("[ai] %s uses the %s transport, which cannot read the repository"):format(selection.provider, transport),
+			("[ai] %s uses the %s transport, which cannot read the repository — <leader>cm to switch"):format(selection.provider, transport),
 			vim.log.levels.WARN
 		)
 		return nil
