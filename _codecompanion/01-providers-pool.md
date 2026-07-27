@@ -37,7 +37,14 @@ One ACP adapter per provider, not per keymap — `ci` and `cI` differ only in pr
 
 **opencode** — the stock ACP adapter plus `OPENCODE_PERMISSION` in the environment, denying `edit`/`write`/`patch`/`bash` while allowing `read`/`grep`/`glob`/`list`. Deny-everything is not an option: it leaks `<tool_call>` markup as message text, and in one run stopped the process initialising at all. Allow-everything is not an option either: opencode edited a file on disk with zero permission requests. Same 90s timeout restatement.
 
-**ollama** — the stock HTTP adapter. Cloud differs from local only by `env.url` (`https://ollama.com/api/chat`) and an `Authorization: Bearer $OLLAMA_API_KEY` header.
+**ollama** — the stock HTTP adapter, with `env.url` `http://localhost:11434` for local and `https://ollama.com/api/chat` plus an `Authorization: Bearer $OLLAMA_API_KEY` header for cloud. Two schema defaults carry over from the adapter step 00 deleted, and both matter:
+
+- `num_ctx = 16384` — ollama's own default is small enough to silently truncate a real refactor. Losing this degrades output with no error.
+- `keep_alive = "30m"` — keeps the local model warm between calls. Without it every local inline request pays a reload.
+
+`model` and `think` were functions reading `vim.g.ollama_inline_model` / `vim.g.ollama_think`; they now read `providers.lua` instead, and those globals do not come back.
+
+**Default strategies.** Adapter definitions alone do not make `:CodeCompanionChat` work — the plugin still picks its own default, which this machine has no credentials for. Set `interactions.chat.adapter = "claude_code"` in `setup()` as well. This is what actually ends the blackout; step 04 later creates chats programmatically and stops depending on the default, but the default still backs the plain `:CodeCompanionChat` command and step 03's degraded prose fallback.
 
 On every inline ACP connection, override `handle_fs_write_file_request` to refuse. Nothing exercises that path today, so this is insurance against a future version rather than protection — but it removes a latent whole-buffer clobber for one function. Assert the method exists at pool init; if upstream has renamed or inlined it, the override silently stops working, so fail loudly rather than fail open.
 
@@ -63,6 +70,8 @@ This step has no user-facing entry point — inline arrives in 03 — so it ship
 - `:AiDebugSend {provider} {prompt}` — sends a prompt through the pool and shows the raw reply in a scratch buffer. No parsing, no placement, no buffer mutation. This is the seam where a transport problem is distinguishable from a parsing or placement problem, which is worth keeping well past step 03.
 
 Both stay in the final build. They cost little and they are the first thing to reach for when a later step misbehaves.
+
+Mind the lazy-loading trap: the plugin spec loads on `cmd`/`keys`, and if these commands are only registered inside `config()` they will not exist until something *else* loads the plugin first — which at this step is nothing. Add `AiPoolStatus` and `AiDebugSend` to the spec's `cmd` list so lazy.nvim registers stubs that trigger the load.
 
 ## Done when
 

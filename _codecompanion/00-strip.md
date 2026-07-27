@@ -17,21 +17,27 @@ The cost is a **blackout**: between this step and step 01 there is no working AI
 
 ## What goes
 
-Everything in `codecompanion.lua` except the lazy spec itself:
+Everything in `codecompanion.lua` except the lazy spec itself. This table is the **ledger**: every row must name a restoring step, or say explicitly that the thing is not coming back. A row with no owner is a silent regression, which is the failure mode this whole step invites.
 
-| Removed | Replaced by |
+| Removed | Restored by |
 |---|---|
 | `inline_run`, `inline_reset`, `FULL_SELECTION_HINT` | step 03 |
-| the `Inline` busy flag, `SPIN`, `spinner_start`/`_stop`/`_render` | step 03's per-request virtual text |
-| the four spinner autocmds and the `CodeCompanionInlineSpinner` augroup | step 03 |
-| `ollama_adapter` and the `ollama_inline` JSON-schema `format` body | step 01's adapters; the schema's job is done by the prompt |
-| `pick_ollama_model`, `toggle_ollama_think`, `vim.g.ollama_inline_model`, `vim.g.ollama_think` | steps 01 and 05 |
+| the `Inline` busy flag, `SPIN`, `spinner_start`/`_stop`/`_render` | step 03's per-request virtual text; the helper lands in `ui.lua` |
+| the **inline** spinner autocmds and the `CodeCompanionInlineSpinner` augroup | step 03 |
+| the **chat** "thinking…" autocmds on `CodeCompanionChatSubmitted`/`Done` | step 04 — easy to miss, since it is the same augroup as the inline pair |
+| the `ollama_inline` JSON-schema `format` body | nothing — its job is done by the prompt, per the contract |
+| `ollama_adapter`'s `num_ctx = 16384` and `keep_alive = "30m"` | step 01, explicitly. Losing `num_ctx` truncates long refactors with no error |
+| `ollama_adapter`'s `env.url`, `model` and `think` schema functions | step 01's adapters, reading `providers.lua` instead of `vim.g` |
+| `pick_ollama_model`, `toggle_ollama_think`, `vim.g.ollama_inline_model`, `vim.g.ollama_think` | steps 01 and 05; the globals do not return |
 | `new_chat`, `close_all_chats`, `chat_model`, `show_status` | steps 04 and 05 |
-| the whole `keys` table — all nine bindings | steps 01, 03, 04, 05, 06 |
-| `strategies` and `adapters` config blocks | step 01 |
-| `opts = { log_level = "DEBUG" }` | nothing — it was a temporary debugging aid |
+| the whole `keys` table — all nine bindings | steps 01, 03, 04, 05, 06, per README's *Key bindings* Step column |
+| the `adapters` block | step 01 |
+| the `strategies` block, including `chat.adapter = "claude_code"` | step 01 — without the default, `:CodeCompanionChat` picks an adapter this machine has no credentials for |
+| `opts = { log_level = "DEBUG" }` | nothing — it was a temporary aid for debugging the ACP handshake, which is done |
 
-`<leader>ct` does not come back at all: `think` becomes a status-panel row like every other provider option.
+Two things deliberately do not come back: `<leader>ct`, since `think` becomes a status-panel row like every other provider option, and the JSON `format` schema, since nvim now owns placement.
+
+Nothing outside this file depends on any of it — checked: no other file in the nvim config reads `vim.g.ollama_inline_model` or `vim.g.ollama_think`, and the only external mentions of codecompanion are two comments.
 
 ## What stays
 
@@ -62,3 +68,4 @@ Replace `lua/config/keymaps.lua:150-158` with a two-line marker pointing at this
 - `:CodeCompanionChat` opens and fails on the missing adapter rather than erroring at load — a working plugin with no configuration, not a broken one
 - the keymaps.lua comment block no longer describes bindings that do not exist
 - `git diff --stat` shows one file shrinking by ~350 lines and nothing else touched outside these two files
+- every row of the ledger above names a restoring step or an explicit "does not come back" — re-read it against the deleted code once, since anything missed here resurfaces as a regression nobody is looking for

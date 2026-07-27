@@ -22,6 +22,12 @@ Chat connections are **not** in the inline pool. A chat restoring history on a s
 
 Note each new claude session costs ~19k cached-write tokens — it loads the Claude Code system prompt plus this repo's `CLAUDE.md`/`AGENTS.md`. Sessions are cheap in wall time on a warm process but not free, and a reused session accumulates every prior edit in its history. Prefer a new chat over a long-lived one for unrelated work.
 
+## Waiting indicator
+
+The old config showed a "thinking…" spinner between `CodeCompanionChatSubmitted` and `CodeCompanionChatDone`, and step 00 deleted it along with everything else. Restore it here, reusing the spinner helper `ui.lua` gained in step 03 rather than reimplementing one. Without it a chat gives no feedback at all while an ACP agent works, which on claude at `xhigh` effort is a long silence.
+
+Inline's own feedback is per-request virtual text and is unrelated — see step 03.
+
 ## Keymaps this step owns
 
 Step 01 bound `<leader>cc` to the plugin-native `:CodeCompanionChat Toggle` so the editor was usable during the rebuild. This step takes it over and adds the rest:
@@ -44,3 +50,4 @@ Carried over in spirit from the old config, which step 00 deleted: the 90s ACP t
 - `<leader>cc` toggles the last chat and says so when there is none, rather than opening a bare plugin chat as it did after step 01
 - `<leader>cn` opens a new chat with the current provider's preset options
 - opening a chat while an inline request is in flight does not disturb the inline request, and vice versa
+- submitting in a chat shows a waiting indicator until the reply starts, and clears it on completion, error and cancel alike
