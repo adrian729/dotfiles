@@ -44,8 +44,10 @@ return {
 		keys = {
 			{
 				"<leader>cc",
-				"<cmd>CodeCompanionChat Toggle<cr>",
-				desc = "CodeCompanion: toggle chat",
+				function()
+					require("ai.chat").toggle()
+				end,
+				desc = "AI: toggle last chat",
 			},
 			{
 				"<leader>ca",
@@ -70,11 +72,33 @@ return {
 				desc = "AI: inline prompt, may read the repo",
 			},
 			{
-				"<leader>cm",
+				"<leader>cmi",
 				function()
 					require("ai.inline").pick()
 				end,
 				desc = "AI: switch inline backend / model",
+			},
+			{
+				"<leader>cmc",
+				function()
+					require("ai.chat").pick()
+				end,
+				desc = "AI: switch chat backend / model",
+			},
+			{
+				"<leader>cn",
+				function()
+					require("ai.chat").new()
+				end,
+				mode = { "n", "x" },
+				desc = "AI: new chat (current provider + options)",
+			},
+			{
+				"<leader>cq",
+				function()
+					require("ai.chat").close_all()
+				end,
+				desc = "AI: close all chats",
 			},
 			{
 				"<leader>cx",

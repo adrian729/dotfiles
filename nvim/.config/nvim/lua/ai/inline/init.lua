@@ -431,7 +431,20 @@ local function show_diff(req, result)
 				title = ("%s — returned the selection unchanged"):format(req.provider),
 				text = result.preamble,
 				on_confirm = function()
-					vim.cmd("CodeCompanionChat")
+					if not api.nvim_buf_is_valid(bufnr) then
+						return vim.notify("[ai] source buffer was closed — cannot open chat", vim.log.levels.WARN)
+					end
+					require("ai.chat").open_with_context({
+						messages = {
+							{ role = "user", content = ("[ai (inline)] %s\n\n%s"):format(
+								req.instruction,
+								table.concat(req.selection or {}, "\n")
+							) },
+							-- result.preamble, not result.text: kind "code" has no text field,
+							-- only the prose that surrounded the fence.
+							{ role = "llm", content = result.preamble },
+						},
+					})
 				end,
 			})
 		end
@@ -554,9 +567,18 @@ local function on_reply(req, reply)
 		title = ("%s — %s"):format(req.provider, result.reason),
 		text = result.text,
 		on_confirm = function()
-			-- Degraded until step 04 gives us ai/chat.lua, which opens a chat pre-loaded with the
-			-- selection and this exchange. Works today because step 01 restored the adapters.
-			vim.cmd("CodeCompanionChat")
+			if not api.nvim_buf_is_valid(req.bufnr) then
+				return vim.notify("[ai] source buffer was closed — cannot open chat", vim.log.levels.WARN)
+			end
+			require("ai.chat").open_with_context({
+				messages = {
+					{ role = "user", content = ("[ai (inline)] %s\n\n%s"):format(
+						req.instruction,
+						table.concat(req.selection or {}, "\n")
+					) },
+					{ role = "llm", content = result.text },
+				},
+			})
 		end,
 	})
 end
