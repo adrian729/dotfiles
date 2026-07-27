@@ -23,8 +23,11 @@ Selecting a live chat focuses it. Selecting a past session opens a fresh chat an
 
 Picker actions: open (`<CR>`), close one (`<C-d>`), close all, new chat. History is fetched once per nvim session and cached. Listing reuses a live connection when one exists; otherwise it pays the lazy spawn.
 
+This step owns `<leader>cl`, bound here for the first time since step 00. It is the last binding in the table, so after this step `:map <leader>c` should match *Key bindings* in the README exactly.
+
 ## Done when
 
+- `<leader>cl` opens the picker
 - a session started by a terminal `claude` in this repo appears in the list and restores with its history
 - the same holds when nvim was opened from a subdirectory of the repo — the git-root filter is the point
 - a session from an unrelated repo does **not** appear

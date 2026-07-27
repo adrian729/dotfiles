@@ -32,8 +32,11 @@
 - changing the provider row re-renders the rows below it for that provider's schema
 - changing the inline model drains the connection pool rather than mutating a live session
 
+This step owns `<leader>cs`, bound here for the first time since step 00.
+
 ## Done when
 
+- `<leader>cs` opens the panel
 - changing effort on a live claude chat is confirmed in the `gd` debug window as `thought_level` on the session — not merely reflected in the panel
 - changing the inline provider re-renders the rows below and updates the reach marker
 - switching the inline model drains the pool: the old connection is gone and the next request spawns fresh

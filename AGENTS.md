@@ -223,7 +223,7 @@ Every package now has a `.stow-local-ignore` excluding at least its own `^/insta
 | `install.sh` | Bootstrap entry point (repo root) |
 | `.ready-tmux` | Script: opens nvim in tmux split layout. `tmux/`'s `ready-tmux` looks for it in the cwd, so it only fires inside this repo — nothing stows it to `$HOME` |
 | `_ai-agent-patterns/` | Reference notes on agent patterns (tracked, not stowed) |
-| `_codecompanion/` | WIP plan for the nvim CodeCompanion rebuild (tracked, not stowed). `00-overview.md` first; `findings.md` holds all measured evidence and is cited by the numbered step files, which are one self-contained work packet each |
+| `_codecompanion/` | WIP plan for the nvim CodeCompanion rebuild (tracked, not stowed). `README.md` first; `findings.md` holds all measured evidence and is cited by the numbered step files, which are one self-contained work packet each. Step `00` strips the existing integration, so steps run in order from a clean slate |
 | `.opencode/` | OpenCode's project-local dir, created when OpenCode runs here. Its own `.opencode/.gitignore` (tracked) excludes the generated `node_modules`/`package.json`/`package-lock.json`/`bun.lock` plus `state/` and `plans/`; the seven config subdirs (`agents`, `commands`, `modes`, `plugins`, `skills`, `tools`, `themes`) stay trackable |
 
 ## Non-stowed config files (per-machine)

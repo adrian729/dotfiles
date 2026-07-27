@@ -22,7 +22,17 @@ Chat connections are **not** in the inline pool. A chat restoring history on a s
 
 Note each new claude session costs ~19k cached-write tokens — it loads the Claude Code system prompt plus this repo's `CLAUDE.md`/`AGENTS.md`. Sessions are cheap in wall time on a warm process but not free, and a reused session accumulates every prior edit in its history. Prefer a new chat over a long-lived one for unrelated work.
 
-Kept from the current config: the 90s ACP timeout, and `<leader>cq` to close all chats. Dropped: the `env.CLAUDE_CODE_OAUTH_TOKEN` declaration.
+## Keymaps this step owns
+
+Step 01 bound `<leader>cc` to the plugin-native `:CodeCompanionChat Toggle` so the editor was usable during the rebuild. This step takes it over and adds the rest:
+
+- `<leader>cc` — **replaces** step 01's native binding with a toggle of the last chat, showing a message when there is none
+- `<leader>cn` — new chat with the current provider and preset options
+- `<leader>cq` — close all chats
+
+`<leader>ca` stays exactly as step 01 left it. The action palette is plugin-native and there is nothing for us to add.
+
+Carried over in spirit from the old config, which step 00 deleted: the 90s ACP timeout (now set in step 01's adapters) and `<leader>cq`. Not carried over: the `env.CLAUDE_CODE_OAUTH_TOKEN` declaration.
 
 ## Done when
 
@@ -31,4 +41,6 @@ Kept from the current config: the 90s ACP timeout, and `<leader>cq` to close all
 - claude's `agent` is applied and visible in `gd` after session creation
 - `ga` and `/acp_session_options` still work on a programmatically created chat
 - `<leader>cq` closes all chats, including one mid-response
+- `<leader>cc` toggles the last chat and says so when there is none, rather than opening a bare plugin chat as it did after step 01
+- `<leader>cn` opens a new chat with the current provider's preset options
 - opening a chat while an inline request is in flight does not disturb the inline request, and vice versa

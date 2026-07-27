@@ -8,9 +8,9 @@ The current nvim AI setup (`nvim/.config/nvim/lua/plugins/codecompanion.lua`) wo
 
 | File | What it holds |
 |---|---|
+| `README.md` | This file: the contract, the module layout, the keymap table, the build order, and open items. |
 | `findings.md` | All measured evidence and plugin-source citations. Cited by every step; owned by no step. Regenerated in part by step 07. |
-| `00-overview.md` | This file: the contract, the module layout, the keymap table, the build order, and open items. |
-| `01`…`08` | One self-contained work packet per build step. Each names its files, its dependencies, its spec, and its done-when checks. |
+| `00`…`08` | One self-contained work packet per build step. Each names its files, its dependencies, its spec, and its done-when checks. |
 
 Read this file once, then work from a single step file. Steps cite `findings.md` rather than restating evidence, and cite this file for the keymap table — if you find the same fact written in two places, the copy is the bug.
 
@@ -74,21 +74,23 @@ Defaults, free-first per `AGENTS.md`:
 
 Canonical table — steps cite this rather than restating it. All under `<leader>c`, which is unused elsewhere in `lua/config/keymaps.lua`.
 
-| Key | Mode | Action |
-|---|---|---|
-| `<leader>ci` | n, x | Inline prompt (forbids tool use) |
-| `<leader>cI` | n, x | Inline prompt inviting repo reads (ACP transports only) |
-| `<leader>cm` | n | Switch inline backend / model |
-| `<leader>cx` | n | Cancel inline request(s) |
-| `<leader>cj` / `<leader>ck` | n | Next / previous hunk in the diff under the cursor |
-| `<leader>cc` | n | Toggle last chat (message if none) |
-| `<leader>cn` | n, x | New chat with current provider + options |
-| `<leader>cl` | n | Chat list |
-| `<leader>cq` | n | Close all chats |
-| `<leader>cs` | n | Status panel |
-| `<leader>ca` | n, x | Action palette |
-| `g2` / `g3` | n | Accept / reject diff under cursor |
-| `ga`, `gd`, `/…` | n | Plugin-native, inside the chat buffer |
+The **Step** column is load-bearing, not decoration: after step 00 strips every binding, a key that no step claims is a key that never comes back. Any new row needs an owner here before it is real.
+
+| Key | Mode | Action | Step |
+|---|---|---|---|
+| `<leader>ci` | n, x | Inline prompt (forbids tool use) | 03 |
+| `<leader>cI` | n, x | Inline prompt inviting repo reads (ACP transports only) | 03 |
+| `<leader>cm` | n | Switch inline backend / model | 03 |
+| `<leader>cx` | n | Cancel inline request(s) | 03 |
+| `<leader>cj` / `<leader>ck` | n | Next / previous hunk in the diff under the cursor | 03 |
+| `g2` / `g3` | n | Accept / reject diff under cursor | 03 |
+| `<leader>cc` | n | Toggle last chat (message if none) | 01 plugin-native, 04 new-style |
+| `<leader>ca` | n, x | Action palette | 01 (plugin-native, never ours) |
+| `<leader>cn` | n, x | New chat with current provider + options | 04 |
+| `<leader>cq` | n | Close all chats | 04 |
+| `<leader>cs` | n | Status panel | 05 |
+| `<leader>cl` | n | Chat list | 06 |
+| `ga`, `gd`, `/…` | n | Plugin-native, inside the chat buffer | 01 (arrives with the adapters) |
 
 Three changes from today's bindings: `<leader>ct` is gone, since `think` is a status-panel row like every other provider option; `<leader>cx` no longer resets a stuck busy flag — it cancels in-flight requests; and `g1` (always-accept) is gone, because `skip_default_keymaps` stops the plugin binding it and per-buffer blanket approval is meaningless once several diffs can be pending in one buffer. The comment block at `lua/config/keymaps.lua:150-158` documents all three as they are today and must be updated with them (step 08).
 
@@ -98,42 +100,44 @@ The spike that gated this plan is **done**, and so are the questions it left ope
 
 | Step | File | Delivers | Depends on |
 |---|---|---|---|
-| 01 | `01-providers-pool.md` | `providers.lua`, `acp_pool.lua`, **and the adapter definitions** | — |
+| 00 | `00-strip.md` | the old integration deleted; a bare plugin spec | — |
+| 01 | `01-providers-pool.md` | `providers.lua`, `acp_pool.lua`, the adapter definitions, the debug harness | 00 |
 | 02 | `02-parse-tests.md` | `inline/parse.lua` + plenary specs and fixtures | — |
-| 03 | `03-inline.md` | `inline/init.lua` and the three transports | 01, 02 |
+| 03 | `03-inline.md` | `inline/init.lua` and the four transports | 01, 02 |
 | 04 | `04-chat.md` | `chat.lua` | 01 |
 | 05 | `05-status.md` | `status.lua` | 01, 04 |
 | 06 | `06-chat-list.md` | `chat_list.lua` | 01, 04 |
 | 07 | `07-probe.md` | `acp-capability-probe` | — |
-| 08 | `08-retire-old.md` | old config retired, keymap comment block updated | 03–06 |
+| 08 | `08-final-audit.md` | keymap comment block restored, full audit | 03–06 |
 
-Two notes on the ordering. Adapter definitions moved into **01**, not 04 where an earlier draft had them: the pool spawns connections *from* adapters, so inline (03) would otherwise depend on a step that comes after it. And **07 has no dependencies and should be pulled early** — its assertions are what keep `findings.md` honest, and three of them currently exist only as throwaway scripts in a session scratchpad.
+Three notes on the ordering. **00 demolishes before anything is built**, so no later step negotiates with the old config — see *Clean slate* below. Adapter definitions live in **01**, not 04 where an earlier draft had them: the pool spawns connections *from* adapters, so inline would otherwise depend on a step that comes after it. And **07 has no dependencies at all and should be pulled early** — its assertions are what keep `findings.md` honest, and three of them currently exist only as throwaway scripts in a session scratchpad.
+
+## Clean slate
+
+Step 00 deletes the existing integration outright rather than migrating it feature by feature. Keeping both alive would mean every step from 01 to 08 reasoning about two implementations bound to the same keys, for the sake of a fallback that git already provides.
+
+The consequence is a **blackout**: after step 00 there is no AI integration in nvim at all. Step 01 ends it by restoring the adapters, which also brings back the plugin's native chat and action palette. So the window is 00 → 01, not 00 → 03 — keep those two together and the outage is short.
+
+Two rules follow from this and are worth stating because they are what make the per-step tables below true:
+
+1. **Every binding has exactly one owning step**, recorded in the Step column of *Key bindings*. After 00 strips them all, a key no step claims is a key that never returns.
+2. **No step depends on anything the old config provided.** Where a step needs something the old config used to supply, it builds it — which is why 01 carries the debug harness and re-binds the two plugin-native keys.
 
 ## Working state after each step
 
-Steps 01 and 02 build libraries with no entry point, so neither leaves anything to press. Everything from 03 onwards does. The old configuration keeps working throughout — see *Switchover* below.
-
-| After | Usable end to end | How to exercise it | Still served by the old config |
+| After | Usable end to end | How to exercise it | Not yet available |
 |---|---|---|---|
-| 01 | nothing user-facing | `:AiPoolStatus` and `:AiDebugSend` (built in this step for exactly this reason) | everything |
-| 02 | nothing user-facing | `plenary` specs over `tests/fixtures/` | everything |
-| 03 | **inline, fully** — `ci`, `cI`, `cx`, `cj`/`ck`, `g2`/`g3`, all four transports | real edits in real buffers | chat, chat list, status |
-| 04 | new-style chat — `cn`, `cc`, `cq`; the prose float's `<CR>` stops degrading | real chats, `gd` debug window | chat list, status |
+| 00 | **nothing** — this is the blackout | `:CodeCompanionChat` opens and fails on the missing adapter, which is the correct bare-plugin state | everything |
+| 01 | plugin-native chat and action palette — `cc`, `ca`, and `ga`/`gd` inside a chat | `:AiPoolStatus`, `:AiDebugSend`, and a real chat | inline, status, chat list, preset chat options |
+| 02 | no change to what is pressable | `plenary` specs over `tests/fixtures/` | as above |
+| 03 | **inline, fully** — `ci`, `cI`, `cm`, `cx`, `cj`/`ck`, `g2`/`g3`, all four transports | real edits in real buffers | status, chat list, preset chat options |
+| 04 | new-style chat — `cn`, `cq`, `cc` upgraded; the prose float's `<CR>` stops degrading | real chats, `gd` debug window | status, chat list |
 | 05 | status panel — `cs` | panel plus `gd` to confirm it reached the session | chat list |
-| 06 | chat list — `cl` | picker, including a session started in a terminal | nothing |
+| 06 | chat list — `cl` | picker, including a session started in a terminal | — |
 | 07 | the probe script | run it; independent of nvim entirely | — |
-| 08 | no new behaviour — cleanup only | keymap audit against the table above | — |
+| 08 | no new behaviour — audit and docs only | keymap audit against the table above | — |
 
-So the answer to "can I stop after 03 and use it": yes, and that is the intended first milestone. Inline is the pain point this rebuild exists for, which is why it comes before chat despite chat being simpler.
-
-## Switchover
-
-The old `codecompanion.lua` stays functional until step 08, so there is always something working to fall back to. Two rules keep that from turning into a keymap collision:
-
-1. **New bindings ship under their final names.** No temporary prefix — you should not have to unlearn anything.
-2. **As each step lands, flip that feature's `keys` entry from the old handler to the new one.** The old *function* stays in the file, dead but present, until step 08. Rollback for a bad step is therefore flipping one line back, not reverting a commit.
-
-That means step 01 adds adapter definitions to `codecompanion.lua` **alongside** the existing ones without touching the old inline path — adding is safe, editing the old handlers is not until their step arrives.
+So: **01 is the shortest hop back to something usable, and 03 is the first milestone worth living on.** Inline is the pain this rebuild exists for, which is why it precedes chat despite chat being simpler.
 
 ## Open items
 

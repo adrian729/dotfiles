@@ -7,9 +7,11 @@
 - `nvim/.config/nvim/lua/ai/providers.lua`
 - `nvim/.config/nvim/lua/ai/acp_pool.lua`
 - `nvim/.config/nvim/lua/ai/debug.lua` — the smoke harness below
-- adapter definitions in `nvim/.config/nvim/lua/plugins/codecompanion.lua`, **added alongside the existing ones**; the old inline path is not touched until step 08
+- adapter definitions and two keymaps in `nvim/.config/nvim/lua/plugins/codecompanion.lua`, which step 00 left bare
 
-**Depends on** nothing. Everything else depends on this.
+**Depends on** 00. Everything else depends on this.
+
+**Ends the blackout.** Step 00 leaves the plugin with no working adapter; restoring them here brings back the plugin's native chat. Bind `<leader>cc` (`:CodeCompanionChat Toggle`) and `<leader>ca` (`:CodeCompanionActions`) as one-line plugin-native mappings while you are here — they need nothing from us, and they make the editor useful again three steps before `chat.lua` exists. Step 04 replaces `cc` with the new-style toggle; `ca` stays plugin-native for good.
 
 **Evidence** `findings.md` → *Concurrency*, *Process and session costs*, *Provider capability matrix*, *Session config options are settable declaratively*, *Plugin-source gotchas → Adapters and connections*.
 
@@ -17,7 +19,7 @@ Adapter definitions live here rather than with chat (step 04) because the pool s
 
 ## providers.lua
 
-The provider and option schema is in `00-overview.md` → *Providers*; this module is its runtime form. It owns the schema, the dynamically resolved model lists (cached per nvim session), the current selection for inline and for chat, and the defaults. Inline, chat and status all read it, which is what makes the option UX shared rather than reimplemented three times.
+The provider and option schema is in `README.md` → *Providers*; this module is its runtime form. It owns the schema, the dynamically resolved model lists (cached per nvim session), the current selection for inline and for chat, and the defaults. Inline, chat and status all read it, which is what makes the option UX shared rather than reimplemented three times.
 
 It also exposes each transport's **reach**, from `findings.md` → *Transport reach*, so the status panel can render a marker and `cI` can refuse on a transport that cannot read. Derive it from the provider/transport pair rather than hardcoding it per keymap.
 
@@ -74,4 +76,6 @@ Every check below is runnable with only this step built.
 - a request whose agent never replies is resolved as an error by the watchdog, not left hanging
 - pool init aborts with a clear message if `handle_fs_write_file_request` is missing from the client
 - spawning an overflow connection never blocks the UI — type during the spawn and confirm no freeze
-- the old `<leader>c*` bindings still behave exactly as before, since nothing in this step touches them
+- `<leader>cc` opens a working chat on the claude adapter, and `ga`/`gd` work inside it — this is what ends the step 00 blackout
+- `<leader>ca` opens the action palette
+- no other `<leader>c*` key is bound yet — `:map <leader>c` lists exactly those two
