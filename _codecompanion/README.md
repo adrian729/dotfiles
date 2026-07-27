@@ -42,9 +42,6 @@ nvim/.config/nvim/
     chat_list.lua                 telescope picker: live chats + resumable sessions
     status.lua                    interactive option panel
     ui.lua                        spinner/virt-text helpers, option-cycling widget, message float
-  tests/
-    parse_spec.lua                plenary specs over recorded agent replies
-    fixtures/                     saved replies: fenced+prose, bare code, leaked tool_call, refusal, question, verbatim rename
 
 claude/.local/scripts/
   acp-capability-probe            re-runnable: regenerates the tables in findings.md
@@ -102,7 +99,7 @@ The spike that gated this plan is **done**, and so are the questions it left ope
 |---|---|---|---|
 | 00 | `00-strip.md` | the old integration deleted; a bare plugin spec | — |
 | 01 | `01-providers-pool.md` | `providers.lua`, `acp_pool.lua`, the adapter definitions, the debug harness | 00 |
-| 02 | `02-parse-tests.md` | `inline/parse.lua` + plenary specs and fixtures | — |
+| 02 | `02-parse.md` | `inline/parse.lua` | — |
 | 03 | `03-inline.md` | `inline/init.lua` and the four transports | 01, 02 |
 | 04 | `04-chat.md` | `chat.lua` | 01 |
 | 05 | `05-status.md` | `status.lua` | 01, 04 |
@@ -129,7 +126,7 @@ Two rules follow from this and are worth stating because they are what make the 
 |---|---|---|---|
 | 00 | **nothing** — this is the blackout | `:CodeCompanionChat` opens and fails on the missing adapter, which is the correct bare-plugin state | everything |
 | 01 | plugin-native chat and action palette — `cc`, `ca`, and `ga`/`gd` inside a chat | `:AiPoolStatus`, `:AiDebugSend`, and a real chat | inline, status, chat list, preset chat options |
-| 02 | no change to what is pressable | `plenary` specs over `tests/fixtures/` | as above |
+| 02 | no change to what is pressable | nothing to press — it lands with inline in 03 | as above |
 | 03 | **inline, fully** — `ci`, `cI`, `cm`, `cx`, `cj`/`ck`, `g2`/`g3`, all four transports | real edits in real buffers | status, chat list, preset chat options |
 | 04 | new-style chat — `cn`, `cq`, `cc` upgraded; the prose float's `<CR>` stops degrading | real chats, `gd` debug window | status, chat list |
 | 05 | status panel — `cs` | panel plus `gd` to confirm it reached the session | chat list |
@@ -147,7 +144,7 @@ So: **01 is the shortest hop back to something usable, and 03 is the first miles
 - **Accepted risk: inline on either ACP transport can read any file the user can** and echo it into a reply. No session mode or permission set constrains reads on claude, and opencode's `cI` config allows them deliberately; our own read handler is never used by either. Recorded rather than solved. The real levers, if it ever needs solving, are running the agent under a confined cwd or restricting `cI` to the relay — both worth reconsidering if a future release adds client-refusable reads. `ci` on ollama or the relay is unaffected: those cannot read at all.
 - **`<leader>cI` on claude is prompt-deep only.** Same adapter, pool, mode and capabilities as `ci`; only the wording differs. The behavioural gap is large enough to justify the keymap (~5s and no tools versus ~27s and repo reads) but it is a speed-and-intent choice, not a boundary, and must not be documented as one. On opencode the two are genuinely different transports, and on ollama `cI` does not exist — so the pair means something different on each provider, which is a UX wart worth watching once it is in use.
 - ~~Add the `claude-agent-acp` install guard~~ — resolved: `claude/install.sh` now guards it, plus an `opencode` presence check.
-- ~~Where do the capability probes live?~~ — resolved: `claude/.local/scripts/acp-capability-probe`, step 07, with `tests/fixtures/` holding the recorded replies the parser is tested against.
+- ~~Where do the capability probes live?~~ — resolved: `claude/.local/scripts/acp-capability-probe`, step 07.
 - ~~Confirm that claude's `dontAsk` mode actually refuses writes~~ — resolved: it denies `Edit` and mutating shell commands while leaving reads working, verified against bytes on disk. Since the client `fs/*` path goes unused by both agents, this mode *is* the write defence on claude rather than one layer of two.
 - ~~Whether inline should expose claude's `agent` option~~ — resolved: no. Agent selection stays chat-only. The subagent definitions are written for autonomous multi-step work (`implementer`'s own description mandates a "Pre-pass: Grep target symbol across codebase"), which pushes toward the tool-seeking and prose that inline exists to avoid.
 - ~~ollama cloud free-tier list~~ — resolved: `gpt-oss:20b`, `gpt-oss:120b`, `gemma4:31b`, `nemotron-3-super` confirmed; `ollama-cloud/qwen3.5:397b` needs a paid subscription and has been removed from `free_models` in `opencode-models.json`.

@@ -11,13 +11,25 @@ local M = {}
 ---@field text string|nil The reply as prose, when kind ~= "code"
 ---@field reason string|nil Why the reply was not treated as code
 ---@field fenced boolean Whether the code came out of a fenced block
+---@field preamble string|nil Prose that sat outside the fenced block, if any
 
 -- A failed tool attempt that nothing parsed, leaking into the message as text. Measured on
 -- opencode under a deny-everything permission set; the markup is unfenced.
 local LEAK_PATTERNS = { "<tool_call>", "</tool_call>", "<function=", "<parameter=" }
 
+---Split a reply into lines, dropping the empty element a trailing newline leaves behind.
+---
+---Agents end their replies with a newline; taking that literally appends a blank line to the
+---buffer on every single edit. Exactly one is dropped, so a reply that deliberately ends with a
+---blank line still gets it.
+---@param text string
+---@return string[]
 local function split(text)
-	return vim.split(text, "\n", { plain = true })
+	local lines = vim.split(text, "\n", { plain = true })
+	if #lines > 1 and lines[#lines] == "" then
+		table.remove(lines)
+	end
+	return lines
 end
 
 ---Locate the first fenced block. Returns the body lines, or nil when there is no fence.
@@ -162,7 +174,10 @@ function M.parse(reply)
 				fenced = true,
 			}
 		end
-		return { kind = "code", lines = body, fenced = true }
+		-- Kept rather than discarded: a model that declines and echoes the selection back
+		-- unchanged says why in this prose, and dropping it leaves the user with a silent no-op.
+		local around = vim.trim(table.concat(outside, "\n"))
+		return { kind = "code", lines = body, fenced = true, preamble = around ~= "" and around or nil }
 	end
 
 	if is_blank(lines) then

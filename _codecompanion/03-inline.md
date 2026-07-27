@@ -41,6 +41,8 @@ A per-buffer registry tracks pending requests and rendered diffs.
 
 When the model answers instead of editing — which claude does on questions and on refusals, correctly — the buffer is left untouched and the message appears in a floating window anchored at the target range. `<CR>` opens a chat pre-loaded with the selection and the exchange; `q` dismisses.
 
+The float also has to catch a case the original plan missed: a model that declines usually returns the **selection unchanged inside a fence** with its reasons in prose around it. That parses as code, produces no change, and reporting only "nothing to change" throws the explanation away — the user waits, gets nothing, and is told nothing. So when the parsed code turns out to match the buffer and the reply carried a preamble, show the preamble in the float instead of a notification. Measured: claude does this on every refusal, so it is the common path, not an edge case.
+
 That `<CR>` is the **only** part of this step that needs step 04. Until `ai/chat.lua` exists, degrade it to the plugin-native `:CodeCompanionChat` without the pre-loaded exchange, and leave a marker so step 04 upgrades it. That target works because step 01 restored the adapters. Do not reorder for this — inline is the milestone worth reaching first, and the degraded path is a few lines.
 
 This is also where a leaked-tool-call reply lands, per step 02.
@@ -80,7 +82,9 @@ For `cI`, repo reading is the point, so ACP is right and the leak is avoidable �
 
 ## Done when
 
-- on a 40-line selection, per backend: the edit lands **only** inside the selection, unchanged lines are byte-identical, and `g3` restores the buffer exactly
+- on a real selection, per backend: the edit lands **only** inside the selection, unchanged lines are byte-identical, and `g3` restores the buffer exactly
+- a selection running to the **last line of the buffer** keeps that line — the exclusive end anchor has no row to sit on and gets clamped, which drops the final line and duplicates the reply's last one
+- a diff whose first hunk is on **line 1** leaves no spacer line behind, on accept and on reject alike
 - with no selection: code is inserted at the cursor and nothing else is touched
 - asking a question ("what does this do?") on claude leaves the buffer untouched, shows the float, and `<CR>` opens a chat carrying the exchange
 - a reply containing leaked `<tool_call>` markup leaves the buffer untouched and routes to the prose fallback
@@ -90,7 +94,7 @@ For `cI`, repo reading is the point, so ACP is right and the leak is avoidable �
 - `{` and `}` still perform their normal motions while a diff is pending
 - **write refusal, per ACP transport**: point inline at a scratch file and instruct it to modify the file directly; the file is unchanged. Run on claude (`dontAsk`) and opencode (deny set), with both keymaps, including a shell-redirect instruction on claude
 - **write refusal, buffer path**: same test with the target file open in nvim. Nothing exercises the client-mediated path today, so this is a regression check on the step 01 override — if `fs/write_text_file` ever does arrive, this is the test that catches the whole-buffer clobber
-- **read exposure is real and bounded only by the prompt**: ask a claude or opencode request to read a file outside the repo. Expect success; confirm the reply routes to the prose fallback rather than into the buffer, and that no secret-bearing content is inserted anywhere
+- **read exposure**: ask a claude or opencode request to read a file outside the repo. What must hold is that no secret-bearing content reaches the buffer and the reply is shown, not inserted. Whether the agent complies is its own judgement and must not be asserted — measured through the finished inline path, claude declined twice as an injection attempt, while the bare protocol probe read the file happily (`findings.md`)
 - **`cI` refuses on a tool-incapable provider**: select ollama, press `<leader>cI`, get a message naming the ACP transports, and no request sent
 - **no leaked markup under the opencode deny set**: run `cI` on opencode against a repo-hungry prompt; the reply contains no `<tool_call>`/`<function=` markup
 - failure paths — ollama cloud 401 and 429, relay non-zero exit, relay `-T` timeout — each surface as a notification and clear their virtual text

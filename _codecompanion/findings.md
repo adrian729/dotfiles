@@ -15,7 +15,13 @@ Two sources. Live probes of `claude-agent-acp` 0.59.0, `opencode acp` 1.18.0, th
 - `require("codecompanion.acp").new({ adapter = ... })` → `:connect_and_authenticate()` → `:session_prompt(messages)` returns a builder with `:on_message_chunk()`, `:on_tool_call()`, `:on_permission_request()`, `:on_complete()`, `:on_error()`, `:with_options({ bufnr, interaction })`, `:send()` (pattern from `interactions/chat/acp/handler.lua:207`).
 - `require("codecompanion.helpers").show_diff({ bufnr, from_lines, to_lines, inline = true, banner, keymaps = { on_accept, on_reject }, skip_default_keymaps = true })` renders the same inline diff the built-in uses. `skip_default_keymaps` is what lets us own `g2`/`g3` for concurrency.
 
-`show_diff` **renders and tracks a diff; it does not apply or revert anything.** `DiffUI` has no accept or reject method — `diff/keymaps.lua:67-85` dispatches to the `on_accept`/`on_reject` callbacks *we* supply, exactly as the built-in does at `interactions/inline/init.lua:817-821`. All buffer mutation is ours to write.
+`show_diff` **applies the change and never reverts it.** An earlier draft of this file had that backwards. With `inline = true`, `DiffUI:apply_inline` (`diff/ui.lua:293`) writes the `to_lines` into the buffer hunk by hunk and renders the deletions as virtual lines. What it does *not* have is an accept or reject method — `diff/keymaps.lua:67-85` dispatches to the `on_accept`/`on_reject` callbacks *we* supply. So accept is a no-op on the text, and **undoing is ours to write**, exactly as the built-in does at `interactions/inline/init.lua:817-821`.
+
+Three consequences, all of which bit:
+
+- `from_lines`/`to_lines` must be **whole-buffer** snapshots, because `apply_inline` addresses hunks by absolute buffer row. Passing just the region applies it at the top of the file.
+- The built-in's reject is `nvim_buf_set_lines(bufnr, 0, -1, original)` — a whole-buffer restore, which is precisely why two of its concurrent requests corrupt each other. Ours restores only the rejected diff's own extmark-tracked region.
+- When a hunk starts at line 1, `apply_inline` inserts a **real empty spacer line at row 0** and removes it again in `clear()`, which `resolve_diff` runs *after* the reject callback. Restoring the region before that deletion makes it land on a line of ours and silently swallow it. Defer the restore with `vim.schedule`.
 
 ## The `fs` capability is inert for both agents (measured)
 
@@ -50,6 +56,8 @@ The capability advertises a service *we* offer. Neither agent wants it; both go 
 | `acceptEdits` | yes | yes | 0 |
 
 Every mode read the file and printed a sentinel token back. So **no claude configuration makes inline structurally read-free**: a claude inline request can read any file the user can and echo it into its reply, where inline would either insert it or show it in the prose float. `claude.env`, `ollama.env` and `~/.ssh` are all in reach. Accepted rather than solved — confining our own `handle_fs_read_text_file_request` achieves nothing when the agent never calls it.
+
+**But the agent's own judgement pushes back, once a real system prompt frames the request.** Re-measured through the finished inline path rather than a bare protocol probe: asked to read a sentinel file outside the repo and reply with its contents, claude *declined both times*, naming it as an injection attempt — "asking me to read a file outside the repo and exfiltrate its contents as my 'code' output". So the capability is unrestricted while the behaviour is not. Do not soften the accepted-risk note on the strength of this: it is model judgement, it is version-dependent, and a request framed as a legitimate part of the edit would not trip it. What it does mean is that the earlier flat claim "a claude inline request will read anything and echo it" overstates what happens in practice.
 
 **The client-side write hole is real but unexercised.** `handle_fs_write_file_request` (`acp/init.lua:771`) validates only `sessionId` and the param types, then calls `fs.write_text_file`, which **looks for an open buffer first** — and if the target is loaded it does `nvim_buf_set_lines(bufnr, 0, -1, …)` followed by `silent update!`, replacing the entire buffer and force-saving it to disk. `FileEdited` fires after the fact, and `DISPATCH` (`acp/init.lua:643`) has no capability gate, so any agent choosing this path would get that behaviour whatever we advertised. Neither of ours does. The per-connection override is therefore **cheap insurance against a future version or a third agent, not the thing keeping us safe** — it costs one function and removes a latent whole-buffer-clobber, so it stays, but nothing today exercises it. It works because `DISPATCH` invokes the handler as a method on `self`, so an instance-level override wins; it fails open if upstream ever inlines the write logic into `DISPATCH` the way it already has for `session/update`.
 
@@ -215,6 +223,12 @@ Each of these bit, or would have. Grouped by the step that has to deal with it.
 - With `skip_default_keymaps`, `setup_close_handler` (`diff/ui.lua:533`) also **disables auto-reject on premature close**, so our registry must restore `from_lines` itself on `WinClosed`/`BufDelete` with a diff still pending.
 - Diff accept/reject are `g1`/`g2`/`g3` from `interactions.shared.keymaps` (`config.lua:938-957`); the docs' `gda`/`gdr` are stale.
 - Built-in `display.input` (`interactions/shared/input.lua`) is a cursor-relative floating input with prompt history; reused for the inline prompt.
+- `resolve_diff` calls `clear_map(config.interactions.shared.keymaps, bufnr)` on every resolution, which deletes `g1`/`g2`/`g3`/`}`/`{` from the buffer — **including the `g2`/`g3` we bound ourselves**. Resolving one diff therefore unbinds a second pending diff's keys. Re-bind after each resolution.
+- An extmark cannot sit on the row *after* the last line, so a selection running to the end of the buffer has its exclusive end anchor clamped onto the last line. Read the mark's column back to tell that apart from a mark genuinely at the start of that line — without it the region loses its final line and the reply's own last line is appended as a duplicate. Measured on all four transports before the fix.
+
+**HTTP client (step 03)**
+
+- On a 4xx, `Client:request` invokes the callback **twice**: first as `cb(nil, data)` with the error body as though it were a reply, then again with an error table (`http.lua:415-436`). The ollama adapter's `inline_output` then indexes `json.message.content` on an error body and throws. Check `data.status >= 400` before handing anything to the adapter's parser, and make the caller settle once.
 
 **General**
 
@@ -222,7 +236,7 @@ Each of these bit, or would have. Grouped by the step that has to deal with it.
 - A third built-in interaction exists that the old plan predates: `interactions.cli`, which runs the real `claude`/`opencode` TUI in a terminal buffer. **Deliberately unused** — the ACP chat buffer is our single chat surface.
 - `<leader>c` is free of conflicts in `lua/config/keymaps.lua`, whose comment block at lines 150-158 documents the current bindings and must be updated alongside them.
 - `lazy.nvim` imports `lua/plugins/*.lua` non-recursively, so implementation modules must live outside that directory.
-- `plenary.nvim` is already installed as a CodeCompanion dependency, so a test runner is available at no cost.
+- `plenary.nvim` comes in as a CodeCompanion dependency and must stay in the spec's `dependencies`, even though nothing of ours uses it directly.
 
 ## Dependencies
 

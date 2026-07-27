@@ -1,3 +1,0 @@
-The selection is a Lua smoke-test harness for an ACP connection pool — there's no `handle_websocket_upgrade` function anywhere in it, and nothing here does WebSocket or TLS negotiation. Reproducing the code unchanged would silently ignore the instruction; making up a new function would inject unrelated networking code into a debug harness file.
-
-Can you confirm: is this the right file/selection? If you meant a different function or file, point me at it and I'll make the TLS 1.3 change there.

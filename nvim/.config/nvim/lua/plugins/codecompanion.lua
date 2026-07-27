@@ -53,6 +53,36 @@ return {
 				mode = { "n", "x" },
 				desc = "CodeCompanion: action palette",
 			},
+			{
+				"<leader>ci",
+				function()
+					require("ai.inline").run(false)
+				end,
+				mode = { "n", "x" },
+				desc = "AI: inline prompt (no tools)",
+			},
+			{
+				"<leader>cI",
+				function()
+					require("ai.inline").run(true)
+				end,
+				mode = { "n", "x" },
+				desc = "AI: inline prompt, may read the repo",
+			},
+			{
+				"<leader>cm",
+				function()
+					require("ai.inline").pick()
+				end,
+				desc = "AI: switch inline backend / model",
+			},
+			{
+				"<leader>cx",
+				function()
+					require("ai.inline").cancel()
+				end,
+				desc = "AI: cancel inline request(s)",
+			},
 		},
 		config = function()
 			local providers = require("ai.providers")

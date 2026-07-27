@@ -1,8 +1,0 @@
-This code is a debugging harness for the ACP connection pool — it lets a developer manually send raw requests through the pool/provider layer and inspect responses in a scratch window, without any parsing or buffer-mutation logic in between.
-
-Breakdown of what's shown:
-
-- **`scratch(lines, title)`**: creates a temporary, unlisted, unmodifiable buffer, floats it in a centered rounded-border window sized to fit the content (capped to terminal size), enables text wrap, and binds `q`/`<esc>` to close it.
-- **`secs(ms)`**: formats a millisecond duration as a `"X.Xs"` string.
-
-The `pool` and `providers` modules are imported but not yet used in this excerpt — they're presumably used further down (not shown) to actually open a connection and send a request, with `scratch` used to display the result and `secs` used to report timing.
