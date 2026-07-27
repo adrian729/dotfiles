@@ -20,6 +20,10 @@ The contract is in `README.md` → *The contract*. Do not restate it here; imple
 
 Each transport implements `send(prompt, ctx, callbacks)`. Everything else — placement, anchoring, diffing, registry — is shared and lives in `init.lua`.
 
+## One prompt contract, for every transport
+
+All four transports get the same instruction block. Do not give HTTP and the relay a structured envelope such as `{"code":"…"}` on the theory that it parses more cleanly — that was tried and reverted, and it fails three ways. Measured on ollama cloud against the same C selection: under the envelope the model returned **the whole enclosing function, `<before>` and `<after>` context included**, where the plain contract returned exactly the selected lines. No brace-matching extractor survives a code fragment whose braces do not balance — `{"code":"if (x) {\n  go()\n"}` never closes, so the decode is skipped and the raw JSON goes into the buffer as if it were the reply. And it is the very workaround this rebuild exists to delete: README → *The contract* names the ollama `format` JSON schema as one of the two things the new prompt replaces.
+
 ## Placement and anchoring
 
 Each request anchors its target range with an **extmark** at send time, so edits landing elsewhere — including another inline accept — shift it correctly. The built-in snapshots whole-buffer line numbers instead, which is why two of its requests corrupt each other.
@@ -37,11 +41,15 @@ If the anchored range is deleted mid-flight, drop the result with a notification
 
 A per-buffer registry tracks pending requests and rendered diffs.
 
+**Known limitation, deliberately not fixed here.** The diff is computed over the *whole buffer* — `show_diff` wants whole-buffer coordinates — so the plugin chooses hunk boundaries that are not guaranteed to fall inside the anchored range when neighbouring lines happen to be identical. Two visible effects: a selection ending on a buffer's empty last line leaves that blank line behind, and in a run of identical lines a minimal diff can attribute the change outside the range, so reject restores the wrong lines. Both are cosmetic-to-minor and neither loses content silently, but the clean fix is to diff only `[s0, e0)` against the reply and offset the resulting hunks — a change to how the diff is fed, not a patch on top of it, which is why it is its own piece of work rather than a footnote in this step.
+
 ## Prose fallback
 
 When the model answers instead of editing — which claude does on questions and on refusals, correctly — the buffer is left untouched and the message appears in a floating window anchored at the target range. `<CR>` opens a chat pre-loaded with the selection and the exchange; `q` dismisses.
 
-The float also has to catch a case the original plan missed: a model that declines usually returns the **selection unchanged inside a fence** with its reasons in prose around it. That parses as code, produces no change, and reporting only "nothing to change" throws the explanation away — the user waits, gets nothing, and is told nothing. So when the parsed code turns out to match the buffer and the reply carried a preamble, show the preamble in the float instead of a notification. Measured: claude does this on every refusal, so it is the common path, not an edge case.
+**This float is the exception, not a routine outcome.** It fires on three things and nothing else: leaked tool markup, an explicit refusal, and an answer in prose where a code edit was asked for. Everything else goes to the buffer as a diff. Step 02 → *Prose must be proven, not inferred* has the rule and the measurements behind it; the short version is that an over-eager prose test is far more damaging than an over-eager edit, because the edit is one `g3` away from being undone while the rejected edit is simply lost.
+
+The float also has to catch a case the original plan missed: a model that declines usually returns the **selection unchanged inside a fence** with its reasons in prose around it. That parses as code, produces no change, and reporting only "nothing to change" throws the explanation away — the user waits, gets nothing, and is told nothing. So when the parsed code turns out to match the buffer and the reply carried a preamble, show the preamble in the float instead of a notification. Measured: claude does this on every refusal, so it is the common path, not an edge case. Content-free lead-ins do not count as a preamble — "Here's the updated code:" above an unchanged selection is a notification, not a float.
 
 That `<CR>` is the **only** part of this step that needs step 04. Until `ai/chat.lua` exists, degrade it to the plugin-native `:CodeCompanionChat` without the pre-loaded exchange, and leave a marker so step 04 upgrades it. That target works because step 01 restored the adapters. Do not reorder for this — inline is the milestone worth reaching first, and the degraded path is a few lines.
 
@@ -83,11 +91,20 @@ For `cI`, repo reading is the point, so ACP is right and the leak is avoidable �
 ## Done when
 
 - on a real selection, per backend: the edit lands **only** inside the selection, unchanged lines are byte-identical, and `g3` restores the buffer exactly
-- a selection running to the **last line of the buffer** keeps that line — the exclusive end anchor has no row to sit on and gets clamped, which drops the final line and duplicates the reply's last one
+- a selection running to the **last line of the buffer** keeps that line — the exclusive end anchor has no row to sit on and gets clamped, which drops the final line and duplicates the reply's last one. Carry that fact as a flag on the mark set, **not** as the mark's column: on a buffer whose last line is empty, "end of the last line" and "start of the last line" are the same column, so column-sniffing loses a line again on exactly the buffers that end in a blank one
 - a diff whose first hunk is on **line 1** leaves no spacer line behind, on accept and on reject alike
 - with no selection: code is inserted at the cursor and nothing else is touched
 - asking a question ("what does this do?") on claude leaves the buffer untouched, shows the float, and `<CR>` opens a chat carrying the exchange
 - a reply containing leaked `<tool_call>` markup leaves the buffer untouched and routes to the prose fallback
+- **the float does not fire on ordinary edits**: a one-sentence rewrite in a Markdown buffer, a `SELECT` list widened in a `.sql` file, and a two-line shell edit all land as diffs. This is the check the shipped heuristic failed on nine of twenty replies
+- **and not on one-line edits either** — `SELECT id, email FROM users`, `set -eu -o pipefail`, `-- Returns the sum of the two arguments.` all place. A single-line reply is the case a sentence test is most likely to get wrong, because there is no second line to contradict it
+- **an empty buffer gets the reply once**, not twice, and not wrapped in a diff — there is nothing to diff against, and DiffUI writes its merged view straight in when it finds the buffer empty
+- **a request whose buffer left the screen does not drag it back**: fire a request, switch to another file, and the reply reports itself without changing which buffer the window is showing
+- **closing one split of two leaves a pending diff alone**; only closing the last window showing the buffer rejects it. `WinClosed` scoped with `buffer =` fires for either, so this needs a window count
+- deleting the buffer cancels that buffer's in-flight requests rather than letting them run to completion into a discarded result
+- **no structured envelope is requested**: the prompt sent on every transport contains the contract once and no `{"code":…}` instruction
+- a transport that fails synchronously — `opencode-llm` off `PATH`, an adapter that will not resolve — leaves nothing behind in the buffer's request registry
+- the prompt's `<file path=…>` is repo-relative, not an absolute path out of the user's home directory
 - two concurrent requests in different parts of one file: both diffs render, each `g2` accepts the right one, and accepting the first does not misplace the second
 - deleting the anchored range mid-flight drops the request with a notification and no stray edit
 - closing a buffer with a diff pending restores the original lines rather than leaving half-applied text

@@ -55,6 +55,41 @@ local function write_guard_available()
 	end
 end
 
+---Check that the safety-critical session options actually took effect on this connection.
+---
+---`acp_defaults.apply` is best-effort: it gives up with a `log:warn` when the agent advertised no
+---configOptions, or when the value it was asked for is not one the agent offers. On claude that
+---silently leaves the session in its default mode — write-capable — and the only trace is a line
+---in codecompanion.log. Since the mode *is* the write defence, this reads the value back off the
+---live session and refuses the connection when it did not stick.
+---@param provider string
+---@param conn table
+---@return string|nil error
+local function unmet_requirements(provider, conn)
+	local required = providers.required_session_options(provider)
+	if vim.tbl_isempty(required) then
+		return nil
+	end
+
+	local current = {}
+	for _, opt in ipairs(conn:get_config_options()) do
+		if opt.category then
+			current[opt.category] = opt.currentValue
+		end
+	end
+
+	for category, want in pairs(required) do
+		if current[category] ~= want then
+			return ("%s: the session did not accept %s=%s (it reports %s), so writes would not be "):format(
+				provider,
+				category,
+				want,
+				tostring(current[category])
+			) .. "denied — refusing to use this connection"
+		end
+	end
+end
+
 ---@param conn table
 local function install_write_guard(conn)
 	conn.handle_fs_write_file_request = function(self, id, params)
@@ -69,8 +104,9 @@ end
 local function teardown(entry)
 	entry.state = "dead"
 	if entry.conn then
-		-- disconnect() is `assert(handle):kill(9)` and throws on an already-dead process,
-		-- which the reaper hits every cycle
+		-- disconnect() is `assert(self._state.handle):kill(9)`. kill(9) on a process that has
+		-- already exited is a no-op, so the throw only happens when no process was ever started —
+		-- a spawn that failed at connect_and_authenticate. Worth the pcall for that one case.
 		pcall(function()
 			entry.conn:disconnect()
 		end)
@@ -136,6 +172,8 @@ local function spawn(provider, cb)
 	}
 	table.insert(pool, entry)
 
+	-- resolve() merges session_config_options into adapter.defaults itself
+	-- (adapters/acp/init.lua:126), which is where acp_defaults.apply reads them from.
 	local adapter = adapters.resolve(adapter_name, {
 		session_config_options = providers.inline_session_options(provider),
 	})
@@ -169,6 +207,12 @@ local function spawn(provider, cb)
 		end
 
 		acp_defaults.apply(adapter, conn)
+
+		local unmet = unmet_requirements(provider, conn)
+		if unmet then
+			drop(entry)
+			return cb(nil, unmet)
+		end
 
 		-- The process can die at any point above; on_process_exit has already dropped the entry
 		-- and reported it, so do not hand a corpse back as ready.
@@ -318,8 +362,18 @@ function M.send(opts)
 		handle.finished = true
 		vim.schedule(function()
 			if entry then
+				local dead = entry.state == "dead"
 				entry.death_cb = nil
-				if entry.state ~= "dead" then
+				-- A connection whose prompt we cancelled must not go back into the pool.
+				-- PromptBuilder:cancel() sends session/cancel and clears _active_prompt
+				-- synchronously without waiting for the agent, and the client routes later
+				-- session/updates to whatever _active_prompt happens to be by then — so the
+				-- cancelled turn's trailing chunks would be appended to the *next* request's
+				-- reply and applied to the buffer. Paying a respawn is the cheaper mistake.
+				if handle.poisoned and not dead then
+					drop(entry)
+					pump(entry.provider)
+				elseif not dead then
 					release(entry)
 				end
 				entry = nil
@@ -353,6 +407,7 @@ function M.send(opts)
 				return arm_watchdog(remaining)
 			end
 			if handle.builder then
+				handle.poisoned = true
 				pcall(function()
 					handle.builder:cancel()
 				end)
@@ -370,7 +425,11 @@ function M.send(opts)
 		if err or not acquired then
 			return fail(err or "could not acquire a connection")
 		end
-		if handle.cancelled then
+		-- Already resolved before a connection came free: cancelled, or timed out while still in
+		-- the queue. Hand the connection straight back — without this the waiter went on to send
+		-- the prompt anyway, and because `finished` was already set, `finish` returned early and
+		-- never released it. Three of those and the provider's cap is gone until nvim restarts.
+		if handle.finished then
 			release(acquired)
 			return
 		end
@@ -436,6 +495,9 @@ function M.send(opts)
 		end
 		handle.cancelled = true
 		if handle.builder then
+			-- Poisons the connection: see finish(). A prompt already on the wire keeps arriving
+			-- after session/cancel, and there is no turn id to match it against.
+			handle.poisoned = true
 			pcall(function()
 				handle.builder:cancel()
 			end)

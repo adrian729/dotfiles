@@ -7,19 +7,29 @@ local providers = require("ai.providers")
 
 local M = {}
 
----@param ctx { prompt: string, bufnr: number }
+local DEFAULT_TIMEOUT_MS = 120 * 1000
+
+---@param ctx { prompt: string, bufnr: number, timeout?: number }
 ---@param cb { on_done: fun(text: string), on_error: fun(msg: string) }
 ---@return table handle
 function M.send(ctx, cb)
 	local name = providers.http_adapter("inline")
 	local ok, adapter = pcall(adapters.resolve, name)
 	if not ok or not adapter then
-		cb.on_error(("could not resolve the %s adapter"):format(name))
+		cb.on_error(("could not resolve the %s adapter (%s)"):format(name, tostring(adapter)))
 		return { cancel = function() end }
 	end
 
-	-- Inline needs one complete reply, not a stream of chunks to reassemble
+	-- Inline needs one complete reply, not a stream of chunks to reassemble. The ollama adapter's
+	-- own setup() handler reads opts.stream and mirrors it into parameters.stream, so setting it
+	-- here is enough.
 	adapter.opts.stream = false
+	-- Must run before the request: setup() assigns into adapter.parameters, and this is what
+	-- creates that table — along with model, think, num_ctx and keep_alive from the schema.
+	adapter:map_schema_to_params()
+
+	local timeout = ctx.timeout or DEFAULT_TIMEOUT_MS
+	local job, watchdog
 
 	-- The client invokes this callback twice on an HTTP error: once with the 4xx body as though
 	-- it were a reply, then again with an error table. Settle on the first one that decides.
@@ -29,6 +39,10 @@ function M.send(ctx, cb)
 			return
 		end
 		settled = true
+		if watchdog then
+			watchdog:stop()
+			watchdog = nil
+		end
 		fn(arg)
 	end
 
@@ -47,7 +61,20 @@ function M.send(ctx, cb)
 		return vim.trim(body):sub(1, 200)
 	end
 
-	local job = client.new({ adapter = adapter:map_schema_to_params() }):request({
+	-- Ours, because the client has none on this path: Client:request builds its curl options with
+	-- no timeout key, so the `opts.timeout` it documents is only read on plenary's synchronous
+	-- branch, which this never takes. Without this a wedged ollama spins the spinner forever.
+	watchdog = vim.defer_fn(function()
+		watchdog = nil
+		if job then
+			pcall(function()
+				job.cancel()
+			end)
+		end
+		done(cb.on_error, ("%s: no reply within %ds"):format(name, math.floor(timeout / 1000)))
+	end, timeout)
+
+	job = client.new({ adapter = adapter }):request({
 		messages = adapter:map_roles({ { role = "user", content = ctx.prompt } }),
 	}, {
 		callback = function(err, data, resolved)
@@ -86,12 +113,17 @@ function M.send(ctx, cb)
 	}, { bufnr = ctx.bufnr, interaction = "inline" })
 
 	if not job then
-		cb.on_error(("%s: the request could not be started"):format(name))
+		done(cb.on_error, ("%s: the request could not be started"):format(name))
 		return { cancel = function() end }
 	end
 
 	return {
 		cancel = function()
+			if watchdog then
+				watchdog:stop()
+				watchdog = nil
+			end
+			settled = true
 			pcall(function()
 				job.cancel()
 			end)

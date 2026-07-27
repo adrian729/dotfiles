@@ -53,23 +53,28 @@ local function capture_range()
 	return { s0 = row, e0 = row, has_selection = false }
 end
 
----A row that nvim_buf_set_extmark will accept, plus the column to use on it.
+---A row that nvim_buf_set_extmark will accept, the column to use on it, and whether the row had
+---to be moved to get there.
 ---
 ---An exclusive end row equal to the line count has no line to sit on, so it becomes the end of
----the last line instead. resolve() reads the column back to tell that apart from a mark that
----genuinely sits at the start of the last line — without it, a selection running to the end of
----the buffer silently loses its final line and the reply's own last line is appended as a
----duplicate.
+---the last line instead. `resolve` needs to tell that apart from a mark that genuinely sits at
+---the start of the last line, or a selection running to the end of the buffer silently loses its
+---final line and the reply's own last line is appended as a duplicate.
+---
+---The third return value is what carries that, rather than the column: reading the column back
+---cannot distinguish the two cases when the last line is **empty**, because then the end of the
+---line and the start of it are the same position. A buffer ending in a blank line is ordinary,
+---and so is a buffer that is nothing but one.
 ---@param bufnr number
 ---@param row number
----@return number row, number col
+---@return number row, number col, boolean clamped
 local function clamp(bufnr, row)
 	local total = api.nvim_buf_line_count(bufnr)
 	if row < total then
-		return row, 0
+		return row, 0, false
 	end
 	local last = math.max(0, total - 1)
-	return last, #(api.nvim_buf_get_lines(bufnr, last, last + 1, false)[1] or "")
+	return last, #(api.nvim_buf_get_lines(bufnr, last, last + 1, false)[1] or ""), true
 end
 
 ---Anchor a range with extmarks so edits elsewhere — including another inline accept — shift it
@@ -80,9 +85,10 @@ end
 ---@return table anchor
 local function anchor(bufnr, range)
 	local srow, scol = clamp(bufnr, range.s0)
-	local erow, ecol = clamp(bufnr, range.e0)
+	local erow, ecol, ends_at_eof = clamp(bufnr, range.e0)
 
 	local marks = {
+		ends_at_eof = ends_at_eof,
 		start = api.nvim_buf_set_extmark(bufnr, ANCHOR, srow, scol, { right_gravity = false }),
 		finish = api.nvim_buf_set_extmark(bufnr, ANCHOR, erow, ecol, { right_gravity = true }),
 	}
@@ -120,9 +126,9 @@ local function resolve(bufnr, marks)
 	if not s or #s == 0 or not e or #e == 0 then
 		return nil
 	end
-	-- A non-zero column means the mark sits inside a line rather than at its start, so that line
-	-- is part of the region: line-wise, the exclusive end is the row after it.
-	local e0 = e[2] > 0 and (e[1] + 1) or e[1]
+	-- The mark could not be placed on its own row, so it sits on the last line and that line is
+	-- part of the region: line-wise, the exclusive end is the row after it.
+	local e0 = marks.ends_at_eof and (e[1] + 1) or e[1]
 	return s[1], math.max(s[1], e0)
 end
 
@@ -131,7 +137,10 @@ local function drop_marks(bufnr, marks)
 		return
 	end
 	for _, id in pairs(marks) do
-		pcall(api.nvim_buf_del_extmark, bufnr, ANCHOR, id)
+		-- marks carries the ends_at_eof flag alongside the ids
+		if type(id) == "number" then
+			pcall(api.nvim_buf_del_extmark, bufnr, ANCHOR, id)
+		end
 	end
 end
 
@@ -139,6 +148,13 @@ end
 -- Prompt
 --=============================================================================
 
+-- One contract for every transport. An earlier revision asked HTTP and relay for a
+-- `{"code":"…"}` envelope instead; that is reverted, and deliberately not to be reintroduced.
+-- Measured on ollama cloud with the same selection: under the envelope the model returned the
+-- whole enclosing function — the <before> and <after> context included — while the plain
+-- contract returned exactly the selected lines. It is also the workaround this rebuild set out
+-- to delete (README → *The contract*), and no envelope survives a code fragment whose braces do
+-- not balance, which is most fragments.
 local CONTRACT = [[
 You are an inline code editor inside Neovim. The editor decides where your output goes;
 you only supply code. Return ONLY the replacement text for the selected region.
@@ -172,7 +188,7 @@ end
 ---@param range table
 ---@param instruction string
 ---@param deep boolean
----@return { prompt: string, instruction: string, content: string }
+---@return { prompt: string, instruction: string, content: string, selection: string[] }
 local function build_prompt(bufnr, range, instruction, deep)
 	local total = api.nvim_buf_line_count(bufnr)
 	local filetype = vim.bo[bufnr].filetype
@@ -220,6 +236,9 @@ local function build_prompt(bufnr, range, instruction, deep)
 		instruction = instruction_block,
 		content = content_block,
 		prompt = instruction_block .. "\n\n" .. content_block .. "\n",
+		-- Kept for the parser: a reply that reuses lines of the selection is an edit, however
+		-- little it looks like code on its own.
+		selection = selection,
 	}
 end
 
@@ -253,6 +272,10 @@ local function bind_diff_keys(bufnr)
 	-- the first's. Ours dispatch by cursor position instead.
 	pcall(vim.keymap.del, "n", shared.next_hunk.modes.n, { buffer = bufnr })
 	pcall(vim.keymap.del, "n", shared.previous_hunk.modes.n, { buffer = bufnr })
+	-- Delete the literal keys too, in case upstream changes the shared-keymap structure and the
+	-- reads above silently find nothing. These are the stock defaults; harmless if not bound.
+	pcall(vim.keymap.del, "n", "}", { buffer = bufnr })
+	pcall(vim.keymap.del, "n", "{", { buffer = bufnr })
 
 	local function on(lhs, fn, desc)
 		vim.keymap.set("n", lhs, fn, { buffer = bufnr, desc = desc, nowait = true })
@@ -321,15 +344,49 @@ local function watch_buffer(bufnr)
 		return
 	end
 	st.augroup = api.nvim_create_augroup("AiInlineBuf" .. bufnr, { clear = true })
-	api.nvim_create_autocmd({ "WinClosed", "BufDelete", "BufUnload" }, {
+
+	local function reject_pending()
+		-- Snapshot first: rejecting mutates st.diffs while we walk it
+		for _, diff in ipairs(vim.tbl_values(st.diffs)) do
+			M.reject(bufnr, diff)
+		end
+	end
+
+	api.nvim_create_autocmd("WinClosed", {
+		group = st.augroup,
+		buffer = bufnr,
+		callback = function(args)
+			-- WinClosed's pattern is a window id, so `buffer =` scopes this to "a window showing
+			-- this buffer closed" — not "the buffer went away". Without the count below, closing
+			-- one split of two throws away a finished edit the user had not accepted yet.
+			-- WinClosed fires before the window is gone, so the closing one still counts.
+			local closing = tonumber(args.match)
+			for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+				if win ~= closing then
+					return
+				end
+			end
+			reject_pending()
+		end,
+	})
+
+	api.nvim_create_autocmd({ "BufDelete", "BufUnload" }, {
 		group = st.augroup,
 		buffer = bufnr,
 		callback = function()
-			-- Snapshot first: rejecting mutates st.diffs while we walk it
-			local pending = vim.tbl_values(st.diffs)
-			for _, diff in ipairs(pending) do
-				M.reject(bufnr, diff)
+			reject_pending()
+			-- A request whose buffer is gone has nowhere to land, and on_reply would discard it
+			-- anyway — so stop paying for it rather than letting the agent finish into a void.
+			for _, req in ipairs(vim.tbl_values(st.requests)) do
+				if req.handle then
+					pcall(req.handle.cancel)
+				end
+				forget_request(req)
 			end
+			-- Neither the registry entry nor the augroup is reachable again once the buffer is
+			-- wiped, and both would otherwise accumulate for the rest of the session.
+			pcall(api.nvim_del_augroup_by_id, st.augroup)
+			buffers[bufnr] = nil
 		end,
 	})
 end
@@ -377,14 +434,39 @@ local function show_diff(req, result)
 		return vim.notify("[ai] the reply matches the buffer — nothing to change", vim.log.levels.INFO)
 	end
 
+	-- An empty buffer never reaches the diff UI. DiffUI's own create_diff_display writes the
+	-- merged old-and-new view straight in when it finds the buffer empty (diff/ui.lua:439), and
+	-- apply_inline then applies its hunks on top of that — so the reply lands twice. There is
+	-- nothing to compare against in an empty buffer anyway, and `u` is a complete way back.
+	if api.nvim_buf_line_count(bufnr) == 1 and (api.nvim_buf_get_lines(bufnr, 0, 1, true)[1] or "") == "" then
+		drop_marks(bufnr, req.marks)
+		api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+		return vim.notify("[ai] the buffer was empty, so the reply was inserted directly — u to undo")
+	end
+
+	-- The diff UI takes over a window to show itself, and falls back to the *current* one when
+	-- the target buffer is not on screen (diff/ui.lua:426), which would yank whatever the user
+	-- moved on to read out from under them. Requests run for seconds, so moving on is normal.
+	if vim.fn.bufwinid(bufnr) == -1 then
+		drop_marks(bufnr, req.marks)
+		return vim.notify(
+			("[ai] %s answered, but %s is no longer on screen — nothing was applied, run it again with the buffer visible"):format(
+				req.provider,
+				vim.fn.fnamemodify(api.nvim_buf_get_name(bufnr), ":t"):gsub("^$", "the target buffer")
+			),
+			vim.log.levels.WARN
+		)
+	end
+
 	local original = vim.list_slice(from_lines, s0 + 1, e0)
 
 	-- Placed before show_diff and tracked through it: the change is confined to [start, finish),
 	-- start holds against insertion and finish is pushed past the replacement, so the pair spans
 	-- exactly the new content once the diff has been applied.
 	local srow, scol = clamp(bufnr, s0)
-	local erow, ecol = clamp(bufnr, e0)
+	local erow, ecol, ends_at_eof = clamp(bufnr, e0)
 	local marks = {
+		ends_at_eof = ends_at_eof,
 		start = api.nvim_buf_set_extmark(bufnr, ANCHOR, srow, scol, { right_gravity = false }),
 		finish = api.nvim_buf_set_extmark(bufnr, ANCHOR, erow, ecol, { right_gravity = true }),
 	}
@@ -446,7 +528,10 @@ local function on_reply(req, reply)
 		return
 	end
 
-	local result = parse.parse(reply)
+	-- The filetype and the original selection are what keep the parser from mistaking a correct
+	-- reply for prose: in a Markdown buffer the right answer *is* a sentence, and a reply that
+	-- echoes lines of the selection is an edit whatever it looks like in isolation.
+	local result = parse.parse(reply, { filetype = vim.bo[req.bufnr].filetype, selection = req.selection })
 
 	if result.kind == "code" then
 		return show_diff(req, result)
@@ -489,6 +574,16 @@ function M.submit(opts)
 	local selection = providers.current("inline")
 	local transport = providers.transport(selection.provider, opts.deep or false)
 
+	-- Repeated from M.run because this is a public entry point in its own right, and a deep
+	-- request on a transport that cannot read would otherwise silently run as a shallow one.
+	if opts.deep and not providers.transports[transport].read then
+		vim.notify(
+			("[ai] %s uses the %s transport, which cannot read the repository"):format(selection.provider, transport),
+			vim.log.levels.WARN
+		)
+		return nil
+	end
+
 	seq = seq + 1
 	local req = {
 		id = seq,
@@ -499,6 +594,7 @@ function M.submit(opts)
 	}
 
 	local built = build_prompt(bufnr, opts.range, opts.instruction, opts.deep or false)
+	req.selection = built.selection
 	req.progress = ui.progress(bufnr, function()
 		return resolve(bufnr, req.marks)
 	end, ("%s · %s"):format(selection.provider, opts.instruction))
@@ -506,6 +602,13 @@ function M.submit(opts)
 	local module = transport == "http" and "ai.inline.http"
 		or transport == "relay" and "ai.inline.relay"
 		or "ai.inline.acp"
+
+	-- Registered before the send, not after. A transport can fail synchronously — no
+	-- `opencode-llm` on PATH, an adapter that will not resolve — and its on_error runs inside
+	-- send(); registering afterwards would put an already-dead request into the buffer's registry
+	-- with nothing left to clear it, so `<leader>cx` would keep reporting a phantom in flight.
+	buf_state(bufnr).requests[req.id] = req
+	watch_buffer(bufnr)
 
 	req.handle = require(module).send({
 		prompt = built.prompt,
@@ -530,8 +633,6 @@ function M.submit(opts)
 		end,
 	})
 
-	buf_state(bufnr).requests[req.id] = req
-	watch_buffer(bufnr)
 	return req
 end
 
@@ -598,6 +699,11 @@ function M.hunk(bufnr, direction)
 	end
 	local keymaps = require("codecompanion.diff.keymaps")
 	local handler = direction == "next" and keymaps.next_hunk or keymaps.previous_hunk
+	-- The handler reads the cursor out of diff_ui.winnr, captured when the diff was created and
+	-- never revalidated, so a since-closed window would raise instead of reporting.
+	if not (diff.ui and diff.ui.winnr and api.nvim_win_is_valid(diff.ui.winnr)) then
+		return vim.notify("[ai] the window this diff was rendered in is gone", vim.log.levels.WARN)
+	end
 	handler.callback(diff.ui)
 end
 
@@ -641,15 +747,27 @@ function M.pick()
 		if not provider then
 			return
 		end
-		providers.set_provider("inline", provider)
 
-		local function choose_model(list)
+		-- Committed only once a model has been picked: abandoning the second prompt used to leave
+		-- the provider switched, which is a change the user did not finish asking for.
+		local function commit(model, extra)
+			providers.set_provider("inline", provider)
+			for key, value in pairs(extra or {}) do
+				providers.set_option("inline", key, value)
+			end
+			if model then
+				providers.set_option("inline", "model", model)
+			end
+			local current = providers.current("inline")
+			vim.notify(("[ai] inline → %s · %s"):format(provider, tostring(current.opts.model)))
+		end
+
+		local function choose_model(list, extra)
 			vim.ui.select(list, { prompt = provider .. " model" }, function(model)
-				if model then
-					providers.set_option("inline", "model", model)
+				if not model then
+					return
 				end
-				local current = providers.current("inline")
-				vim.notify(("[ai] inline → %s · %s"):format(provider, tostring(current.opts.model)))
+				commit(model, extra)
 			end)
 		end
 
@@ -664,12 +782,11 @@ function M.pick()
 			if not endpoint then
 				return
 			end
-			providers.set_option("inline", "endpoint", endpoint)
 			providers.ollama_models(endpoint, function(models, err)
 				if not models then
 					return vim.notify("[ai] " .. err, vim.log.levels.ERROR)
 				end
-				choose_model(models)
+				choose_model(models, { endpoint = endpoint })
 			end)
 		end)
 	end)

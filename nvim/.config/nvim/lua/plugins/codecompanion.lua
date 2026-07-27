@@ -100,7 +100,12 @@ return {
 					http = {
 						ollama = ollama_adapter({ env = { url = "http://localhost:11434" } }),
 						ollama_cloud = ollama_adapter({
-							env = { url = "https://ollama.com", api_key = "OLLAMA_API_KEY" },
+							env = {
+								url = "https://ollama.com",
+								api_key = function()
+									return os.getenv("OLLAMA_API_KEY")
+								end,
+							},
 							headers = { Authorization = "Bearer ${api_key}" },
 						}),
 					},
@@ -121,8 +126,12 @@ return {
 									clientCapabilities = { fs = { readTextFile = false, writeTextFile = false } },
 								},
 							})
-							-- Drops CLAUDE_CODE_OAUTH_TOKEN, the most plausible cause of the old
-							-- _establish_session stalls and unnecessary since authMethods is empty.
+							-- Drops CLAUDE_CODE_OAUTH_TOKEN from the adapter definition, which is
+							-- unnecessary since authMethods is empty. Hygiene only, on two counts:
+							-- the child process still inherits the variable from nvim's own
+							-- environment, and the old _establish_session stalls turned out to be a
+							-- stale claude-agent-acp 0.55.0 that nvm's bin directory put ahead of
+							-- Homebrew's 0.59.0 on PATH — not this token (findings.md).
 							-- Assigned rather than merged: tbl_deep_extend cannot remove a key.
 							adapter.env = {}
 							-- `--yolo` is the exact opposite of what inline wants

@@ -4,10 +4,18 @@
 -- problem: :AiDebugSend does no parsing, no placement and no buffer mutation. Kept well past
 -- step 01 — it is the first thing to reach for when a later step misbehaves.
 
-local pool = require("ai.acp_pool")
 local providers = require("ai.providers")
 
 local M = {}
+
+---Required lazily, not at the top of the file. `setup()` runs from the plugin's own `config()`,
+---and the pool's first statement is `require("codecompanion.acp")` — which, reached from a cold
+---`require("ai.acp_pool")`, makes lazy.nvim load the plugin, run `config()`, and come straight
+---back here into a module that is still loading. Deferring the require breaks that cycle and is
+---what lets the pool be loaded on its own, which is exactly what debugging it starts with.
+local function pool()
+	return require("ai.acp_pool")
+end
 
 ---@param lines string[]
 ---@param title string
@@ -41,7 +49,7 @@ local function secs(ms)
 end
 
 function M.pool_status()
-	local rows = pool.status()
+	local rows = pool().status()
 	local lines = {}
 
 	if #rows == 0 then
@@ -65,7 +73,7 @@ function M.pool_status()
 	end
 
 	local queued = {}
-	for provider, depth in pairs(pool.queue_depths()) do
+	for provider, depth in pairs(pool().queue_depths()) do
 		if depth > 0 then
 			table.insert(queued, ("%s: %d"):format(provider, depth))
 		end
@@ -92,7 +100,7 @@ function M.send(provider, prompt)
 	local started = vim.uv.now()
 	vim.notify(("[ai] sending to %s…"):format(provider))
 
-	pool.send({
+	pool().send({
 		provider = provider,
 		prompt = prompt,
 		on_done = function(text)

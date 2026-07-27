@@ -115,6 +115,10 @@ end
 ---@param value string
 function M.set_option(scope, key, value)
 	local sel = state[scope]
+	local spec = M.providers[sel.provider]
+	if not spec or not spec.options[key] then
+		return false, ("%s has no option %q"):format(sel.provider, key)
+	end
 	sel.opts[sel.provider][key] = value
 	return true
 end
@@ -282,6 +286,15 @@ function M.inline_session_options(provider)
 			-- relay. An ACP session has to be pinned to something, and leaving it unset lands on
 			-- opencode's ambient default — currently the paid-tier-adjacent `big-pickle`.
 			value = M.opencode_models()[2]
+			if not value then
+				-- Nothing to pin to, so staying quiet here would land on exactly the default this
+				-- branch exists to avoid. Say so where the user will see it.
+				vim.notify(
+					"[ai] no free opencode model is known, so this session falls back to opencode's "
+						.. "own default — check opencode-models.json",
+					vim.log.levels.WARN
+				)
+			end
 		end
 		if option and option.category and value and value ~= M.AUTO then
 			out[option.category] = value
@@ -290,11 +303,28 @@ function M.inline_session_options(provider)
 
 	-- The actual write defence on claude: dontAsk denies mutating tools, shell redirects
 	-- included, and it is applied to every inline session rather than only the deep one.
-	if provider == "claude" then
-		out.mode = "dontAsk"
+	for category, value in pairs(M.required_session_options(provider)) do
+		out[category] = value
 	end
 
 	return out
+end
+
+---Session options that are a safety requirement rather than a preference.
+---
+---Separate from the rest because these have to be *verified* on the live session, not merely
+---requested. `acp_defaults.apply` gives up with a `log:warn` if the agent advertised no
+---configOptions or if the value does not match one it offers, and on claude that leaves the
+---session in its default mode with write-capable tools. Since this mode is the whole write
+---defence — neither agent uses the client-mediated `fs/*` path, so the pool's write guard covers
+---nothing in practice — a connection that did not take it must not be used.
+---@param provider string
+---@return table<string, string>
+function M.required_session_options(provider)
+	if provider == "claude" then
+		return { mode = "dontAsk" }
+	end
+	return {}
 end
 
 return M

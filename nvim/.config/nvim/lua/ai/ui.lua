@@ -47,6 +47,9 @@ function M.progress(bufnr, row_fn, label)
 	local mark, frame = nil, 1
 	local timer = vim.uv.new_timer()
 	local handle = {}
+	-- render() runs once before the timer starts, and its invalid-buffer branch calls stop(),
+	-- which nils the timer out from under the start() below.
+	local stopped = false
 
 	local function clear()
 		if mark and api.nvim_buf_is_valid(bufnr) then
@@ -77,6 +80,7 @@ function M.progress(bufnr, row_fn, label)
 	end
 
 	function handle.stop()
+		stopped = true
 		if timer then
 			timer:stop()
 			if not timer:is_closing() then
@@ -93,14 +97,16 @@ function M.progress(bufnr, row_fn, label)
 	end
 
 	render()
-	timer:start(
-		100,
-		100,
-		vim.schedule_wrap(function()
-			frame = (frame % #SPINNER) + 1
-			render()
-		end)
-	)
+	if not stopped then
+		timer:start(
+			100,
+			100,
+			vim.schedule_wrap(function()
+				frame = (frame % #SPINNER) + 1
+				render()
+			end)
+		)
+	end
 
 	return handle
 end
@@ -124,7 +130,7 @@ function M.message(opts)
 	vim.bo[buf].bufhidden = "wipe"
 	vim.bo[buf].filetype = "markdown"
 
-	local win = api.nvim_open_win(buf, true, {
+	local config = {
 		relative = "editor",
 		row = math.floor((vim.o.lines - height) / 2),
 		col = math.floor((vim.o.columns - width) / 2),
@@ -134,7 +140,20 @@ function M.message(opts)
 		border = "rounded",
 		title = (" %s — <CR> open in a chat · q dismiss "):format(opts.title),
 		title_pos = "center",
-	})
+	}
+
+	-- Anchored at the target row when the buffer is on screen, so that with several requests in
+	-- flight it is obvious which one is talking. Centred when it is not displayed anywhere.
+	local host = opts.bufnr and vim.fn.bufwinid(opts.bufnr) or -1
+	if host ~= -1 and opts.row then
+		local rows = api.nvim_buf_line_count(opts.bufnr)
+		config.relative = "win"
+		config.win = host
+		config.bufpos = { math.max(0, math.min(opts.row, rows - 1)), 0 }
+		config.row, config.col = 1, 0
+	end
+
+	local win = api.nvim_open_win(buf, true, config)
 	vim.wo[win].wrap = true
 
 	local function close()
