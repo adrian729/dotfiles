@@ -3,8 +3,15 @@ local opt = vim.opt
 -- nvm lazy-loads `node`/`npm`/`npx`/`nvm` as shell functions (see zsh/.zshrc), so a fresh
 -- shell's PATH never gets the node bin dir unless one of those is invoked first. Plugins
 -- that spawn npm-installed binaries directly (e.g. codecompanion.nvim's claude-agent-acp)
--- inherit nvim's PATH as-is and fail with ENOENT. Prepend the highest installed node
--- version's bin dir here so those spawns work regardless of how nvim was launched.
+-- inherit nvim's PATH as-is and fail with ENOENT. Add the highest installed node version's
+-- bin dir here so those spawns work regardless of how nvim was launched.
+--
+-- Appended, never prepended: nvm's bin dir carries its own global npm installs, and those
+-- go stale independently of the ones Homebrew manages. Prepending made nvim resolve a
+-- long-forgotten claude-agent-acp 0.55.0 in preference to Homebrew's 0.59.0, which accepts
+-- `initialize` and then never answers `session/new` — the unexplained `_establish_session`
+-- stall in codecompanion.log. This dir is a fallback for when node is missing entirely, not
+-- a preference over whatever the shell already resolves.
 local function ensure_nvm_path()
 	local versions_dir = vim.fn.expand("$HOME/.nvm/versions/node")
 	if vim.fn.isdirectory(versions_dir) == 0 then
@@ -30,7 +37,7 @@ local function ensure_nvm_path()
 	end
 	local bin = latest .. "/bin"
 	if not vim.tbl_contains(vim.split(vim.env.PATH or "", ":"), bin) then
-		vim.env.PATH = bin .. ":" .. (vim.env.PATH or "")
+		vim.env.PATH = (vim.env.PATH or "") .. ":" .. bin
 	end
 end
 ensure_nvm_path()

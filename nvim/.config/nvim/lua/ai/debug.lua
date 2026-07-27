@@ -1,0 +1,129 @@
+-- Smoke harness for the connection pool.
+--
+-- This is the seam where a transport problem is distinguishable from a parsing or placement
+-- problem: :AiDebugSend does no parsing, no placement and no buffer mutation. Kept well past
+-- step 01 — it is the first thing to reach for when a later step misbehaves.
+
+local pool = require("ai.acp_pool")
+local providers = require("ai.providers")
+
+local M = {}
+
+---@param lines string[]
+---@param title string
+local function scratch(lines, title)
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].bufhidden = "wipe"
+	vim.bo[buf].modifiable = false
+
+	local width = math.min(vim.o.columns - 8, 100)
+	local height = math.min(vim.o.lines - 6, math.max(#lines + 1, 5))
+	local win = vim.api.nvim_open_win(buf, true, {
+		relative = "editor",
+		row = math.floor((vim.o.lines - height) / 2),
+		col = math.floor((vim.o.columns - width) / 2),
+		width = width,
+		height = height,
+		style = "minimal",
+		border = "rounded",
+		title = " " .. title .. " ",
+		title_pos = "center",
+	})
+	vim.wo[win].wrap = true
+	vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = buf })
+	vim.keymap.set("n", "<esc>", "<cmd>close<cr>", { buffer = buf })
+	return buf
+end
+
+local function secs(ms)
+	return ("%.1fs"):format(ms / 1000)
+end
+
+function M.pool_status()
+	local rows = pool.status()
+	local lines = {}
+
+	if #rows == 0 then
+		lines = { "No live connections." }
+	else
+		for _, r in ipairs(rows) do
+			table.insert(
+				lines,
+				("%-9s #%d %-8s %-10s age %-7s idle %-7s %s%s"):format(
+					r.provider,
+					r.id,
+					r.primary and "primary" or "overflow",
+					r.state,
+					secs(r.age_ms),
+					secs(r.idle_ms),
+					r.busy and "BUSY" or "idle",
+					r.session_id and ("  " .. r.session_id:sub(1, 12)) or ""
+				)
+			)
+		end
+	end
+
+	local queued = {}
+	for provider, depth in pairs(pool.queue_depths()) do
+		if depth > 0 then
+			table.insert(queued, ("%s: %d"):format(provider, depth))
+		end
+	end
+	table.insert(lines, "")
+	table.insert(lines, "queued — " .. (#queued > 0 and table.concat(queued, ", ") or "nothing"))
+
+	scratch(lines, "AI pool")
+end
+
+---@param provider string
+---@param prompt string
+function M.send(provider, prompt)
+	if not providers.providers[provider] then
+		return vim.notify(
+			("unknown provider %q — try %s"):format(provider, table.concat(vim.tbl_keys(providers.providers), ", ")),
+			vim.log.levels.ERROR
+		)
+	end
+	if not providers.acp_adapter(provider) then
+		return vim.notify(("%s has no ACP transport — nothing for the pool to do"):format(provider), vim.log.levels.WARN)
+	end
+
+	local started = vim.uv.now()
+	vim.notify(("[ai] sending to %s…"):format(provider))
+
+	pool.send({
+		provider = provider,
+		prompt = prompt,
+		on_done = function(text)
+			local header = {
+				("provider  %s"):format(provider),
+				("elapsed   %s"):format(secs(vim.uv.now() - started)),
+				("prompt    %s"):format(prompt),
+				string.rep("─", 40),
+			}
+			local lines = vim.list_extend(header, vim.split(text, "\n", { plain = true }))
+			scratch(lines, "AiDebugSend")
+		end,
+		on_error = function(msg)
+			vim.notify(("[ai] %s failed after %s: %s"):format(provider, secs(vim.uv.now() - started), msg), vim.log.levels.ERROR)
+		end,
+	})
+end
+
+function M.setup()
+	vim.api.nvim_create_user_command("AiPoolStatus", function()
+		M.pool_status()
+	end, { desc = "AI: live ACP connections" })
+
+	vim.api.nvim_create_user_command("AiDebugSend", function(args)
+		local provider = args.fargs[1]
+		local prompt = table.concat(vim.list_slice(args.fargs, 2), " ")
+		if not provider or prompt == "" then
+			return vim.notify("usage: :AiDebugSend {provider} {prompt}", vim.log.levels.ERROR)
+		end
+		M.send(provider, prompt)
+	end, { nargs = "+", desc = "AI: send a raw prompt through the pool" })
+end
+
+return M

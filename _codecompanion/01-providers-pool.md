@@ -30,12 +30,14 @@ One ACP adapter per provider, not per keymap — `ci` and `cI` differ only in pr
 **claude** — start from the stock `claude_code` adapter and override:
 
 - `parameters.clientCapabilities.fs = { readTextFile = false, writeTextFile = false }`. This is hygiene, not enforcement: the capability is inert (`findings.md` → *The `fs` capability is inert*). Advertise nothing we do not intend to serve.
-- `env = {}` — drops `CLAUDE_CODE_OAUTH_TOKEN`, the most plausible cause of the old `_establish_session` stalls, and unnecessary since `authMethods` is empty.
+- `env = {}` — drops `CLAUDE_CODE_OAUTH_TOKEN`, unnecessary since `authMethods` is empty. Note this does *not* keep the variable from the agent: the child inherits the parent environment regardless. It was also **not** the cause of the old `_establish_session` stalls — that was a stale `claude-agent-acp` 0.55.0 that `ensure_nvm_path()` put ahead of Homebrew's 0.59.0 on `PATH` (`findings.md`).
 - `defaults.timeout = 90000` — **must** be restated; the stock value is 20s.
 - `session_config_options = { mode = "dontAsk" }` for every inline session, not just `cI`. This is the actual write defence.
 - do **not** wire `commands.yolo`.
 
 **opencode** — the stock ACP adapter plus `OPENCODE_PERMISSION` in the environment, denying `edit`/`write`/`patch`/`bash` while allowing `read`/`grep`/`glob`/`list`. Deny-everything is not an option: it leaks `<tool_call>` markup as message text, and in one run stopped the process initialising at all. Allow-everything is not an option either: opencode edited a file on disk with zero permission requests. Same 90s timeout restatement.
+
+Pin the model. The `auto` entry in the model list means "let `opencode-llm` walk its own free-tier fallback list", which is meaningful on the relay and meaningless on an ACP session — leaving it unset there lands on opencode's ambient default, currently `opencode/big-pickle`. On the ACP path `auto` resolves to the head of the relay list instead.
 
 **ollama** — the stock HTTP adapter, with `env.url` `http://localhost:11434` for local and `https://ollama.com/api/chat` plus an `Authorization: Bearer $OLLAMA_API_KEY` header for cloud. Two schema defaults carry over from the adapter step 00 deleted, and both matter:
 
@@ -57,7 +59,9 @@ On every inline ACP connection, override `handle_fs_write_file_request` to refus
 - **Overflow on demand**: a second concurrent request on the same provider spawns its own connection, paying ~1.2s and ~132 MB (claude) or ~536 MB (opencode) only while it overlaps. Hard cap of 3 per provider; further requests queue FIFO.
 - **Idle reap**: overflow after ~60s idle, the primary after 15 minutes, respawned transparently on next use. This is what keeps opencode's 536 MB from lingering.
 - **Coroutine requirement**: all connection and session setup must run inside a coroutine. Outside one, `send_rpc_request` falls back to a `vim.wait` busy-loop up to the 90s timeout and freezes the editor.
-- **Per-request watchdog**, ours and not the plugin's: any request producing no completion inside its timeout resolves as an error and clears its virtual text. This also bounds the case where a permission request arrives with no active prompt and is dropped without a reply, leaving the agent waiting forever.
+- **Per-request watchdog**, ours and not the plugin's: any request producing no completion inside its timeout resolves as an error and clears its virtual text. It must be armed **before** the connection exists, since a wedged agent can accept `initialize` and never answer `session/new`, and re-armed when the prompt goes on the wire so queueing does not eat the reply's budget. This also bounds the case where a permission request arrives with no active prompt and is dropped without a reply, leaving the agent waiting forever.
+- **Completion callbacks are deferred out of the plugin's stack** with `vim.schedule`. `handle_done` clears `_active_prompt` *after* calling the completion handler, so a callback that starts the next prompt inline gets that prompt silently discarded — see `findings.md`. Releasing the connection has the same hazard, since it can pump a queued request.
+- **Process death is hooked through the adapter's `handlers.on_exit`** on the per-spawn adapter copy, and flagged synchronously so the crash is reported as a crash rather than as a cancel.
 - **Teardown**: `pcall` the `disconnect()` — it throws on an already-dead handle, which the reaper hits every cycle — and clear our own state regardless. Use our own augroup; the plugin's per-connection `VimLeavePre` autocmds accumulate and are not ours to remove.
 - **Chat connections stay out of this pool.** A chat restoring history on a shared connection would swallow inline updates, because the session-loading branch outranks the active-prompt branch.
 - Each spawn opens an RPC log file; they accumulate one per spawn and want occasional pruning.

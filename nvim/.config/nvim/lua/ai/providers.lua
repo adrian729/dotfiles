@@ -1,0 +1,300 @@
+-- Single source of truth for the AI integration: which providers exist, what options each
+-- carries, what is currently selected, and how far each transport can reach into the machine.
+-- Inline, chat and the status panel all read this module, which is what makes the option UX
+-- shared rather than reimplemented per surface.
+
+local M = {}
+
+-- Whether a transport can touch the filesystem is a property of the transport, not of which
+-- keymap was pressed. Measured — see _codecompanion/findings.md, "Transport reach".
+M.transports = {
+	http = { read = false, write = false, note = "no filesystem access at all" },
+	relay = { read = false, write = false, note = "no filesystem access at all" },
+	acp = { read = true, write = false, note = "can read any file you can; writes denied" },
+}
+
+-- Sentinel for opencode's model option: let `opencode-llm` walk its own free-tier fallback
+-- list instead of pinning one model, so a dead model degrades instead of failing.
+M.AUTO = "auto"
+
+---@type table<string, table>
+M.providers = {
+	ollama = {
+		label = "Ollama",
+		inline_options = { "endpoint", "model", "think" },
+		chat_options = { "endpoint", "model", "think" },
+		options = {
+			endpoint = { label = "Endpoint", values = { "cloud", "local" } },
+			model = { label = "Model", dynamic = true },
+			think = { label = "Think", values = { "off", "on" } },
+		},
+	},
+	claude = {
+		label = "Claude",
+		adapter = "claude_code",
+		inline_options = { "model", "effort", "fast" },
+		chat_options = { "model", "effort", "fast", "mode", "agent" },
+		options = {
+			-- Values below were read off a live session's configOptions. The status panel
+			-- re-resolves them from the connection, since the set is model-dependent.
+			model = { label = "Model", category = "model", values = { "default", "sonnet", "opus", "haiku" } },
+			effort = {
+				label = "Effort",
+				category = "thought_level",
+				values = { "default", "low", "medium", "high", "xhigh", "max" },
+			},
+			-- Offered only on models that support it — opus does, sonnet does not. Sending it
+			-- for a model that lacks it is harmless but logs a warning on every spawn, so it
+			-- stays unset by default and the status panel adds it when the session offers it.
+			fast = { label = "Fast", category = "model_config", values = { "on", "off" } },
+			mode = {
+				label = "Mode",
+				category = "mode",
+				values = { "auto", "default", "acceptEdits", "plan", "dontAsk", "bypassPermissions" },
+			},
+			-- category = nil in the agent's own schema, so it can only be set after the session
+			-- exists, via conn:set_config_option("agent", …). Chat-only; see step 04.
+			agent = { label = "Agent", dynamic = true, category = nil },
+		},
+	},
+	opencode = {
+		label = "OpenCode",
+		adapter = "opencode",
+		inline_options = { "model" },
+		chat_options = { "model", "mode" },
+		options = {
+			model = { label = "Model", dynamic = true, category = "model" },
+			mode = { label = "Mode", category = "mode", values = { "build", "plan" } },
+		},
+	},
+}
+
+-- Free-first, per AGENTS.md. Inline defaults to the fastest measured free backend.
+M.defaults = {
+	inline = {
+		provider = "ollama",
+		opts = {
+			ollama = { endpoint = "cloud", model = "gpt-oss:120b", think = "off" },
+			claude = { model = "sonnet", effort = "medium" },
+			opencode = { model = M.AUTO },
+		},
+	},
+	chat = {
+		provider = "claude",
+		opts = {
+			ollama = { endpoint = "cloud", model = "gpt-oss:120b", think = "off" },
+			claude = { model = "opus", effort = "xhigh", fast = "off", mode = "acceptEdits" },
+			opencode = { model = M.AUTO, mode = "build" },
+		},
+	},
+}
+
+---@type table<string, { provider: string, opts: table<string, table> }>
+local state = vim.deepcopy(M.defaults)
+
+---The current selection for a scope
+---@param scope "inline"|"chat"
+---@return { provider: string, opts: table, spec: table }
+function M.current(scope)
+	local sel = state[scope]
+	return { provider = sel.provider, opts = sel.opts[sel.provider], spec = M.providers[sel.provider] }
+end
+
+---@param scope "inline"|"chat"
+---@param provider string
+function M.set_provider(scope, provider)
+	if not M.providers[provider] then
+		return false, ("unknown provider: %s"):format(provider)
+	end
+	state[scope].provider = provider
+	return true
+end
+
+---@param scope "inline"|"chat"
+---@param key string
+---@param value string
+function M.set_option(scope, key, value)
+	local sel = state[scope]
+	sel.opts[sel.provider][key] = value
+	return true
+end
+
+---Which transport a provider uses for a given inline keymap.
+---@param provider string
+---@param deep boolean True for <leader>cI, which invites repo research
+---@return "http"|"relay"|"acp"
+function M.transport(provider, deep)
+	if provider == "ollama" then
+		return "http"
+	end
+	if provider == "claude" then
+		return "acp"
+	end
+	-- opencode splits: the relay is guaranteed tool-free, ACP is what can actually read the repo
+	return deep and "acp" or "relay"
+end
+
+---@param provider string
+---@param deep boolean
+---@return table reach The transports entry for this provider/keymap pair
+function M.reach(provider, deep)
+	return M.transports[M.transport(provider, deep)]
+end
+
+---The CodeCompanion adapter name backing a provider's ACP transport
+---@param provider string
+---@return string|nil
+function M.acp_adapter(provider)
+	return M.providers[provider] and M.providers[provider].adapter
+end
+
+---The CodeCompanion HTTP adapter name for the current ollama endpoint
+---@param scope "inline"|"chat"
+---@return string
+function M.http_adapter(scope)
+	return M.current(scope).opts.endpoint == "local" and "ollama" or "ollama_cloud"
+end
+
+--=============================================================================
+-- Model lists — resolved live, cached for the nvim session
+--=============================================================================
+
+local cache = {}
+
+local function ollama_url(endpoint)
+	return endpoint == "local" and "http://localhost:11434" or "https://ollama.com"
+end
+
+---Base URL the ollama HTTP adapter should point at for a scope's current endpoint
+---@param scope "inline"|"chat"
+---@return string
+function M.ollama_url(scope)
+	return ollama_url(M.current(scope).opts.endpoint)
+end
+
+---Fetch the ollama model list for an endpoint. Cached per nvim session.
+---@param endpoint "local"|"cloud"
+---@param cb fun(models: string[]|nil, err: string|nil)
+function M.ollama_models(endpoint, cb)
+	local key = "ollama:" .. endpoint
+	if cache[key] then
+		return cb(cache[key])
+	end
+
+	local args = { "curl", "-sS", "--max-time", "10", ollama_url(endpoint) .. "/api/tags" }
+	if endpoint == "cloud" then
+		local key_env = os.getenv("OLLAMA_API_KEY")
+		if not key_env or key_env == "" then
+			return cb(nil, "OLLAMA_API_KEY is not set — start nvim from a shell that exports it")
+		end
+		vim.list_extend(args, { "-H", "Authorization: Bearer " .. key_env })
+	end
+
+	vim.system(args, { text = true }, function(out)
+		vim.schedule(function()
+			if out.code ~= 0 then
+				return cb(nil, ("ollama %s: %s"):format(endpoint, vim.trim(out.stderr or "request failed")))
+			end
+			local ok, json = pcall(vim.json.decode, out.stdout)
+			if not ok or type(json) ~= "table" or type(json.models) ~= "table" then
+				return cb(nil, ("ollama %s: unexpected response"):format(endpoint))
+			end
+			local names = vim.tbl_map(function(m)
+				return m.name
+			end, json.models)
+			table.sort(names)
+			cache[key] = names
+			cb(names)
+		end)
+	end)
+end
+
+---The relay's free-tier fallback list, read from the same config `opencode-llm` walks.
+---@return string[]
+function M.opencode_models()
+	if cache.opencode then
+		return cache.opencode
+	end
+
+	local models = { M.AUTO }
+	-- Same two locations `opencode-llm` itself checks, in the same order
+	local candidates = {
+		vim.fn.expand("$XDG_CONFIG_HOME/opencode/opencode-models.json"),
+		vim.fn.expand("~/.config/opencode/opencode-models.json"),
+		vim.fn.expand("~/.local/config/opencode-models.json"),
+	}
+	for _, path in ipairs(candidates) do
+		if vim.fn.filereadable(path) == 1 then
+			local ok, content = pcall(vim.fn.readfile, path)
+			local decoded_ok, json = false, nil
+			if ok then
+				decoded_ok, json = pcall(vim.json.decode, table.concat(content, "\n"))
+			end
+			if decoded_ok and type(json) == "table" and type(json.relay) == "table" then
+				vim.list_extend(models, json.relay)
+				break
+			end
+		end
+	end
+	if #models == 1 then
+		vim.notify("[ai] could not read opencode-models.json — opencode falls back to its ambient model", vim.log.levels.WARN)
+	end
+
+	cache.opencode = models
+	return models
+end
+
+---Reset the model caches so the next lookup re-queries. Exposed for the status panel.
+function M.clear_cache()
+	cache = {}
+end
+
+--=============================================================================
+-- ACP session options
+--=============================================================================
+
+-- Denying every tool backfires: the model still attempts one, nothing parses the attempt, and
+-- raw <tool_call> markup leaks into the reply as text. Allowing reads removes the leak entirely.
+M.opencode_permission = {
+	edit = "deny",
+	write = "deny",
+	patch = "deny",
+	bash = "deny",
+	read = "allow",
+	grep = "allow",
+	glob = "allow",
+	list = "allow",
+}
+
+---Session config options to preset on a new inline ACP session.
+---@param provider string
+---@return table<string, string>
+function M.inline_session_options(provider)
+	local opts = state.inline.opts[provider] or {}
+	local spec = M.providers[provider]
+	local out = {}
+
+	for _, key in ipairs(spec.inline_options or {}) do
+		local option = spec.options[key]
+		local value = opts[key]
+		if key == "model" and value == M.AUTO then
+			-- AUTO means "let opencode-llm walk its fallback list", which only has meaning on the
+			-- relay. An ACP session has to be pinned to something, and leaving it unset lands on
+			-- opencode's ambient default — currently the paid-tier-adjacent `big-pickle`.
+			value = M.opencode_models()[2]
+		end
+		if option and option.category and value and value ~= M.AUTO then
+			out[option.category] = value
+		end
+	end
+
+	-- The actual write defence on claude: dontAsk denies mutating tools, shell redirects
+	-- included, and it is applied to every inline session rather than only the deep one.
+	if provider == "claude" then
+		out.mode = "dontAsk"
+	end
+
+	return out
+end
+
+return M
