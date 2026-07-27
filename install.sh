@@ -52,6 +52,39 @@ directories=(
   "bettercmdtab"
 )
 
+# Local, gitignored, per-machine opt-out: one package directory name per line,
+# blank lines and #-comments ignored.
+blacklist_file=".stow_blacklist.local"
+blacklist=()
+if [ -f "$blacklist_file" ]; then
+	while IFS= read -r line; do
+		line="${line%%#*}"
+		line=$(echo "$line" | xargs)
+		[ -n "$line" ] && blacklist+=("$line")
+	done <"$blacklist_file"
+fi
+
+is_blacklisted() {
+	local needle=$1
+	for item in "${blacklist[@]}"; do
+		[ "$item" == "$needle" ] && return 0
+	done
+	return 1
+}
+
+if [ "${#blacklist[@]}" -gt 0 ]; then
+	filtered=()
+	for dir in "${directories[@]}"; do
+		if is_blacklisted "$dir"; then
+			echo "🚫 Skipping $dir ($blacklist_file)."
+		else
+			filtered+=("$dir")
+		fi
+	done
+	directories=("${filtered[@]}")
+	echo ""
+fi
+
 if [ -z "$stow_all" ]; then
 	read -p "Do you want to stow all directories without asking? (y/n): " stow_all
 fi

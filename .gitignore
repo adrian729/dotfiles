@@ -5,3 +5,5 @@ tmux-client-*.log
 **/settings.local.json
 
 .worktrees/
+
+.stow_blacklist.local
