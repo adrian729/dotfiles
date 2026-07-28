@@ -57,18 +57,42 @@ fi
 
 # Branch goes LAST in the record (counts are integers, so a '|' in a branch name can't
 # corrupt the field split); write via a temp file + atomic rename to avoid torn reads.
+# Mirrors starship.toml's [git_status] categories (staged/modified/untracked/deleted/
+# conflicted/ahead/behind) off one `git status --porcelain=v1 --branch` call, so a file
+# that's both staged and deleted etc. gets counted the same way the prompt counts it.
 if cache_is_stale; then
     if git rev-parse --git-dir > /dev/null 2>&1; then
-        BRANCH=$(git branch --show-current 2>/dev/null)
-        STAGED=$(git diff --cached --numstat 2>/dev/null | wc -l | tr -d ' ')
-        MODIFIED=$(git diff --numstat 2>/dev/null | wc -l | tr -d ' ')
-        tmp=$(mktemp "${CACHE_FILE}.XXXXXX") && printf '%s|%s|%s\n' "$STAGED" "$MODIFIED" "$BRANCH" > "$tmp" && mv -f "$tmp" "$CACHE_FILE"
+        BRANCH=""; STAGED=0; MODIFIED=0; UNTRACKED=0; DELETED=0; CONFLICTED=0; AHEAD=0; BEHIND=0
+        while IFS= read -r line; do
+            case "$line" in
+                "## "*)
+                    branch_line="${line#"## "}"
+                    BRANCH="${branch_line%%...*}"
+                    [ "$BRANCH" = "HEAD (no branch)" ] && BRANCH=""
+                    [[ "$branch_line" =~ ahead\ ([0-9]+) ]]  && AHEAD="${BASH_REMATCH[1]}"
+                    [[ "$branch_line" =~ behind\ ([0-9]+) ]] && BEHIND="${BASH_REMATCH[1]}"
+                    ;;
+                "??"*) UNTRACKED=$((UNTRACKED + 1)) ;;
+                "DD "*|"AU "*|"UD "*|"UA "*|"DU "*|"AA "*|"UU "*) CONFLICTED=$((CONFLICTED + 1)) ;;
+                *)
+                    x="${line:0:1}"; y="${line:1:1}"
+                    if [ "$x" = "D" ] || [ "$y" = "D" ]; then
+                        DELETED=$((DELETED + 1))
+                    else
+                        [ "$x" != " " ] && STAGED=$((STAGED + 1))
+                        [ "$y" != " " ] && MODIFIED=$((MODIFIED + 1))
+                    fi
+                    ;;
+            esac
+        done < <(git status --porcelain=v1 --branch 2>/dev/null)
+        tmp=$(mktemp "${CACHE_FILE}.XXXXXX") && printf '%s|%s|%s|%s|%s|%s|%s|%s\n' \
+            "$STAGED" "$MODIFIED" "$UNTRACKED" "$DELETED" "$CONFLICTED" "$AHEAD" "$BEHIND" "$BRANCH" > "$tmp" && mv -f "$tmp" "$CACHE_FILE"
     else
-        tmp=$(mktemp "${CACHE_FILE}.XXXXXX") && printf '||\n' > "$tmp" && mv -f "$tmp" "$CACHE_FILE"
+        tmp=$(mktemp "${CACHE_FILE}.XXXXXX") && printf '|||||||\n' > "$tmp" && mv -f "$tmp" "$CACHE_FILE"
     fi
 fi
 
-IFS='|' read -r STAGED MODIFIED BRANCH < "$CACHE_FILE"
+IFS='|' read -r STAGED MODIFIED UNTRACKED DELETED CONFLICTED AHEAD BEHIND BRANCH < "$CACHE_FILE"
 
 # Shared cache for rate limits (account-level, not per-session). The parse emits -1 for an
 # absent window; fall back to the last known values only then, so a genuine 0% (e.g. right
@@ -115,7 +139,23 @@ case "$PCT"   in ''|*[!0-9]*) PCT=0 ;;   esac
 case "$HOURS" in ''|*[!0-9]*) HOURS=0 ;; esac
 case "$WEEK"  in ''|*[!0-9]*) WEEK=0 ;;  esac
 
-GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; CYAN=$'\033[36m'; BLUE=$'\033[94m'; GRAY=$'\033[37m'; RESET=$'\033[0m'
+# Catppuccin Mocha (true color), matching zsh/.config/zsh/starship.toml's palette.
+# RED is git-status's deleted/conflicted red (matches starship's own "bold red"). CRIT is
+# the context/rate-limit critical color — back to the same vivid alarm red as RED, after
+# several toned-down/pure-hue variants all read as too orange.
+GREEN=$'\033[38;2;166;227;161m'; YELLOW=$'\033[38;2;249;226;175m'; RED=$'\033[1m\033[38;2;255;23;68m'
+CRIT=$'\033[1m\033[38;2;255;23;68m'
+MAUVE=$'\033[38;2;203;166;247m'; BLUE=$'\033[38;2;137;180;250m'; SKY=$'\033[38;2;137;220;235m'
+TEXT=$'\033[38;2;205;214;244m'
+OVERLAY1=$'\033[38;2;127;132;156m'; OVERLAY0=$'\033[38;2;108;112;134m'
+BOLD=$'\033[1m'; RESET=$'\033[0m'
+
+# Effort gradient + a distinct star color for thinking mode. PALE_RED is the original
+# pastel Catppuccin red (#f38ba8) from before RED/CRIT became the vivid alarm color.
+PALE_RED=$'\033[38;2;243;139;168m'; PINK=$'\033[38;2;245;194;231m'; LAVENDER=$'\033[38;2;180;190;254m'
+
+# Same glyph as starship.toml's [git_branch] symbol, so the branch marker matches the shell prompt.
+BRANCH_ICON=$''
 
 NOW=$(date +%s)
 
@@ -136,18 +176,20 @@ if [ "${WEEK_RESET:-0}" -gt 0 ] 2>/dev/null; then
     fi
 fi
 
+# Two-tone bar: filled portion in the caller's threshold color, empty portion
+# dimmed to overlay0 as a track — RESET is baked in so call sites don't rewrap it.
 make_bar() {
-    local val=${1:-0} _fill _pad bar
+    local val=${1:-0} color=$2 outvar=$3 _fill _pad bar
     (( val < 0 )) && val=0; (( val > 100 )) && val=100
     local filled=$((val / 10)) empty=$((10 - val / 10))
     printf -v _fill "%${filled}s"; printf -v _pad "%${empty}s"
-    bar="${_fill// /█}${_pad// /░}"
-    eval "$2=\"\$bar\""
+    bar="${color}${_fill// /█}${OVERLAY0}${_pad// /░}${RESET}"
+    eval "$outvar=\"\$bar\""
 }
 
 usage_color() {
     local val=${1:-0}
-    if   [ "$val" -ge 40 ] 2>/dev/null; then echo "$RED"
+    if   [ "$val" -ge 40 ] 2>/dev/null; then echo "$CRIT"
     elif [ "$val" -ge 20 ] 2>/dev/null; then echo "$YELLOW"
     else echo "$GREEN"; fi
 }
@@ -162,39 +204,84 @@ pace_color() {
         local elapsed=$(( (win - left) * 100 / win ))
         (( elapsed < 0 )) && elapsed=0; (( elapsed > 100 )) && elapsed=100
         local over=$(( used - elapsed ))
-        if   [ "$over" -ge 20 ]; then color="$RED"
+        if   [ "$over" -ge 20 ]; then color="$CRIT"
         elif [ "$over" -gt 0  ]; then color="$YELLOW"; fi
     fi
-    if   [ "$used" -gt 80 ] 2>/dev/null; then color="$RED"
+    if   [ "$used" -gt 80 ] 2>/dev/null; then color="$CRIT"
     elif [ "$used" -gt 50 ] 2>/dev/null && [ "$color" = "$GREEN" ]; then color="$YELLOW"; fi
     echo "$color"
 }
 
-make_bar "${PCT:-0}"   CTX_BAR;  CTX_COLOR=$(usage_color "${PCT:-0}")
-make_bar "${HOURS:-0}" H_BAR;    H_COLOR=$(pace_color "${HOURS:-0}" "${HOURS_RESET:-0}" 18000)
-make_bar "${WEEK:-0}"  W_BAR;    W_COLOR=$(pace_color "${WEEK:-0}"  "${WEEK_RESET:-0}"  604800)
-H_RESET_COLOR=$H_COLOR; W_RESET_COLOR=$W_COLOR
+effort_color() {
+    case "$1" in
+        low)    echo "$YELLOW" ;;
+        medium) echo "$GREEN" ;;
+        high)   echo "$PINK" ;;
+        xhigh)  echo "$PALE_RED" ;;
+        max)    echo "$CRIT" ;;
+        *)      echo "$OVERLAY1" ;;
+    esac
+}
+
+# Unrecognized models fall back to OVERLAY0 (same dim tone as the session-id line) and
+# skip BOLD entirely — an unknown model shouldn't visually compete with a real one.
+model_color() {
+    local m; m=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    case "$m" in
+        *opus*)   echo "$MAUVE" ;;
+        *haiku*)  echo "$YELLOW" ;;
+        *fable*)  echo "$CRIT" ;;
+        *sonnet*) echo "$BLUE" ;;
+        *)        echo "$OVERLAY0" ;;
+    esac
+}
+
+model_bold() {
+    local m; m=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    case "$m" in
+        *opus*|*haiku*|*fable*|*sonnet*) echo "$BOLD" ;;
+        *)                               echo "" ;;
+    esac
+}
+
+CTX_COLOR=$(usage_color "${PCT:-0}");                                    make_bar "${PCT:-0}"   "$CTX_COLOR" CTX_BAR
+H_COLOR=$(pace_color "${HOURS:-0}" "${HOURS_RESET:-0}" 18000);           make_bar "${HOURS:-0}" "$H_COLOR"   H_BAR
+W_COLOR=$(pace_color "${WEEK:-0}"  "${WEEK_RESET:-0}"  604800);          make_bar "${WEEK:-0}"  "$W_COLOR"   W_BAR
 
 EXCEEDS_STR=""
-[ "$EXCEEDS_200K" = "true" ] && EXCEEDS_STR=" ${RED}>200k${RESET}"
+[ "$EXCEEDS_200K" = "true" ] && EXCEEDS_STR=" ${CRIT}>200k${RESET}"
 
 THINK_MARK=""; [ "$THINKING" = "true" ] && THINK_MARK="✱"
+EFFORT_COLOR=$(effort_color "$EFFORT")
 EFFORT_SEG=""
-if   [ -n "$EFFORT" ] && [ -n "$THINK_MARK" ]; then EFFORT_SEG=" ${GRAY}(${EFFORT} ${THINK_MARK})${RESET}"
-elif [ -n "$EFFORT" ];                          then EFFORT_SEG=" ${GRAY}(${EFFORT})${RESET}"
-elif [ -n "$THINK_MARK" ];                      then EFFORT_SEG=" ${GRAY}(${THINK_MARK})${RESET}"
+if   [ -n "$EFFORT" ] && [ -n "$THINK_MARK" ]; then EFFORT_SEG=" ${LAVENDER}${THINK_MARK}${RESET}${EFFORT_COLOR}${EFFORT}${RESET}"
+elif [ -n "$EFFORT" ];                          then EFFORT_SEG=" ${EFFORT_COLOR}${EFFORT}${RESET}"
+elif [ -n "$THINK_MARK" ];                      then EFFORT_SEG=" ${LAVENDER}${THINK_MARK}${RESET}"
 fi
-LINE1="${BLUE}[$MODEL]${RESET}${EFFORT_SEG} | ${CTX_COLOR}${CTX_BAR}${RESET} ${GRAY}${PCT:-0}% context${RESET}${EXCEEDS_STR}"
+MODEL_COLOR=$(model_color "$MODEL"); MODEL_BOLD=$(model_bold "$MODEL")
+LINE1="${MODEL_COLOR}${MODEL_BOLD}[$MODEL]${RESET}${EFFORT_SEG} ${CTX_BAR} ${CTX_COLOR}${PCT:-0}%${RESET}${EXCEEDS_STR}"
 
+# Mirrors starship.toml's directory/git_branch/git_status segments exactly, same order as
+# its format string: $ahead_behind$staged$modified$untracked$deleted$conflicted.
 SHORT_DIR="${DIR/#$HOME/~}"
 if [ -n "$BRANCH" ]; then
     GIT_COUNTS=""
-    [ "${STAGED:-0}"   -gt 0 ] 2>/dev/null && GIT_COUNTS=" ${GREEN}+$STAGED${RESET}"
-    [ "${MODIFIED:-0}" -gt 0 ] 2>/dev/null && GIT_COUNTS="${GIT_COUNTS} ${RED}~$MODIFIED${RESET}"
-    LINE2="${GRAY}${SHORT_DIR}${RESET} on ${CYAN}$BRANCH${RESET}${GIT_COUNTS}"
+    if   [ "${AHEAD:-0}" -gt 0 ] 2>/dev/null && [ "${BEHIND:-0}" -gt 0 ] 2>/dev/null; then
+        GIT_COUNTS="${SKY}${BOLD}⇡${AHEAD}⇣${BEHIND} ${RESET}"
+    elif [ "${AHEAD:-0}"  -gt 0 ] 2>/dev/null; then
+        GIT_COUNTS="${SKY}${BOLD}⇡${AHEAD} ${RESET}"
+    elif [ "${BEHIND:-0}" -gt 0 ] 2>/dev/null; then
+        GIT_COUNTS="${SKY}${BOLD}⇣${BEHIND} ${RESET}"
+    fi
+    [ "${STAGED:-0}"     -gt 0 ] 2>/dev/null && GIT_COUNTS="${GIT_COUNTS}${GREEN}${BOLD}+$STAGED ${RESET}"
+    [ "${MODIFIED:-0}"   -gt 0 ] 2>/dev/null && GIT_COUNTS="${GIT_COUNTS}${YELLOW}${BOLD}●$MODIFIED ${RESET}"
+    [ "${UNTRACKED:-0}"  -gt 0 ] 2>/dev/null && GIT_COUNTS="${GIT_COUNTS}${TEXT}${BOLD}?$UNTRACKED ${RESET}"
+    [ "${DELETED:-0}"    -gt 0 ] 2>/dev/null && GIT_COUNTS="${GIT_COUNTS}${RED}✘$DELETED ${RESET}"
+    [ "${CONFLICTED:-0}" -gt 0 ] 2>/dev/null && GIT_COUNTS="${GIT_COUNTS}${RED}⚡$CONFLICTED ${RESET}"
+    LINE2="${SKY}${SHORT_DIR}${RESET} ${MAUVE}${BOLD}${BRANCH_ICON} ${BRANCH}${RESET} ${GIT_COUNTS}"
 else
-    LINE2="${GRAY}${SHORT_DIR}${RESET}"
+    LINE2="${SKY}${SHORT_DIR}${RESET}"
 fi
-LINE3="${W_COLOR}${W_BAR}${RESET} ${WEEK:-0}% weekly${W_RESET_COLOR}${W_RESET_STR}${RESET} | ${H_COLOR}${H_BAR}${RESET} ${HOURS:-0}% hourly${H_RESET_COLOR}${H_RESET_STR}${RESET}"
+LINE3="${W_BAR} ${W_COLOR}w${WEEK:-0}%${W_RESET_STR}${RESET} ${H_BAR} ${H_COLOR}h${HOURS:-0}%${H_RESET_STR}${RESET}"
 
-printf '%s\n%s\n%s\n%s%s%s\n' "$LINE1" "$LINE2" "$LINE3" "$GRAY" "$SESSION_ID" "$RESET"
+printf '%s\n%s\n%s\n%s%s%s\n' "$LINE1" "$LINE2" "$LINE3" "$OVERLAY0" "$SESSION_ID" "$RESET"
