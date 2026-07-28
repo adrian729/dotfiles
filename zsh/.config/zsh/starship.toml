@@ -7,6 +7,10 @@ add_newline = false
 scan_timeout = 100
 
 format = """
+$cmd_duration\
+
+$line_break\
+
 [λ ](pink)\
 $directory\
 $os\
@@ -26,6 +30,8 @@ $php\
 $java\
 $kotlin\
 $haskell\
+
+$fill\
 
 $time\
 
@@ -146,11 +152,23 @@ symbol = ""
 style = "bg:sapphire"
 format = '[[ $symbol( $context) ](fg:crust bg:sapphire)]($style)'
 
+[fill]
+symbol = "▁"
+style = "fg:overlay0"
+
+[cmd_duration]
+show_milliseconds = true
+format = "\n[  in $duration ]($style) \n"
+style = "fg:mauve"
+disabled = false
+show_notifications = true
+min_time_to_notify = 1000
+
 [time]
 disabled = false
 time_format = "%R"
 style = "bg:lavender"
-format = '[[ $time ](fg:lavender)]($style)'
+format = '[[  $time ](fg:lavender)]($style)'
 
 [line_break]
 disabled = false 
