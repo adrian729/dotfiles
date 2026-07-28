@@ -153,7 +153,7 @@ style = "bg:sapphire"
 format = '[[ $symbol( $context) ](fg:crust bg:sapphire)]($style)'
 
 [fill]
-symbol = "▁"
+symbol = "━"
 style = "fg:overlay0"
 
 [cmd_duration]
