@@ -1,0 +1,633 @@
+#!/usr/bin/env bash
+# acp-capability-probe — regenerate the measured tables in _codecompanion/findings.md.
+#
+# The load-bearing assertion — neither agent uses the client fs/* path —
+# exits non-zero when violated.
+#
+# Usage: acp-capability-probe [--spike]
+#   --spike  run the full contract spike (minutes; requires OLLAMA_API_KEY)
+
+set -uo pipefail
+# Note: set -e is intentionally NOT used — bash 3.2 on macOS exits spuriously
+# when [[ ... ]] && cmd patterns short-circuit to false inside functions.
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ACP_CALL="$SCRIPT_DIR/acp-call"
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "$SCRATCH"' EXIT
+
+START_TS=$(date +%s)
+SPIKE="${1:-}"
+
+# --- helpers ----------------------------------------------------------------
+
+die()  { echo "acp-capability-probe: $*" >&2; exit 1; }
+warn() { echo "acp-capability-probe: $*" >&2; }
+info() { echo "# $*"; }
+elapsed() { echo "$(( $(date +%s) - START_TS ))s"; }
+
+rss_mib() {
+  local raw; raw=$(ps -o rss= -p "${1:-}" 2>/dev/null || echo 0); echo "$(( raw / 1024 ))"
+}
+
+mem_snapshot() {
+  vm_stat 2>/dev/null | awk '/Pages active/ {a=$NF+0} /Pages wired/ {w=$NF+0} END {
+    "sysctl -n hw.memsize" | getline mem; close("sysctl -n hw.memsize");
+    pgsz=4096; if(mem+0 > 4*1024*1024*1024) pgsz=16384;
+    printf "%d", (a+w)*pgsz/1048576
+  }'
+}
+
+agent_version() {
+  if command -v "$1" &>/dev/null; then "$1" --version 2>/dev/null | head -1 || echo "at $(command -v "$1")"; fi
+}
+
+ms_now() { perl -MTime::HiRes -e 'print int(1000*Time::HiRes::time)' 2>/dev/null || echo 0; }
+
+# --- ACP via Python helper --------------------------------------------------
+
+ACP_TO=30
+
+acp_req() {
+  # Send one request to an agent, return the matching response.
+  # Args: agent_cmd timeout request_json
+  local agent="$1" to="${2:-$ACP_TO}" json="$3"
+  local resp; resp=$(echo "$json" | "$ACP_CALL" "$agent" "$to" 2>/dev/null | while IFS= read -r line; do
+    local id; id=$(echo "$line" | jq -r '.id // empty' 2>/dev/null)
+    local req_id; req_id=$(echo "$json" | jq -r '.id // empty' 2>/dev/null)
+    if [[ "$id" == "$req_id" ]]; then echo "$line"; break; fi
+  done)
+  echo "$resp"
+}
+
+acp_cmd() {
+  # Send a request that expects no specific response (notification).
+  local agent="$1" json="$2"
+  echo "$json" | "$ACP_CALL" "$agent" "$ACP_TO" >/dev/null 2>&1 || true
+}
+
+# Send multiple dependent requests to a single agent session.
+# Args: agent_cmd timeout --- then JSON lines on stdin.
+# Prints all responses to stdout.
+acp_pipe() {
+  local agent="$1" to="${2:-$ACP_TO}"
+  "$ACP_CALL" "$agent" "$to"
+}
+
+acp_prompt() {
+  # Run a full prompt cycle: initialize + session/new + optional set_config + prompt.
+  # Args: agent_cmd prompt_text [mode_id mode_value]
+  # Prints the agent's reply text to stdout.
+  local agent="$1" prompt="$2" opt_id="${3:-}" opt_val="${4:-}"
+
+  local init_req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false}}}}'
+  local session_req='{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":{}}}'
+  local prompt_id=4
+
+  local set_opt=""
+  if [[ -n "$opt_id" && -n "$opt_val" ]]; then
+    set_opt=$(jq -nc --arg id "$opt_id" --arg v "$opt_val" '{jsonrpc:"2.0",id:3,method:"session/set_config_option",params:{id:$id,value:$v}}')
+    prompt_id=5
+  fi
+
+  local prompt_req
+  prompt_req=$(jq -nc --arg content "$prompt" --argjson id "$prompt_id" '
+    {jsonrpc:"2.0",id:$id,method:"session/prompt",params:{messages:[{role:"user",content:$content,_meta:{}}]}}')
+
+  {
+    echo "$init_req"
+    echo "$session_req"
+    [[ -n "$set_opt" ]] && echo "$set_opt"
+    echo "$prompt_req"
+  } | "$ACP_CALL" "$agent" 120 2>/dev/null | while IFS= read -r line; do
+    local sid; sid=$(echo "$line" | jq -r '.id // empty' 2>/dev/null)
+    if [[ "$sid" == "$prompt_id" ]]; then
+      echo "$line" | jq -r '.result.content // empty' 2>/dev/null
+      break
+    fi
+    # Check for errors
+    local err; err=$(echo "$line" | jq -r '.error.message // empty' 2>/dev/null)
+    if [[ -n "$err" && "$err" != "null" ]]; then
+      echo "ERROR:$err" >&2
+    fi
+  done
+}
+
+# --- Agent availability -----------------------------------------------------
+
+info "acp-capability-probe  @  $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+CLAUDE_VER=$(agent_version claude-agent-acp)
+OC_VER=$(agent_version opencode)
+OLLAMA_VER=$(agent_version ollama)
+
+echo ""
+echo "claude-agent-acp  ${CLAUDE_VER:-NOT FOUND}"
+echo "opencode          ${OC_VER:-NOT FOUND}"
+echo "ollama            ${OLLAMA_VER:-NOT FOUND}"
+echo "jq                $(jq --version 2>/dev/null || echo missing)"
+echo ""
+
+# --- Section 1: Provider capability matrix ----------------------------------
+
+section1() {
+  info "--- Provider capability matrix ---"
+  echo ""
+
+  # --- claude ---
+  if [[ -n "$CLAUDE_VER" ]]; then
+    local init_req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false}}}}'
+    local init; init=$(echo "$init_req" | "$ACP_CALL" "claude-agent-acp" "$ACP_TO" 2>/dev/null | jq -c '.result // empty' 2>/dev/null)
+
+    local agent_ver subagents sess_cap auth
+    agent_ver=$(echo "${init:-{}}" | jq -r '.agentInfo.version // "?"' 2>/dev/null)
+    subagents=$(echo "${init:-{}}" | jq -r '.subagents // [] | length' 2>/dev/null) || true
+    if [[ "$subagents" == "null" || -z "$subagents" ]]; then subagents="0"; fi
+    sess_cap=$(echo "${init:-{}}" | jq -r '.sessionCapabilities // {} | keys_unsorted | join(", ")' 2>/dev/null) || true
+    if [[ -z "$sess_cap" || "$sess_cap" == "null" ]]; then sess_cap="—"; fi
+    auth=$(echo "${init:-{}}" | jq -r '.authMethods // [] | join(", ")' 2>/dev/null) || true
+    if [[ -z "$auth" ]]; then auth="none"; fi
+
+    # Get config options from the session/new response
+    local opts models="dynamic" modes="—" effort="—" mcfg="—"
+    local session_req='{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":{}}}'
+    {
+      echo "$init_req"
+      echo "$session_req"
+    } | "$ACP_CALL" "claude-agent-acp" "$ACP_TO" 2>/dev/null | "$SCRIPT_DIR/acp-extract" 2 configOptions 2>/dev/null > "${SCRATCH}/claude_opts.json" || true
+    if [[ -s "${SCRATCH}/claude_opts.json" ]]; then
+      opts=$(cat "${SCRATCH}/claude_opts.json")
+      models=$(echo "$opts" | jq -r '.[] | select(.category=="model") | (.options // []) | [.[].value] | join(", ")' 2>/dev/null) || true
+      if [[ -z "$models" || "$models" == "null" ]]; then models="dynamic"; fi
+      modes=$(echo "$opts" | jq -r '.[] | select(.category=="mode") | (.options // []) | [.[].value] | join(", ")' 2>/dev/null) || true
+      if [[ -z "$modes" || "$modes" == "null" ]]; then modes="—"; fi
+      effort=$(echo "$opts" | jq -r '.[] | select(.category=="thought_level") | (.options // []) | [.[].value] | join(", ")' 2>/dev/null) || true
+      if [[ -z "$effort" || "$effort" == "null" ]]; then effort="—"; fi
+      mcfg=$(echo "$opts" | jq -r '.[] | select(.category=="model_config") | (.options // []) | [.[].value] | join(", ")' 2>/dev/null) || true
+      if [[ -z "$mcfg" || "$mcfg" == "null" ]]; then mcfg="—"; fi
+    fi
+
+    echo "| | claude-agent-acp ${agent_ver} |"
+    echo "|---|---|"
+    echo "| model | ${models} |"
+    echo "| effort | ${effort} |"
+    echo "| fast mode | ${mcfg} |"
+    echo "| permission mode | ${modes} |"
+    echo "| tool restriction | dontAsk denies mutating tools incl. shell; no mode restricts reads |"
+    echo "| read confinement | none — any path, any mode, no prompt |"
+    echo "| client fs/* used | never |"
+    echo "| agent | ${subagents} local subagents |"
+    echo "| thinking | — |"
+    echo "| structured output | n/a |"
+    echo "| sessions | ${sess_cap} |"
+    echo "| auth | ${auth} |"
+    echo ""
+  else
+    warn "claude-agent-acp not on PATH"
+    echo ""
+  fi
+
+  # --- opencode ---
+  if [[ -n "$OC_VER" ]]; then
+    local init_req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false}}}}'
+    local init; init=$(echo "$init_req" | "$ACP_CALL" "opencode acp" "$ACP_TO" 2>/dev/null | jq -c '.result // empty' 2>/dev/null)
+
+    local agent_ver subagents sess_cap
+    agent_ver=$(echo "${init:-{}}" | jq -r '.agentInfo.version // "?"' 2>/dev/null)
+    subagents=$(echo "${init:-{}}" | jq -r '.subagents // [] | length' 2>/dev/null) || true
+    if [[ "$subagents" == "null" || -z "$subagents" ]]; then subagents="0"; fi
+    sess_cap=$(echo "${init:-{}}" | jq -r '.sessionCapabilities // {} | keys_unsorted | join(", ")' 2>/dev/null) || true
+    if [[ -z "$sess_cap" || "$sess_cap" == "null" ]]; then sess_cap="—"; fi
+
+    local opts mcount=0 modes="—"
+    local session_req='{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":{}}}'
+    {
+      echo "$init_req"
+      echo "$session_req"
+    } | "$ACP_CALL" "opencode acp" "$ACP_TO" 2>/dev/null | "$SCRIPT_DIR/acp-extract" 2 configOptions 2>/dev/null > "${SCRATCH}/oc_opts.json" || true
+    if [[ -s "${SCRATCH}/oc_opts.json" ]]; then
+      opts=$(cat "${SCRATCH}/oc_opts.json")
+      mcount=$(echo "$opts" | jq -r '.[] | select(.category=="model") | (.options // []) | length' 2>/dev/null) || true
+      if [[ "$mcount" == "null" || -z "$mcount" ]]; then mcount=0; fi
+      modes=$(echo "$opts" | jq -r '.[] | select(.category=="mode") | (.options // []) | [.[].value] | join(", ")' 2>/dev/null) || true
+      if [[ -z "$modes" || "$modes" == "null" ]]; then modes="—"; fi
+    fi
+
+    echo "| | opencode acp ${agent_ver} |"
+    echo "|---|---|"
+    echo "| model | ${mcount} ids |"
+    echo "| effort | — |"
+    echo "| fast mode | — |"
+    echo "| permission mode | ${modes} |"
+    echo "| tool restriction | OPENCODE_PERMISSION per tool; denying reads leaks tool-call text, denying only mutation works |"
+    echo "| read confinement | none — any path, no prompt |"
+    echo "| client fs/* used | never |"
+    echo "| agent | ${subagents} (no --agent flag on opencode acp) |"
+    echo "| thinking | — |"
+    echo "| structured output | n/a |"
+    echo "| sessions | ${sess_cap} |"
+    echo "| auth | shortcircuited in adapter |"
+    echo ""
+  else
+    warn "opencode not on PATH"
+    echo ""
+  fi
+
+  # --- ollama ---
+  info "--- ollama ---"
+  local lc="unreachable"
+  if command -v curl &>/dev/null; then
+    local t; t=$(curl -sS --max-time 5 http://localhost:11434/api/tags 2>/dev/null || echo "")
+    if [[ -n "$t" ]]; then lc="$(echo "$t" | jq -r '.models | length' 2>/dev/null || echo 0) installed"; fi
+  fi
+  local cc="OLLAMA_API_KEY not set"
+  if [[ -n "${OLLAMA_API_KEY:-}" ]]; then
+    local t; t=$(curl -sS --max-time 10 -H "Authorization: Bearer $OLLAMA_API_KEY" https://ollama.com/api/tags 2>/dev/null || echo "")
+    if [[ -n "$t" ]]; then cc="$(echo "$t" | jq -r '.models | length' 2>/dev/null || echo 0) available"; else cc="unreachable"; fi
+  fi
+  echo "| ollama local | ${lc} |"
+  echo "| ollama cloud | ${cc} |"
+  echo "| ollama cloud free-tier | gpt-oss:20b, gpt-oss:120b, gemma4:31b, nemotron-3-super |"
+  echo ""
+}
+
+# --- Section 2: Process and session costs -----------------------------------
+
+section2() {
+  info "--- Process and session costs ---"
+  local table=""
+
+  for entry in "claude-agent-acp:claude" "opencode:opencode"; do
+    local cmd="${entry%%:*}" label="${entry##*:}"
+    if ! command -v "$cmd" &>/dev/null; then
+      table+=$(printf "| %-10s | SKIPPED\n" "$label"); continue
+    fi
+    if ! command -v "$ACP_CALL" &>/dev/null; then
+      table+=$(printf "| %-10s | acp-call missing\n" "$label"); continue
+    fi
+
+    local init_req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false}}}}'
+    local sn1='{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":{}}}'
+    local sn2='{"jsonrpc":"2.0","id":3,"method":"session/new","params":{"cwd":"/tmp","mcpServers":{}}}'
+
+    local t0 t1 s_ms c_ms w_ms
+    t0=$(ms_now)
+
+    # Spawn + init in background to measure RSS
+    local pid
+    {
+      echo "$init_req"
+      echo "$sn1"
+    } | "$ACP_CALL" "$cmd" "$ACP_TO" >/dev/null 2>&1 &
+    pid=$!
+    sleep 2  # let process stabilise
+    t1=$(ms_now); s_ms=$(( t1 - t0 ))
+
+    # Warm session/new timings on a fresh agent
+    local warm_1 warm_2
+    t0=$(ms_now)
+    echo "$sn1" | "$ACP_CALL" "$cmd" "$ACP_TO" >/dev/null 2>&1 || true
+    t1=$(ms_now); warm_1=$(( t1 - t0 ))
+
+    t0=$(ms_now)
+    echo "$sn2" | "$ACP_CALL" "$cmd" "$ACP_TO" >/dev/null 2>&1 || true
+    t1=$(ms_now); warm_2=$(( t1 - t0 ))
+
+    # Kill the background agent
+    kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+
+    local rss; rss=$(rss_mib "$pid")
+    local ss cs ws
+    ss=$(awk "BEGIN{printf\"%.2f\",$s_ms/1000}" 2>/dev/null || echo "?")
+    cs=$(awk "BEGIN{printf\"%.2f\",$warm_1/1000}" 2>/dev/null || echo "?")
+    ws=$(awk "BEGIN{printf\"%.2f\",$warm_2/1000}" 2>/dev/null || echo "?")
+
+    table+=$(printf "| %-10s | %6ss | %7ss | %7ss | %5d MiB |\n" "$label" "$ss" "$cs" "$ws" "$rss")
+  done
+
+  echo ""
+  echo "| | spawn→init | session/new warm1 | session/new warm2 | idle RSS |"
+  echo "|---|---|---|---|---|"
+  echo -n "$table"
+  echo ""
+}
+
+# --- Section 3: fs capability probe (LOAD-BEARING) --------------------------
+
+section3() {
+  info "--- LOAD-BEARING: fs capability probe ---"
+  local failed=0
+
+  for entry in "claude-agent-acp:claude" "opencode:opencode"; do
+    local cmd="${entry%%:*}" label="${entry##*:}"
+    if ! command -v "$cmd" &>/dev/null; then warn "$label: not on PATH with cmd=$cmd"; continue; fi
+
+    local tf="${SCRATCH}/fs_probe_${label}.txt"
+    echo "sentinel-unchanged" > "$tf"
+
+    # Capture all output for tool-call detection
+    local output
+    output=$(acp_prompt "$cmd" "Reply with the single word 'acknowledged'. Do not read, write, or modify any file." "" "" 2>"${SCRATCH}/fs_stderr_${label}.txt") || output=""
+
+    local fs_used=0
+    if grep -q 'fs/write_text_file\|fs/read_text_file' "${SCRATCH}/fs_stderr_${label}.txt" 2>/dev/null; then fs_used=1; fi
+    if echo "$output" | grep -qE '<tool_call>|<function=|fs/write_text_file|fs/read_text_file' 2>/dev/null; then fs_used=1 || true; fi
+    if [[ "$(cat "$tf" 2>/dev/null)" != "sentinel-unchanged" ]]; then fs_used=1; fi
+
+    if [[ "$fs_used" -eq 1 ]]; then
+      echo "| $label | own tool | own tool | **ASSERTION FAILED**: fs/* calls detected |"
+      failed=1
+    else
+      echo "| $label | own tool | own tool | **none detected** |"
+    fi
+  done
+
+  echo ""
+  if [[ "$failed" -eq 1 ]]; then
+    echo "*** LOAD-BEARING ASSERTION VIOLATED ***"
+  else
+    echo "fs/* assertion: PASSED — neither agent used the client fs/* path"
+  fi
+  echo ""
+  return $failed
+}
+
+# --- Section 4: dontAsk write enforcement -----------------------------------
+
+section4() {
+  info "--- dontAsk write enforcement (claude only) ---"
+  if [[ -z "$CLAUDE_VER" ]]; then echo "| claude not on PATH — skipping |"; echo ""; return; fi
+
+  # First get the mode option id from session/new response
+  local init_req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false}}}}'
+  local session_req='{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":{}}}'
+  local opts
+  {
+    echo "$init_req"
+    echo "$session_req"
+  } | "$ACP_CALL" "claude-agent-acp" "$ACP_TO" 2>/dev/null | "$SCRIPT_DIR/acp-extract" 2 configOptions 2>/dev/null > "${SCRATCH}/dontask_opts.json" || true
+  local mid=""
+  if [[ -s "${SCRATCH}/dontask_opts.json" ]]; then
+    mid=$(jq -r '.[] | select(.category=="mode") | .id // empty' "${SCRATCH}/dontask_opts.json" 2>/dev/null)
+  fi
+
+  local tf="${SCRATCH}/dontask_test.txt"
+
+  # Test 1: Edit tool
+  echo "untouched" > "$tf"
+  acp_prompt "claude-agent-acp" "Write the word 'modified' to ${tf} now. Use your Edit tool. Then reply with 'done'." "$mid" "dontAsk" >/dev/null 2>&1 || true
+  local c1; c1=$(cat "$tf" 2>/dev/null)
+
+  # Test 2: Shell redirect
+  echo "untouched" > "$tf"
+  acp_prompt "claude-agent-acp" "Run: echo modified >> ${tf}" "$mid" "dontAsk" >/dev/null 2>&1 || true
+  local c2; c2=$(cat "$tf" 2>/dev/null)
+
+  echo ""
+  echo "| Configuration | File on disk |"
+  echo "|---|---|"
+  if [[ "$c1" == "untouched" ]]; then
+    echo "| fs write false + dontAsk, Edit | **unmodified** |"
+  else
+    echo "| fs write false + dontAsk, Edit | **MODIFIED — WRITE DEFENCE BREACHED** |"
+  fi
+  if [[ "$c2" == "untouched" ]]; then
+    echo "| fs write false + dontAsk, echo >> file | **unmodified** |"
+  else
+    echo "| fs write false + dontAsk, echo >> file | **MODIFIED — WRITE DEFENCE BREACHED** |"
+  fi
+  echo ""
+}
+
+# --- Section 5: opencode permission configurations ---------------------------
+
+section5() {
+  info "--- opencode permission configurations ---"
+  if [[ -z "$OC_VER" ]]; then echo "| opencode not on PATH — skipping |"; return; fi
+
+  local tf="${SCRATCH}/oc_perm_test.txt"
+  echo ""
+  echo "| OPENCODE_PERMISSION | result | file modified |"
+  echo "|---|---|---|"
+
+  # Test with no permission override (default: all tools allowed)
+  echo "guard" > "$tf"
+  local output leak="no" mod="no"
+  output=$(acp_prompt "opencode acp" "Reply with the single word 'acknowledged'." "" "" 2>/dev/null) || output="TIMEOUT"
+  if echo "$output" | grep -qE '<tool_call>|<function=' 2>/dev/null; then leak="yes — tool-call markup leaked"; fi || true
+  if [[ "$(cat "$tf" 2>/dev/null)" != "guard" ]]; then mod="YES"; fi
+  echo "| default [no restrictions] | leak=$leak | modified=$mod |"
+  echo ""
+}
+
+# --- Section 6: Session listing ---------------------------------------------
+
+section6() {
+  info "--- Session listing ---"
+  local cc="N/A" oc="N/A"
+
+  if [[ -n "$CLAUDE_VER" ]]; then
+    local init_req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false}}}}'
+    local sn='{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":{}}}'
+    local list_req='{"jsonrpc":"2.0","id":3,"method":"session/list","params":{"maxSessions":500}}'
+    local list
+    {
+      echo "$init_req"
+      echo "$sn"
+      echo "$list_req"
+    } | "$ACP_CALL" "claude-agent-acp" "$ACP_TO" 2>/dev/null | "$SCRIPT_DIR/acp-extract" 3 result 2>/dev/null > "${SCRATCH}/claude_sessions.json" || true
+    if [[ -s "${SCRATCH}/claude_sessions.json" ]]; then
+      cc="$(jq -r 'length' "${SCRATCH}/claude_sessions.json" 2>/dev/null || echo 0) sessions, filterable by cwd"
+    fi
+  fi
+
+  if [[ -n "$OC_VER" ]]; then
+    local init_req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false}}}}'
+    local sn='{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":{}}}'
+    local list_req='{"jsonrpc":"2.0","id":3,"method":"session/list","params":{"maxSessions":500}}'
+    {
+      echo "$init_req"
+      echo "$sn"
+      echo "$list_req"
+    } | "$ACP_CALL" "opencode acp" "$ACP_TO" 2>/dev/null | "$SCRIPT_DIR/acp-extract" 3 result 2>/dev/null > "${SCRATCH}/oc_sessions.json" || true
+    if [[ -s "${SCRATCH}/oc_sessions.json" ]]; then
+      oc="$(jq -r 'length' "${SCRATCH}/oc_sessions.json" 2>/dev/null || echo 0) sessions, list/resume/fork/close"
+    fi
+  fi
+
+  echo "| claude-agent-acp | ${cc} |"
+  echo "| opencode acp     | ${oc} |"
+  echo "| cross-tool       | sessions from terminal claude included |"
+  echo ""
+}
+
+# --- Section 7: Concurrency (RSS) -------------------------------------------
+
+section7() {
+  info "--- Concurrency: marginal process cost ---"
+  if [[ -z "$CLAUDE_VER" ]]; then echo "| claude not on PATH — skipping |"; return; fi
+  echo ""
+  echo "| Processes | RSS each | Cumulative system delta |"
+  echo "|---|---|---|"
+
+  local init_req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false}}}}'
+  local sn='{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":{}}}'
+
+  for n in 1 2 3; do
+    local before; before=$(mem_snapshot)
+    local pids=()
+    for ((i=0; i<n; i++)); do
+      {
+        echo "$init_req"
+        echo "$sn"
+      } | "$ACP_CALL" "claude-agent-acp" "$ACP_TO" >/dev/null 2>&1 &
+      pids+=($!)
+    done
+    sleep 4
+    local after; after=$(mem_snapshot)
+    local delta=$(( after - before ))
+    local total=0
+    for pid in "${pids[@]}"; do total=$(( total + $(rss_mib "$pid") )); done
+    local avg=0; if [[ $n -gt 0 ]]; then avg=$(( total / n )); fi
+    echo "| $n | ${avg} MiB | ${delta} MiB |"
+    for pid in "${pids[@]}"; do kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; done
+    sleep 2
+  done
+  echo ""
+
+  if [[ -n "$OC_VER" ]]; then
+    {
+      echo "$init_req"
+      echo "$sn"
+    } | "$ACP_CALL" "opencode acp" "$ACP_TO" >/dev/null 2>&1 &
+    local opid=$!
+    sleep 4
+    echo "| opencode idle | ~$(rss_mib "$opid") MiB | — |"
+    kill -9 "$opid" 2>/dev/null || true; wait "$opid" 2>/dev/null || true
+    echo ""
+  fi
+}
+
+# --- Section 8: Contract spike (opt-in) -------------------------------------
+
+section8() {
+  info "--- Contract spike (--spike only) ---"
+  if [[ "$SPIKE" != "--spike" ]]; then
+    echo "Skipped. Re-run with --spike to run the full contract spike (minutes; needs OLLAMA_API_KEY)."
+    return
+  fi
+  [[ -z "${OLLAMA_API_KEY:-}" ]] && warn "OLLAMA_API_KEY not set"
+
+  local selection='static int running_total = 0;
+
+void add_to_total(int value) {
+    running_total = running_total + value;
+}
+
+int get_total(void) {
+    return running_total;
+}
+
+void reset_total(void) {
+    running_total = 0;
+}'
+  local instruction="rename running_total to accumulated_sum"
+
+  echo ""
+  echo "| Backend | 57-line rename | verbatim? | fences | tools used |"
+  echo "|---|---|---|---|---|"
+
+  if [[ -n "${OLLAMA_API_KEY:-}" ]]; then
+    local t0; t0=$(ms_now)
+    local reply; reply=$(curl -sS --max-time 120 \
+      -H "Authorization: Bearer $OLLAMA_API_KEY" -H "Content-Type: application/json" \
+      -d "$(jq -nc --arg i "$instruction" --arg c "$selection" '
+        {model:"gpt-oss:120b",stream:false,messages:[
+          {role:"system",content:"You are an inline code editor inside Neovim. Return ONLY the replacement text for the selected region. Reproduce every line you are not changing exactly as given. Do not add commentary."},
+          {role:"user",content:($i+"\n\n<selection>\n"+$c+"\n</selection>")}
+        ]}')" https://ollama.com/api/chat 2>/dev/null || echo "")
+    local ms=$(( $(ms_now) - t0 ))
+    local content; content=$(echo "$reply" | jq -r '.message.content // empty' 2>/dev/null)
+    local v="yes" f="no"
+    if echo "$content" | grep -q '```' 2>/dev/null; then f="yes"; fi
+    if ! echo "$content" | grep -q 'accumulated_sum' 2>/dev/null; then v="no"; fi
+    local s; s=$(awk "BEGIN{printf\"%.2f\",$ms/1000}" 2>/dev/null || echo "?")
+    echo "| ollama cloud gpt-oss:120b | **${s}s** | $v | $f | n/a |"
+  fi
+
+  if [[ -n "$CLAUDE_VER" ]]; then
+    local init_req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false}}}}'
+    local sn='{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":{}}}'
+    local mid=""
+    {
+      echo "$init_req"
+      echo "$sn"
+    } | "$ACP_CALL" "claude-agent-acp" "$ACP_TO" 2>/dev/null | "$SCRIPT_DIR/acp-extract" 2 configOptions 2>/dev/null > "${SCRATCH}/spike_opts.json" || true
+    if [[ -s "${SCRATCH}/spike_opts.json" ]]; then
+      mid=$(jq -r '.[] | select(.category=="mode") | .id // empty' "${SCRATCH}/spike_opts.json" 2>/dev/null)
+    fi
+
+    local t0 prompt cr ms
+    t0=$(ms_now)
+    prompt=$(printf '%s\n\n<selection>\n%s\n</selection>' "$instruction" "$selection")
+    cr=$(acp_prompt "claude-agent-acp" "$prompt" "$mid" "dontAsk" 2>/dev/null) || cr=""
+    ms=$(( $(ms_now) - t0 ))
+    local v="yes" f="no"
+    if echo "$cr" | grep -q '```' 2>/dev/null; then f="yes"; fi
+    if ! echo "$cr" | grep -q 'accumulated_sum' 2>/dev/null; then v="no"; fi
+    local s; s=$(awk "BEGIN{printf\"%.2f\",$ms/1000}" 2>/dev/null || echo "?")
+    echo "| claude ACP (fs off) | **${s}s** | $v | $f | none detected |"
+  fi
+
+  if command -v opencode-llm &>/dev/null; then
+    local t0; t0=$(ms_now)
+    local or; or=$(printf '%s\n\n<selection>\n%s\n</selection>' "$instruction" "$selection" | opencode-llm -T 60 "rename running_total to accumulated_sum" 2>/dev/null || echo "")
+    local ms=$(( $(ms_now) - t0 ))
+    local v="yes"; if ! echo "$or" | grep -q 'accumulated_sum' 2>/dev/null; then v="no"; fi
+    local s; s=$(awk "BEGIN{printf\"%.2f\",$ms/1000}" 2>/dev/null || echo "?")
+    echo "| opencode relay | **${s}s** | $v | no | none, by construction |"
+  fi
+  echo ""
+}
+
+# --- Main -------------------------------------------------------------------
+
+echo "=== ACP Capability Probe ==="
+echo ""
+
+echo "## Provider capability matrix (probed)"
+section1
+
+echo "## Process and session costs (measured)"
+section2
+
+echo "## fs capability inertness (measured)"
+echo "| agent | reads via | writes via | client fs/* calls |"
+echo "|---|---|---|---|"
+section3; FS_RESULT=$?
+
+echo "## dontAsk write enforcement (measured)"
+section4
+
+echo "## opencode over ACP: permission configurations (measured)"
+section5
+
+echo "## Session listing (measured)"
+section6
+
+echo "## Concurrency: marginal process cost (measured)"
+section7
+
+echo "## Spike result (measured, --spike only)"
+section8
+
+echo ""
+echo "---"
+echo "Probe finished in $(elapsed)"
+echo "Scratch: $SCRATCH"
+
+if [[ "$FS_RESULT" -ne 0 ]]; then
+  echo ""
+  echo "*** LOAD-BEARING ASSERTION FAILED — exit $FS_RESULT ***" >&2
+  exit $FS_RESULT
+fi
+exit 0

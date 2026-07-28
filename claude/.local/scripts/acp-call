@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""One-shot ACP JSON-RPC call — spawn agent, send request(s), print response(s), exit.
+
+Usage: echo '<json-request>' | acp-call AGENT_CMD [TIMEOUT]
+
+Each line on stdin is a separate JSON-RPC request sent to the agent in sequence.
+Each response line is printed to stdout as it arrives. Non-matching notifications
+(session/update, etc.) are printed too.
+
+The agent process is killed after all requests have been processed or on timeout.
+
+If the request is a session/prompt, the helper also reads session/update
+notifications and accumulates content, printing the final result.
+
+For multiple dependent requests (e.g. initialize → session/new → get_config_options),
+pipe them all at once:
+
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,...}' '{"jsonrpc":"2.0","id":2,...}' | acp-call claude-agent-acp
+"""
+
+import sys
+import json
+import subprocess
+import select
+import os
+import signal
+import time
+
+TIMEOUT = 30
+
+def read_line_nonblock(fd):
+    r, _, _ = select.select([fd], [], [], 0.1)
+    if not r:
+        return None
+    line = fd.readline()
+    if not line:
+        return None
+    return line.rstrip("\r\n")
+
+def main():
+    global TIMEOUT
+    if len(sys.argv) < 2:
+        print("usage: acp-call AGENT_CMD [TIMEOUT_SECS]", file=sys.stderr)
+        sys.exit(1)
+
+    agent_cmd = sys.argv[1]
+    if len(sys.argv) > 2:
+        TIMEOUT = int(sys.argv[2])
+
+    requests = []
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            requests.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+
+    if not requests:
+        sys.exit(0)
+
+    proc = subprocess.Popen(
+        agent_cmd,
+        shell=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        preexec_fn=os.setsid if hasattr(os, "setsid") else None,
+    )
+
+    import threading
+    def forward_stderr():
+        for line in proc.stderr:
+            print(line, end="", file=sys.stderr, flush=True)
+    t = threading.Thread(target=forward_stderr, daemon=True)
+    t.start()
+
+    dead = False
+
+    try:
+        for req in requests:
+            if dead:
+                break
+
+            req_id = req.get("id")
+            is_prompt = req.get("method") == "session/prompt"
+
+            proc.stdin.write(json.dumps(req) + "\n")
+            proc.stdin.flush()
+
+            content_buf = []
+            deadline = time.time() + TIMEOUT
+            if is_prompt:
+                deadline = time.time() + 120
+
+            while time.time() < deadline:
+                line = read_line_nonblock(proc.stdout)
+                if line is None:
+                    if proc.poll() is not None:
+                        dead = True
+                        break
+                    continue
+
+                try:
+                    resp = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                resp_id = resp.get("id")
+
+                if is_prompt and resp_id is None:
+                    method = resp.get("method", "")
+                    if method == "session/update":
+                        params = resp.get("params", {})
+                        content = params.get("content")
+                        stop_reason = params.get("stopReason")
+                        if content:
+                            content_buf.append(content)
+                        if stop_reason:
+                            # Assemble final result
+                            result = {
+                                "jsonrpc": "2.0",
+                                "id": req_id,
+                                "result": {
+                                    "content": "".join(content_buf),
+                                    "stopReason": stop_reason,
+                                },
+                            }
+                            print(json.dumps(result), flush=True)
+                            break
+                    # Also print the notification for tool-call detection
+                    print(json.dumps(resp), flush=True)
+                    continue
+
+                if resp_id == req_id:
+                    if is_prompt and content_buf:
+                        # Merge accumulated content into the result
+                        existing_content = resp.get("result", {}).get("content", "")
+                        if existing_content and existing_content != "".join(content_buf):
+                            content_buf.append(existing_content)
+                        resp["result"]["content"] = "".join(content_buf)
+                    print(json.dumps(resp), flush=True)
+                    break
+
+                # Other messages — print them
+                print(json.dumps(resp), flush=True)
+
+                if proc.poll() is not None:
+                    dead = True
+                    break
+            else:
+                # Timeout
+                print(json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {"code": -32000, "message": "timeout"},
+                }), flush=True)
+
+    except (BrokenPipeError, KeyboardInterrupt):
+        pass
+    finally:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            pass
+
+if __name__ == "__main__":
+    main()

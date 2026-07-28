@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+"""Extract a field from ACP JSON-RPC output, filtering by response id.
+
+Usage: acp-extract TARGET_ID [KEY]
+  Reads JSON lines from stdin.
+  When a line with matching id is found, prints d['result'] (or d['result'][KEY]).
+  Exits after first match.
+"""
+import sys, json
+target_id = int(sys.argv[1]) if len(sys.argv) > 1 else 2
+key = sys.argv[2] if len(sys.argv) > 2 else None
+for line in sys.stdin:
+    try:
+        d = json.loads(line.strip())
+        if d.get('id') == target_id and 'result' in d:
+            val = d['result']
+            if key and key != "result":
+                val = val.get(key, [])
+            print(json.dumps(val))
+            break
+    except:
+        pass

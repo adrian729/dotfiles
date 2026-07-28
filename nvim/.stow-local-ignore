@@ -1,2 +1,3 @@
 ^/install\.sh
 ^/\.config/nvim/\.claude/
+^/_nvim_ai

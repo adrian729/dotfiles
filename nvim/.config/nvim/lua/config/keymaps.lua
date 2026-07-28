@@ -147,5 +147,17 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- ------------------------------------------------------------------
 -- codecompanion.lua
 -- ------------------------------------------------------------------
--- Being rebuilt from scratch — see dotfiles/_codecompanion/ for the plan.
--- This block is restored in one pass by step 08, once the full binding set exists.
+-- <leader>ci - inline prompt (forbids tools)
+-- <leader>cI - inline prompt, may read the repo (ACP transports only)
+-- <leader>cmi - switch inline backend / model
+-- <leader>cmc - switch chat backend / model
+-- <leader>cx - cancel inline request(s)
+-- <leader>cj / <leader>ck - next / previous inline diff hunk
+-- g2 / g3 - accept / reject inline diff under cursor
+-- <leader>cc - toggle last chat (message if none)
+-- <leader>ca - action palette
+-- <leader>cn - new chat with current provider + options
+-- <leader>cq - close all chats
+-- <leader>cs - status panel
+-- <leader>cl - chat list
+-- ga / gd / … - plugin-native, inside the chat buffer
