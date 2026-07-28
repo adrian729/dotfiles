@@ -4,7 +4,7 @@ palette = "catppuccin_mocha"
 
 add_newline = false
 
-scan_timeout = 100
+scan_timeout = 30
 
 format = """
 $cmd_duration\
@@ -162,7 +162,7 @@ format = "\n[  in $duration ]($style) \n"
 style = "fg:mauve"
 disabled = false
 show_notifications = true
-min_time_to_notify = 1000
+min_time_to_notify = 10000
 
 [time]
 disabled = false
