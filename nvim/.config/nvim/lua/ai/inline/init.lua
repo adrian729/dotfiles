@@ -784,6 +784,7 @@ function M.pick()
 			if model then
 				providers.set_option("inline", "model", model)
 			end
+			require("ai.acp_pool").drain_provider(providers.current("inline").provider)
 			local current = providers.current("inline")
 			vim.notify(("[ai] inline → %s · %s"):format(provider, tostring(current.opts.model)))
 		end

@@ -77,7 +77,8 @@ The **Step** column is load-bearing, not decoration: after step 00 strips every 
 |---|---|---|---|
 | `<leader>ci` | n, x | Inline prompt (forbids tool use) | 03 |
 | `<leader>cI` | n, x | Inline prompt inviting repo reads (ACP transports only) | 03 |
-| `<leader>cm` | n | Switch inline backend / model | 03 |
+| `<leader>cmi` | n | Switch inline backend / model | 03 |
+| `<leader>cmc` | n | Switch chat backend / model | 04 |
 | `<leader>cx` | n | Cancel inline request(s) | 03 |
 | `<leader>cj` / `<leader>ck` | n | Next / previous hunk in the diff under the cursor | 03 |
 | `g2` / `g3` | n | Accept / reject diff under cursor | 03 |
@@ -89,7 +90,7 @@ The **Step** column is load-bearing, not decoration: after step 00 strips every 
 | `<leader>cl` | n | Chat list | 06 |
 | `ga`, `gd`, `/…` | n | Plugin-native, inside the chat buffer | 01 (arrives with the adapters) |
 
-Three changes from today's bindings: `<leader>ct` is gone, since `think` is a status-panel row like every other provider option; `<leader>cx` no longer resets a stuck busy flag — it cancels in-flight requests; and `g1` (always-accept) is gone, because `skip_default_keymaps` stops the plugin binding it and per-buffer blanket approval is meaningless once several diffs can be pending in one buffer. The comment block at `lua/config/keymaps.lua:150-158` documents all three as they are today and must be updated with them (step 08).
+Four changes from today's bindings: `<leader>ct` is gone, since `think` is a status-panel row like every other provider option; `<leader>cx` no longer resets a stuck busy flag — it cancels in-flight requests; `g1` (always-accept) is gone, because `skip_default_keymaps` stops the plugin binding it and per-buffer blanket approval is meaningless once several diffs can be pending in one buffer; and the single `<leader>cm` (switch model) was split deliberately into `<leader>cmi` (inline scope) and `<leader>cmc` (chat scope) — one key per scope avoids a two-step prompt where the first question is always "which scope?". The comment block at `lua/config/keymaps.lua:150-158` documents all four as they are today and must be updated with them (step 08).
 
 ## Build order
 

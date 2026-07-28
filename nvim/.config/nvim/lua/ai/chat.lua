@@ -36,15 +36,24 @@ local function ensure_spinner_group()
 				return
 			end
 
+			local chat = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
+
 			-- Claude agent: must be applied after the session exists (category = nil)
 			local agent = pending_agents[bufnr]
 			if agent then
 				pending_agents[bufnr] = nil
-				local chat = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
 				local conn = chat and chat.acp_connection
 				if conn and conn.set_config_option then
 					pcall(conn.set_config_option, conn, "agent", agent)
 				end
+			end
+
+			-- An ACP submit that fails before a prompt exists — connection or session setup — still
+			-- fires ChatSubmitted, but RequestFinished only ever comes from the prompt builder, so a
+			-- spinner started here would never be stopped. That failure clears current_request
+			-- synchronously (Chat:done, before the event fires), which is how we recognise it.
+			if chat and not chat.current_request then
+				return
 			end
 
 			local ui = require("ai.ui")
@@ -146,7 +155,7 @@ local function resolve_chat_adapter()
 
 	for _, key in ipairs(spec.chat_options or {}) do
 		local option = (spec.options or {})[key]
-		local value = opts[key]
+		local value = providers.resolve_chat_option_value(sel.provider, key, opts[key])
 		if option and option.category and value then
 			session_opts[option.category] = value
 		end
@@ -195,8 +204,15 @@ local function post_create(chat)
 end
 
 ---Toggle the last chat buffer. Delegates to the plugin's own toggle, which
----tracks last_chat internally and is the authority on show/hide state.
+---tracks last_chat internally and is the authority on show/hide state — but
+---only once a real chat exists. Without this guard, the plugin's own toggle
+---creates a brand-new chat with adapter = nil when there is none, bypassing
+---all of this repo's provider/model/effort/mode setup.
 function M.toggle()
+	local chat = require("codecompanion.interactions.chat").last_chat()
+	if not chat or not api.nvim_buf_is_valid(chat.bufnr) then
+		return vim.notify("[ai] no chat to toggle — <leader>cn to start one", vim.log.levels.INFO)
+	end
 	vim.cmd("CodeCompanionChat Toggle")
 end
 
@@ -220,9 +236,22 @@ end
 ---Close every chat buffer the plugin knows about.
 function M.close_all()
 	local closed = 0
-	for _, buf in ipairs(vim.g.codecompanion_buffers or {}) do
+	-- Snapshot before iterating: Chat:close() mutates codecompanion_buffers
+	-- via table.remove, and ipairs over the live table would skip elements
+	-- as later entries shift down into already-visited slots.
+	local bufs = vim.list_extend({}, _G.codecompanion_buffers or {})
+	for _, buf in ipairs(bufs) do
 		if api.nvim_buf_is_valid(buf) then
-			pcall(api.nvim_buf_delete, buf, { force = true })
+			-- Route through Chat:close() so the acp_connection gets
+			-- disconnected and codecompanion_buffers/chats bookkeeping stays
+			-- in sync; a raw buf_delete would leak the subprocess and leave
+			-- the stale bufnr behind.
+			local chat = require("codecompanion.interactions.chat").buf_get_chat(buf)
+			if chat then
+				chat:close()
+			else
+				pcall(api.nvim_buf_delete, buf, { force = true })
+			end
 			closed = closed + 1
 		end
 	end

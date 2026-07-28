@@ -172,6 +172,36 @@ local function spawn(provider, cb)
 	}
 	table.insert(pool, entry)
 
+	-- Bound the setup below. Inside a coroutine send_rpc_request has no timeout of its own, so an
+	-- agent that starts, answers `initialize` and then goes quiet suspends this body forever — and
+	-- a suspended body means an entry that stays `busy` and `spawning`: the reaper only considers
+	-- `ready` entries, and a request's watchdog can only clean up an entry that was handed to it.
+	-- Three of those and the provider's cap is gone for the rest of the session. Killing the
+	-- process routes the entry through the same death path as a crash, which frees the slot and
+	-- pumps the queue.
+	local function disarm()
+		local timer = entry.spawn_timer
+		entry.spawn_timer = nil
+		if timer and not timer:is_closing() then
+			timer:stop()
+			timer:close()
+		end
+	end
+	entry.spawn_timer = vim.defer_fn(function()
+		entry.spawn_timer = nil -- defer_fn closes its own timer before calling back
+		if entry.state == "spawning" then
+			on_process_exit(entry)
+		end
+	end, DEFAULT_TIMEOUT_MS)
+
+	-- Every exit from the setup body reports through cb, so disarming here covers success and
+	-- failure alike without threading a call into each branch.
+	local report = cb
+	cb = function(entry_or_nil, err)
+		disarm()
+		return report(entry_or_nil, err)
+	end
+
 	-- resolve() merges session_config_options into adapter.defaults itself
 	-- (adapters/acp/init.lua:126), which is where acp_defaults.apply reads them from.
 	local adapter = adapters.resolve(adapter_name, {
@@ -199,10 +229,12 @@ local function spawn(provider, cb)
 
 		if not conn:connect_and_authenticate() then
 			drop(entry)
+			pump(provider)
 			return cb(nil, ("%s: failed to start the agent process"):format(provider))
 		end
 		if not conn:ensure_session() then
 			drop(entry)
+			pump(provider)
 			return cb(nil, ("%s: failed to create a session"):format(provider))
 		end
 
@@ -211,6 +243,7 @@ local function spawn(provider, cb)
 		local unmet = unmet_requirements(provider, conn)
 		if unmet then
 			drop(entry)
+			pump(provider)
 			return cb(nil, unmet)
 		end
 
@@ -237,12 +270,21 @@ function pump(provider)
 		return
 	end
 
-	for _, entry in ipairs(pools[provider] or {}) do
+	local pool = pools[provider] or {}
+	for _, entry in ipairs(pool) do
 		if entry.state == "ready" and not entry.busy then
 			entry.busy = true
 			local waiter = table.remove(queue, 1)
 			return waiter(entry)
 		end
+	end
+
+	-- Nothing to reuse, but the cap may have room again — every entry for this provider can die
+	-- or be dropped while a request is queued, and without this the waiter has no way to ask for
+	-- a fresh process and just burns its whole deadline in the queue.
+	if pools[provider] and #pool < CAP then
+		local waiter = table.remove(queue, 1)
+		return spawn(provider, waiter)
 	end
 end
 
@@ -328,6 +370,28 @@ function M.shutdown()
 	end
 	queues = {}
 	M.stop_reaper()
+end
+
+---Tear down every connection for a provider. Used when the model changes, so the
+---next request gets a fresh process with the new model.
+---@param provider string
+function M.drain_provider(provider)
+	local pool = pools[provider]
+	if pool then
+		for i = #pool, 1, -1 do
+			teardown(table.remove(pool, i))
+		end
+	end
+	-- Fire queued waiters so they don't hang forever without an error
+	local q = queues[provider]
+	queues[provider] = nil
+	if q then
+		for _, cb in ipairs(q) do
+			vim.schedule(function()
+				cb(nil, "pool was drained — the model changed")
+			end)
+		end
+	end
 end
 
 vim.api.nvim_create_autocmd("VimLeavePre", {
@@ -446,6 +510,7 @@ function M.send(opts)
 		end)
 		if not ok or not builder then
 			drop(acquired)
+			pump(acquired.provider)
 			entry = nil
 			return fail(("%s: could not build the prompt (%s)"):format(opts.provider, tostring(builder)))
 		end

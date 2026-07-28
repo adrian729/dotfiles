@@ -101,6 +101,20 @@ return {
 				desc = "AI: close all chats",
 			},
 			{
+				"<leader>cs",
+				function()
+					require("ai.status").toggle()
+				end,
+				desc = "AI: status panel",
+			},
+			{
+				"<leader>cl",
+				function()
+					require("ai.chat_list").open()
+				end,
+				desc = "AI: chat list",
+			},
+			{
 				"<leader>cx",
 				function()
 					require("ai.inline").cancel()

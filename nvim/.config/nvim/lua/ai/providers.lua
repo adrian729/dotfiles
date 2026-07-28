@@ -270,6 +270,33 @@ M.opencode_permission = {
 	list = "allow",
 }
 
+---Resolve a stored option value for a live session, substituting the AUTO sentinel with a
+---real model so it never reaches an agent as a literal value — agents don't recognize "auto"
+---and silently fall back to their own ambient default instead of erroring.
+---@param provider string
+---@param key string
+---@param value string|nil
+---@return string|nil
+function M.resolve_chat_option_value(provider, key, value)
+	if key ~= "model" or value ~= M.AUTO then
+		return value
+	end
+	-- AUTO means "let opencode-llm walk its fallback list", which only has meaning on the
+	-- relay. A live session has to be pinned to something, and leaving it unset lands on
+	-- opencode's ambient default — currently the paid-tier-adjacent `big-pickle`.
+	local resolved = M.opencode_models()[2]
+	if not resolved then
+		-- Nothing to pin to, so staying quiet here would land on exactly the default this
+		-- branch exists to avoid. Say so where the user will see it.
+		vim.notify(
+			"[ai] no free opencode model is known, so this session falls back to opencode's "
+				.. "own default — check opencode-models.json",
+			vim.log.levels.WARN
+		)
+	end
+	return resolved
+end
+
 ---Session config options to preset on a new inline ACP session.
 ---@param provider string
 ---@return table<string, string>
@@ -280,22 +307,7 @@ function M.inline_session_options(provider)
 
 	for _, key in ipairs(spec.inline_options or {}) do
 		local option = spec.options[key]
-		local value = opts[key]
-		if key == "model" and value == M.AUTO then
-			-- AUTO means "let opencode-llm walk its fallback list", which only has meaning on the
-			-- relay. An ACP session has to be pinned to something, and leaving it unset lands on
-			-- opencode's ambient default — currently the paid-tier-adjacent `big-pickle`.
-			value = M.opencode_models()[2]
-			if not value then
-				-- Nothing to pin to, so staying quiet here would land on exactly the default this
-				-- branch exists to avoid. Say so where the user will see it.
-				vim.notify(
-					"[ai] no free opencode model is known, so this session falls back to opencode's "
-						.. "own default — check opencode-models.json",
-					vim.log.levels.WARN
-				)
-			end
-		end
+		local value = M.resolve_chat_option_value(provider, key, opts[key])
 		if option and option.category and value and value ~= M.AUTO then
 			out[option.category] = value
 		end
