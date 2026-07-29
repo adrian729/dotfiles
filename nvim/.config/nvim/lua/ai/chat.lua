@@ -37,15 +37,15 @@ local function ensure_winbar_highlights()
 		surface1 = palette.surface1
 		surface0 = palette.surface0
 	else
-		mauve = "#c6a0f6"
-		pink = "#94e2d5" -- teal — visibly distinct from the real pink, screams "fallback"
-		blue = "#c6a0f6" -- mauve — same as provider, also screams "fallback"
+		mauve = "#c6a0f6" -- title only
+		pink = "#94e2d5" -- teal — model, visibly distinct from the real pink
+		blue = "#c6a0f6" -- mauve — same as title, also screams "fallback"
 		surface1 = "#585b70"
 		surface0 = "#45475a"
 	end
 
-	vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = mauve, bg = "NONE" })
-	vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = pink, bg = "NONE" })
+	vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = pink, bg = "NONE" }) -- teal in fallback
+	vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = pink, bg = "NONE" }) -- teal in fallback
 	vim.api.nvim_set_hl(0, "AiWinBarTitle", { fg = blue, bg = "NONE" })
 	vim.api.nvim_set_hl(0, "AiWinBarDim", { fg = surface1, bg = "NONE" })
 	vim.api.nvim_set_hl(0, "AiWinBarSep", { fg = surface0, bg = "NONE" })

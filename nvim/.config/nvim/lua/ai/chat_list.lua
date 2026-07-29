@@ -34,9 +34,9 @@ local function ensure_highlights()
 				blue = "#c6a0f6" -- mauve — same as provider, also screams "fallback"
 			end
 
-		vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = mauve, bg = "NONE" })
-		vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = pink, bg = "NONE" })
-		vim.api.nvim_set_hl(0, "AiWinBarTitle", { fg = blue, bg = "NONE" })
+		vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = pink, bg = "NONE" }) -- teal in fallback
+		vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = pink, bg = "NONE" }) -- teal in fallback
+		vim.api.nvim_set_hl(0, "AiWinBarTitle", { fg = blue, bg = "NONE" }) -- mauve in fallback
 	end)
 end
 
