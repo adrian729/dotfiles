@@ -154,7 +154,7 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- <leader>cx - cancel inline request(s)
 -- <leader>cj / <leader>ck - next / previous inline diff hunk
 -- g2 / g3 - accept / reject inline diff under cursor
--- <leader>cc - toggle last chat (message if none)
+-- <leader>cc - toggle last chat (creates one if none)
 -- <leader>ca - action palette
 -- <leader>cn - new chat with current provider + options
 -- <leader>cq - close all chats

@@ -327,7 +327,7 @@ end
 function M.toggle()
 	local chat = require("codecompanion.interactions.chat").last_chat()
 	if not chat or not api.nvim_buf_is_valid(chat.bufnr) then
-		return vim.notify("[ai] no chat to toggle — <leader>cn to start one", vim.log.levels.INFO)
+		return M.new()
 	end
 	vim.cmd("CodeCompanionChat Toggle")
 end
