@@ -31,6 +31,8 @@ If you close the buffer or the last window showing it while a diff is pending, t
 
 Press `<leader>cx`. If your cursor is on the line where an inline request is in flight, that request is cancelled. In a chat buffer, it stops the running agent.
 
+Press `<leader>cX` to cancel every in-flight inline request in the buffer at once.
+
 **Switching provider or model:**
 
 Press `<leader>cmi`. You are prompted to pick a provider, then a model (two pickers, in order):

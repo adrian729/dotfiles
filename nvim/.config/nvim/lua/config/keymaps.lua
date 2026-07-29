@@ -152,6 +152,7 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- <leader>cmi - switch inline backend / model
 -- <leader>cmc - switch chat backend / model
 -- <leader>cx - cancel inline request under cursor; in a chat buffer stops the agent
+-- <leader>cX - cancel all inline requests in this buffer
 -- <leader>cj / <leader>ck - next / previous inline diff hunk
 -- g2 / g3 - accept / reject inline diff under cursor
 -- <leader>cc - toggle last chat (creates one if none)

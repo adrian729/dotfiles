@@ -119,7 +119,14 @@ return {
 				function()
 					require("ai.inline").cancel()
 				end,
-				desc = "AI: cancel inline request(s)",
+				desc = "AI: cancel inline request under cursor / stop chat agent",
+			},
+			{
+				"<leader>cX",
+				function()
+					require("ai.inline").cancel_all()
+				end,
+				desc = "AI: cancel all inline requests in this buffer",
 			},
 		},
 		config = function()

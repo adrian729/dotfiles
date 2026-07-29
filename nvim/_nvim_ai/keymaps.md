@@ -9,6 +9,7 @@
 | `<leader>cmi` | n | Switch inline backend / model |
 | `<leader>cmc` | n | Switch chat backend / model |
 | `<leader>cx` | n | Cancel inline request under cursor; in chat: stop agent |
+| `<leader>cX` | n | Cancel all inline requests in this buffer |
 | `<leader>cj` / `<leader>ck` | n | Next / previous inline diff hunk |
 | `g2` / `g3` | n | Accept / reject inline diff under cursor |
 | `<leader>cc` | n | Toggle last chat |

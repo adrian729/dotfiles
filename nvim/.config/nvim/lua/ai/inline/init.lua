@@ -767,6 +767,24 @@ function M.cancel()
 	vim.notify(("[ai] cancelled %d request(s)"):format(#targets))
 end
 
+---Cancel every in-flight inline request in the current buffer.
+function M.cancel_all()
+	local bufnr = api.nvim_get_current_buf()
+	local st = buf_state(bufnr)
+	local targets = vim.tbl_values(st.requests)
+	if #targets == 0 then
+		return vim.notify("[ai] nothing in flight in this buffer", vim.log.levels.INFO)
+	end
+	for _, req in ipairs(targets) do
+		if req.handle then
+			pcall(req.handle.cancel)
+		end
+		forget_request(req)
+		drop_marks(bufnr, req.marks)
+	end
+	vim.notify(("[ai] cancelled %d request(s)"):format(#targets))
+end
+
 ---Switch the inline backend and model. The full option UX is the status panel's job (step 05);
 ---this is the minimum needed to exercise every transport.
 function M.pick()
