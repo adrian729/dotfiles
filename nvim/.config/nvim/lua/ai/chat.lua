@@ -210,6 +210,60 @@ local function post_create(chat)
 
 	chat._ai_provider = sel.provider
 	chat._ai_model = model
+
+	-- Winbar header — stays pinned at the top of every window showing this chat.
+	-- BufFilePost fires when CodeCompanion auto-titles the chat (set_title → nvim_buf_set_name),
+	-- so the title field updates within a second of the first response landing.
+	local function winbar_text(bufnr)
+		local chat_obj = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
+		local title = (chat_obj and chat_obj.title) or "untitled"
+		local prov = chat_obj and chat_obj._ai_provider or sel.provider
+		local mod = chat_obj and chat_obj._ai_model or model
+		return ("%%#Comment# %s · %s   |   %s"):format(prov, mod, title)
+	end
+
+	local function update_winbar(bufnr)
+		if not api.nvim_buf_is_valid(bufnr) then
+			return
+		end
+		local text = winbar_text(bufnr)
+		for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+			if vim.wo[win].winbar ~= text then
+				vim.wo[win].winbar = text
+			end
+		end
+	end
+
+	local augroup = api.nvim_create_augroup("AiChatWinbar" .. chat.bufnr, { clear = true })
+	vim.defer_fn(function()
+		update_winbar(chat.bufnr)
+	end, 10) -- wait for the window to materialise
+
+	api.nvim_create_autocmd("BufWinEnter", {
+		group = augroup,
+		buffer = chat.bufnr,
+		callback = function()
+			update_winbar(chat.bufnr)
+		end,
+	})
+	api.nvim_create_autocmd("BufFilePost", {
+		group = augroup,
+		buffer = chat.bufnr,
+		callback = function(args)
+			update_winbar(args.buf)
+		end,
+	})
+	api.nvim_create_autocmd("BufWipeout", {
+		group = augroup,
+		buffer = chat.bufnr,
+		once = true,
+		callback = function(args)
+			for _, win in ipairs(vim.fn.win_findbuf(args.buf)) do
+				vim.wo[win].winbar = nil
+			end
+			pcall(api.nvim_del_augroup_by_id, augroup)
+		end,
+	})
 end
 
 ---Toggle the last chat buffer. Delegates to the plugin's own toggle, which
