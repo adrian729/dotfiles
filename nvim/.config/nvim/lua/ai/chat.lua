@@ -386,6 +386,14 @@ function M.stop()
 		return vim.notify("[ai] no chat to stop", vim.log.levels.INFO)
 	end
 	if chat.current_request or chat.tool_orchestrator then
+		-- CodeCompanion's stop does not reliably fire RequestFinished, which is what
+		-- clears our thinking spinner. Clear it here so the virtual text doesn't stay
+		-- frozen on screen.
+		local ok, spinner = pcall(api.nvim_buf_get_var, chat.bufnr, "ai_chat_spinner")
+		if ok and spinner then
+			spinner.stop()
+			pcall(api.nvim_buf_del_var, chat.bufnr, "ai_chat_spinner")
+		end
 		chat:stop()
 		vim.notify("[ai] stopped", vim.log.levels.INFO)
 	else
