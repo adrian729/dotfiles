@@ -473,7 +473,7 @@ function M.open()
 				end)
 
 				-- r: rename the selected live chat
-				map({ "i", "n" }, "r", function()
+				map("n", "r", function()
 					local selection = action_state.get_selected_entry()
 					if not selection or selection.kind ~= "live" then
 						return
