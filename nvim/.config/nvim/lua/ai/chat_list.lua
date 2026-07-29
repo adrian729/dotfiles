@@ -7,6 +7,35 @@ local M = {}
 local api = vim.api
 
 --=============================================================================
+-- Catppuccin Mocha highlights — same groups the winbar defines
+--=============================================================================
+
+local hl_ready = false
+
+local function ensure_highlights()
+	if hl_ready then
+		return
+	end
+	hl_ready = true
+
+	local ok, palette = pcall(function()
+		return require("catppuccin.palettes").get_palette()
+	end)
+	if not ok then
+		return
+	end
+
+	local groups = {
+		{ "AiWinBarProvider", palette.mauve, "NONE" },
+		{ "AiWinBarModel", palette.pink, "NONE" },
+		{ "AiWinBarTitle", palette.blue, "NONE" },
+	}
+	for _, g in ipairs(groups) do
+		vim.api.nvim_set_hl(0, g[1], { fg = g[2], bg = g[3] })
+	end
+end
+
+--=============================================================================
 -- Helpers
 --=============================================================================
 
@@ -198,11 +227,33 @@ local function picker()
 
 	-- Live chats first
 	for _, chat in ipairs(live) do
-		local suffix = ("  %s · %s"):format(chat.provider, chat.model)
+		local prefix = "💬 "
+		local sep = "  "
+		local dot = " · "
+		local title = chat.title
+		local provider = chat.provider
+		local model = chat.model
+
+		local full = prefix .. title .. sep .. provider .. dot .. model
+
+		-- 0-based offsets for highlight ranges
+		local p_start = #prefix + #title + #sep
+		local p_end = p_start + #provider
+		local m_start = p_end + #dot
+		local m_end = m_start + #model
+
+		local highlights = {
+			{ { #prefix, #prefix + #title }, "AiWinBarTitle" },
+			{ { p_start, p_end }, "AiWinBarProvider" },
+			{ { m_start, m_end }, "AiWinBarModel" },
+		}
+
 		table.insert(entries, {
 			value = chat,
 			ordinal = "1" .. chat.title,
-			display = "💬 " .. chat.title .. suffix,
+			display = function()
+				return full, highlights
+			end,
 			kind = "live",
 		})
 	end
@@ -347,6 +398,8 @@ function M.open()
 	if not ok then
 		return vim.notify("[ai] telescope is required for the chat list", vim.log.levels.ERROR)
 	end
+
+	ensure_highlights()
 
 	local entries = picker()
 
