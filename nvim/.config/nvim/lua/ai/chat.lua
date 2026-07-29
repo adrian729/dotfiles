@@ -84,6 +84,7 @@ end
 local function restore_open_chats()
 	local f, err = io.open(state_file, "r")
 	if not f then
+		vim.print("[ai] restore: state file not found — nothing to restore")
 		return
 	end
 	local content = f:read("*a")
@@ -91,14 +92,23 @@ local function restore_open_chats()
 
 	local ok, list = pcall(vim.json.decode, content)
 	if not ok or type(list) ~= "table" or #list == 0 then
+		vim.print(("[ai] restore: state file empty or invalid (%s)"):format(tostring(ok)))
 		return
 	end
 
+	vim.print(("[ai] restore: file has %d session(s), deferring actual restore…"):format(#list))
+
 	vim.defer_fn(function()
-		local ACP = require("codecompanion.acp")
-		local Chat = require("codecompanion.interactions.chat")
-		local acp_commands = require("codecompanion.interactions.chat.acp.commands")
-		local render = require("codecompanion.interactions.chat.acp.render")
+		vim.print(("[ai] restore: starting, %d session(s)"):format(#list))
+		local ok_acp, ACP = pcall(require, "codecompanion.acp")
+		local ok_chat, Chat = pcall(require, "codecompanion.interactions.chat")
+		if not ok_acp or not ok_chat then
+			vim.print("[ai] restore: codecompanion not loaded yet — retrying in 2s")
+			vim.defer_fn(function()
+				restore_open_chats()
+			end, 2000)
+			return
+		end
 
 		-- Deduplicate, tolerate old string-only format
 		local seen = {}
@@ -125,11 +135,17 @@ local function restore_open_chats()
 				local conn = ACP.new({ adapter = adapter })
 				if conn:connect_and_authenticate() then
 					local raw = conn:session_list({ max_sessions = 500 })
+					local n = raw and #raw or 0
+					vim.print(("[ai] restore: %s agent has %d session(s)"):format(provider, n))
 					for _, s in ipairs(raw or {}) do
 						active_ids[s.sessionId] = provider
 					end
 					pcall(conn.disconnect, conn)
+				else
+					vim.print(("[ai] restore: %s agent failed to connect"):format(provider))
 				end
+			else
+				vim.print(("[ai] restore: no adapter for %s"):format(provider))
 			end
 		end
 
@@ -137,6 +153,7 @@ local function restore_open_chats()
 		local stale = false
 		for i = #deduped, 1, -1 do
 			if not active_ids[deduped[i].sessionId] then
+				vim.print(("[ai] restore: session %s is stale — dropping"):format(deduped[i].sessionId))
 				table.remove(deduped, i)
 				stale = true
 			end
@@ -208,9 +225,7 @@ local function restore_open_chats()
 
 			::continue::
 		end
-		if count > 0 then
-			vim.notify(("[ai] restored %d chat(s)"):format(count), vim.log.levels.INFO)
-		end
+		vim.print(("[ai] restore: done — %d restored"):format(count))
 	end, 500)
 end
 
