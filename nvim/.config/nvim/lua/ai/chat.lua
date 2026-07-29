@@ -207,12 +207,13 @@ local function resolve_chat_adapter()
 	return adapter
 end
 
----Like resolve_chat_adapter but for a specific provider and model, used during
----restore when the global selection may not match the saved chat's provider.
+---Like resolve_chat_adapter but for a specific provider, model, and saved opts,
+---used during restore when the global selection may not match the saved chat.
 ---@param provider string
 ---@param model string|nil
+---@param saved_opts table
 ---@return table|nil
-local function resolve_chat_adapter_for(provider, model)
+local function resolve_chat_adapter_for(provider, model, saved_opts)
 	local providers = require("ai.providers")
 	local adapters = require("codecompanion.adapters")
 
@@ -225,7 +226,12 @@ local function resolve_chat_adapter_for(provider, model)
 	if not spec then
 		return nil
 	end
-	local opts = (providers.defaults.chat.opts or {})[provider] or {}
+	-- Merge saved opts over provider defaults so effort/mode/fast from the
+	-- original chat are preserved
+	local opts = vim.tbl_extend("keep",
+		saved_opts,
+		(providers.defaults.chat.opts or {})[provider] or {}
+	)
 	if model then
 		opts.model = model
 	end
@@ -292,6 +298,7 @@ local function post_create(chat)
 	chat._ai_provider = sel.provider
 	chat._ai_model = model
 	chat._ai_session_id = chat.acp_connection and chat.acp_connection.session_id
+	chat._ai_opts = vim.deepcopy(sel.opts) -- capture effort, mode, fast, etc.
 
 	-- Winbar header — stays pinned at the top of every window showing this chat.
 	-- BufFilePost fires when CodeCompanion auto-titles the chat (set_title → nvim_buf_set_name),
@@ -568,8 +575,10 @@ local function save_chat_state(chat)
 	local data = {
 		provider = chat._ai_provider,
 		model = chat._ai_model,
+		opts = chat._ai_opts,
 		title = chat.title,
 		messages = messages,
+		cwd = vim.fn.getcwd(),
 	}
 
 	local ok, encoded = pcall(vim.json.encode, data)
@@ -625,8 +634,15 @@ local function restore_chats()
 			local model = data.model
 			local title = data.title
 			local messages = data.messages or {}
+			local saved_opts = data.opts or {}
+			local saved_cwd = data.cwd or ""
 
-			local adapter = resolve_chat_adapter_for(provider, model)
+			-- Only restore chats from the current directory
+			if saved_cwd ~= vim.fn.getcwd() then
+				goto continue
+			end
+
+			local adapter = resolve_chat_adapter_for(provider, model, saved_opts)
 			if not adapter then
 				goto continue
 			end
