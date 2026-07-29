@@ -227,33 +227,37 @@ local function picker()
 
 	-- Live chats first
 	for _, chat in ipairs(live) do
-		local prefix = "💬 "
-		local sep = "  "
-		local dot = " · "
 		local title = chat.title
 		local provider = chat.provider
 		local model = chat.model
 
+		local prefix = "💬 "
+		local sep = "  "
+		local dot = " · "
 		local full = prefix .. title .. sep .. provider .. dot .. model
 
-		-- 0-based offsets for highlight ranges
-		local p_start = #prefix + #title + #sep
+		-- 0-based byte offsets for highlight ranges
+		local t_start = #prefix
+		local t_end = t_start + #title
+		local p_start = t_end + #sep
 		local p_end = p_start + #provider
 		local m_start = p_end + #dot
 		local m_end = m_start + #model
 
 		local highlights = {
-			{ { #prefix, #prefix + #title }, "AiWinBarTitle" },
-			{ { p_start, p_end }, "AiWinBarProvider" },
-			{ { m_start, m_end }, "AiWinBarModel" },
+			{ { t_start, t_end }, "Keyword" },
+			{ { p_start, p_end }, "String" },
+			{ { m_start, m_end }, "Function" },
 		}
+
+		-- Bind per-iteration: the closure below captures the current
+		-- iteration's full/highlights, not the loop variable's final value.
+		local make_display = function() return full, highlights end
 
 		table.insert(entries, {
 			value = chat,
 			ordinal = "1" .. chat.title,
-			display = function()
-				return full, highlights
-			end,
+			display = make_display,
 			kind = "live",
 		})
 	end
