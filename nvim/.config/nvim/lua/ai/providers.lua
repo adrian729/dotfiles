@@ -100,6 +100,14 @@ function M.current(scope)
 	return { provider = sel.provider, opts = sel.opts[sel.provider], spec = M.providers[sel.provider] }
 end
 
+---Stored options for a specific provider, regardless of which one is currently selected.
+---@param scope "inline"|"chat"
+---@param provider string
+---@return table
+function M.opts_for(scope, provider)
+	return (state[scope] and state[scope].opts[provider]) or {}
+end
+
 ---@param scope "inline"|"chat"
 ---@param provider string
 function M.set_provider(scope, provider)

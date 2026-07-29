@@ -58,10 +58,9 @@ end
 local function adapter_for(provider)
 	local providers = require("ai.providers")
 	local adapters = require("codecompanion.adapters")
-	local sel = providers.current("chat")
 	local session_opts = {}
 	local spec = providers.providers[provider]
-	local opts = sel.opts or {}
+	local opts = providers.opts_for("chat", provider)
 	if spec then
 		for _, key in ipairs(spec.chat_options or {}) do
 			local option = (spec.options or {})[key]
