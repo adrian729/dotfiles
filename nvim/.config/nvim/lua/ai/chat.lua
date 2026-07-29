@@ -731,4 +731,6 @@ end
 
 setup_persistence()
 
+M._save = save_open_chats -- exposed for :lua require("ai.chat")._save()
+
 return M
