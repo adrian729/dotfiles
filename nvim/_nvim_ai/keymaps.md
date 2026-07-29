@@ -8,14 +8,13 @@
 | `<leader>cI` | n, x | Inline prompt — may read the repo (ACP transports only) |
 | `<leader>cmi` | n | Switch inline backend / model |
 | `<leader>cmc` | n | Switch chat backend / model |
-| `<leader>cx` | n | Cancel inline request(s) |
+| `<leader>cx` | n | Cancel inline request under cursor; in chat: stop agent |
 | `<leader>cj` / `<leader>ck` | n | Next / previous inline diff hunk |
 | `g2` / `g3` | n | Accept / reject inline diff under cursor |
 | `<leader>cc` | n | Toggle last chat |
 | `<leader>ca` | n, x | Action palette |
 | `<leader>cn` | n, x | New chat with current provider + options |
 | `<leader>cq` | n | Close all chats |
-| `<leader>cQ` | n | Stop running chat request |
 | `<leader>cs` | n | Status panel |
 | `<leader>cl` | n | Chat list (Telescope) |
 

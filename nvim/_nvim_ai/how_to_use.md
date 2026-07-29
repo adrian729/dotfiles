@@ -29,7 +29,7 @@ If you close the buffer or the last window showing it while a diff is pending, t
 
 **Cancelling in-flight requests:**
 
-Press `<leader>cx`. If your cursor is over an in-flight request's region, only that request is cancelled. Otherwise every in-flight request in the buffer is cancelled and its spinner cleared.
+Press `<leader>cx`. If your cursor is on the line where an inline request is in flight, that request is cancelled. In a chat buffer, it stops the running agent.
 
 **Switching provider or model:**
 
@@ -56,7 +56,6 @@ Chat is a full conversation buffer where you can talk to a model, invoke tools, 
 - `<leader>cn` — start a new chat with the current provider and its preset options. The buffer title shows `provider · model` until the chat auto-titles from your first message
 - `<leader>cc` — toggle the last chat buffer (creates a new one if none exists)
 - `<leader>cq` — close all chat buffers
-- `<leader>cQ` — stop the running chat request (works from anywhere, chat doesn't need focus)
 - `<leader>cl` — open the chat list (Telescope picker, see below)
 
 **Switching chat provider or model:**

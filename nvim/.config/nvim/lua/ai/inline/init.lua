@@ -746,10 +746,14 @@ function M.cancel()
 			targets = { req }
 			break
 		end
-		table.insert(targets, req)
 	end
 
 	if #targets == 0 then
+		-- Not over an inline request — if we're in a chat buffer, stop the agent
+		local ft = vim.bo[bufnr].filetype
+		if ft == "codecompanion" then
+			return require("ai.chat").stop()
+		end
 		return vim.notify("[ai] nothing in flight in this buffer", vim.log.levels.INFO)
 	end
 

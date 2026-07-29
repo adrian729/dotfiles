@@ -101,13 +101,6 @@ return {
 				desc = "AI: close all chats",
 			},
 			{
-				"<leader>cQ",
-				function()
-					require("ai.chat").stop()
-				end,
-				desc = "AI: stop the running chat request",
-			},
-			{
 				"<leader>cs",
 				function()
 					require("ai.status").toggle()
