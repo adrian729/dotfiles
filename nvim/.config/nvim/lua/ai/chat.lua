@@ -52,123 +52,9 @@ local function save_open_chats()
 	end
 end
 
----Resolve an adapter for a specific provider.
----@param provider string
----@return table|nil
-local function adapter_for(provider)
-	local providers = require("ai.providers")
-	local adapters = require("codecompanion.adapters")
-	local session_opts = {}
-	local spec = providers.providers[provider]
-	local opts = providers.opts_for("chat", provider)
-	if spec then
-		for _, key in ipairs(spec.chat_options or {}) do
-			local option = (spec.options or {})[key]
-			local value = providers.resolve_chat_option_value(provider, key, opts[key])
-			if option and option.category and value then
-				session_opts[option.category] = value
-			end
-		end
-	end
-	local adapter_name = providers.acp_adapter(provider)
-	if not adapter_name then
-		return nil
-	end
-	local adapter = adapters.resolve(adapter_name, { session_config_options = session_opts })
-	if adapter and provider == "opencode" and adapter.env then
-		adapter.env.OPENCODE_PERMISSION = nil
-	end
-	return adapter
-end
-
-local function restore_open_chats()
-	local f, err = io.open(state_file, "r")
-	if not f then
-		return
-	end
-	local content = f:read("*a")
-	f:close()
-
-	local ok, list = pcall(vim.json.decode, content)
-	if not ok or type(list) ~= "table" or #list == 0 then
-		return
-	end
-
-	vim.defer_fn(function()
-		local ACP = require("codecompanion.acp")
-		local Chat = require("codecompanion.interactions.chat")
-		local acp_commands = require("codecompanion.interactions.chat.acp.commands")
-		local render = require("codecompanion.interactions.chat.acp.render")
-
-		-- Deduplicate by sessionId, keep last occurrence (most recent provider)
-		local seen = {}
-		local deduped = {}
-		for i = #list, 1, -1 do
-			local entry = list[i]
-			local sid = entry.sessionId or entry -- tolerate old format with plain strings
-			local prov = entry.provider or "claude"
-			if not seen[sid] then
-				seen[sid] = true
-				table.insert(deduped, 1, { sessionId = sid, provider = prov })
-			end
-		end
-
-		local count = 0
-		for i = #deduped, math.max(1, #deduped - 2), -1 do
-			local entry = deduped[i]
-			if count >= 3 then
-				break
-			end
-
-			local adapter = adapter_for(entry.provider)
-			if not adapter then
-				goto continue
-			end
-
-			local conn = ACP.new({ adapter = adapter })
-			if not conn:connect_and_authenticate() then
-				pcall(conn.disconnect, conn)
-				goto continue
-			end
-
-			local updates = {}
-			local ok_load = conn:load_session(entry.sessionId, {
-				on_session_update = function(update)
-					table.insert(updates, update)
-				end,
-			})
-			if not ok_load then
-				pcall(conn.disconnect, conn)
-				goto continue
-			end
-
-			local chat = Chat.new({ adapter = adapter, buffer_context = { bufnr = api.nvim_get_current_buf() } })
-			if not chat then
-				pcall(conn.disconnect, conn)
-				goto continue
-			end
-
-			if chat.acp_connection then
-				pcall(chat.acp_connection.disconnect, chat.acp_connection)
-			end
-			chat.acp_connection = conn
-			conn.chat = chat
-
-			acp_commands.link_buffer_to_session(chat.bufnr, conn.session_id)
-			render.restore_session(chat, updates)
-
-			post_create(chat)
-			count = count + 1
-
-			::continue::
-		end
-	end, 200)
-end
-
 local function setup_persistence()
 	local augroup = api.nvim_create_augroup("AiChatPersistence", { clear = true })
 
-	-- Save on every buffer close so crashes don't lose everything
 	api.nvim_create_autocmd("BufWipeout", {
 		group = augroup,
 		callback = function(args)
@@ -182,10 +68,6 @@ local function setup_persistence()
 		group = augroup,
 		callback = save_open_chats,
 	})
-
-	-- Module now loads via VeryLazy (shortly after UIEnter), so plugins are ready.
-	-- No VimEnter autocmd needed — just defer and restore.
-	vim.defer_fn(restore_open_chats, 300)
 end
 
 --=============================================================================
