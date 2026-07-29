@@ -170,7 +170,9 @@ local function live_chats()
 			local chat = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
 			local title = (chat and chat.title) or (api.nvim_buf_get_name(bufnr):match("([^/]+)$") or "chat")
 			local session_id = chat and chat.acp_connection and chat.acp_connection.session_id
-			table.insert(out, { bufnr = bufnr, title = title, session_id = session_id })
+			local provider = (chat and chat._ai_provider) or "?"
+			local model = (chat and chat._ai_model) or "?"
+			table.insert(out, { bufnr = bufnr, title = title, session_id = session_id, provider = provider, model = model })
 		end
 	end
 	return out
@@ -196,10 +198,11 @@ local function picker()
 
 	-- Live chats first
 	for _, chat in ipairs(live) do
+		local suffix = ("  %s · %s"):format(chat.provider, chat.model)
 		table.insert(entries, {
 			value = chat,
 			ordinal = "1" .. chat.title, -- sort before sessions ("1" < "2")
-			display = "💬 " .. chat.title,
+			display = "💬 " .. chat.title .. suffix,
 			kind = "live",
 		})
 	end
@@ -324,6 +327,10 @@ local function restore_session(entry)
 	acp_commands.link_buffer_to_session(chat.bufnr, conn.session_id)
 
 	require("codecompanion.interactions.chat.acp.render").restore_session(chat, updates)
+
+	local sel = providers.current("chat")
+	chat._ai_provider = sel.provider
+	chat._ai_model = tostring(sel.opts.model)
 
 	if entry.title then
 		chat:set_title(entry.title)

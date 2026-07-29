@@ -623,7 +623,7 @@ function M.submit(opts)
 	req.selection = built.selection
 	req.progress = ui.progress(bufnr, function()
 		return resolve(bufnr, req.marks)
-	end, ("%s · %s"):format(selection.provider, opts.instruction))
+	end, ("%s · %s · %s"):format(selection.provider, tostring(selection.opts.model), opts.instruction))
 
 	local module = transport == "http" and "ai.inline.http"
 		or transport == "relay" and "ai.inline.relay"

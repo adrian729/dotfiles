@@ -193,7 +193,8 @@ local function stash_agent(bufnr)
 	end
 end
 
----Post-creation guard: track the buffer and stash the agent.
+---Post-creation guard: track the buffer, set an informative title, stash the agent, and
+---record provider/model so the chat list can surface them without guessing from the adapter.
 ---@param chat table|nil
 local function post_create(chat)
 	if not chat then
@@ -201,6 +202,14 @@ local function post_create(chat)
 	end
 	last_chat_buf = chat.bufnr
 	stash_agent(chat.bufnr)
+
+	local sel = require("ai.providers").current("chat")
+	local model = tostring(sel.opts.model)
+	local display = ("%s · %s"):format(sel.provider, model)
+	pcall(chat.set_title, chat, display)
+
+	chat._ai_provider = sel.provider
+	chat._ai_model = model
 end
 
 ---Toggle the last chat buffer. Delegates to the plugin's own toggle, which

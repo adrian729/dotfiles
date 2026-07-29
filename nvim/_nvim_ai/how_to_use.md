@@ -11,7 +11,7 @@ Inline editing modifies code directly in your buffer. You pick *what* to change 
 
 `<leader>cI` only works with ACP providers (claude, opencode). On ollama it shows a message telling you to switch providers — ollama has no tool access outside of HTTP, so it cannot read the repo.
 
-With a visual selection, the reply replaces exactly that range. Without a selection, the reply is inserted at your cursor. Up to 40 lines above and below the selection are included in the prompt as context. LSP diagnostics in the range are included automatically.
+With a visual selection, the reply replaces exactly that range. Without a selection, the reply is inserted at your cursor. Up to 40 lines above and below the selection are included in the prompt as context. LSP diagnostics in the range are included automatically. The floating prompt and the progress spinner both show the provider and model.
 
 You can have several inline requests in flight in the same buffer at once. Each one gets a spinner on its target row and an independent diff when it lands.
 
@@ -53,7 +53,7 @@ Chat is a full conversation buffer where you can talk to a model, invoke tools, 
 
 **Starting and managing chats:**
 
-- `<leader>cn` — start a new chat with the current provider and its preset options
+- `<leader>cn` — start a new chat with the current provider and its preset options. The buffer title shows `provider · model` until the chat auto-titles from your first message
 - `<leader>cc` — toggle the last chat buffer (show it or hide it)
 - `<leader>cq` — close all chat buffers
 - `<leader>cl` — open the chat list (Telescope picker, see below)
@@ -65,7 +65,7 @@ Press `<leader>cmc`. Same picker flow as inline but for the chat scope. Defaults
 **Chat list:**
 
 `<leader>cl` opens a Telescope picker showing two sections:
-- **Live chats** — every open chat buffer. `<CR>` focuses it; `<C-d>` closes it from the picker
+- **Live chats** — every open chat buffer, suffixed with its `provider · model`. `<CR>` focuses it; `<C-d>` closes it from the picker
 - **Resumable sessions** — past ACP sessions (including ones started in a terminal outside nvim), filtered to the current git repo. `<CR>` restores the session into a new chat buffer with full history
 
 Sessions are cached; the list updates on each open.
