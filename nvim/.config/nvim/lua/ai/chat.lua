@@ -14,6 +14,37 @@ local spinner_group
 local pending_agents = {} -- bufnr → agent name, applied on first ChatSubmitted
 
 --=============================================================================
+-- Winbar styling — Catppuccin Mocha palette
+--=============================================================================
+
+local winbar_hl_ready = false
+
+local function ensure_winbar_highlights()
+	if winbar_hl_ready then
+		return
+	end
+	winbar_hl_ready = true
+
+	local ok, palette = pcall(function()
+		return require("catppuccin.palettes").get_palette()
+	end)
+	if not ok then
+		return
+	end
+
+	local groups = {
+		{ "AiWinBarProvider", palette.mauve, "NONE" },
+		{ "AiWinBarModel", palette.pink, "NONE" },
+		{ "AiWinBarTitle", palette.blue, "NONE" },
+		{ "AiWinBarDim", palette.surface1, "NONE" },
+		{ "AiWinBarSep", palette.surface0, "NONE" },
+	}
+	for _, g in ipairs(groups) do
+		vim.api.nvim_set_hl(0, g[1], { fg = g[2], bg = g[3] })
+	end
+end
+
+--=============================================================================
 -- Waiting indicator
 --=============================================================================
 
@@ -214,12 +245,22 @@ local function post_create(chat)
 	-- Winbar header — stays pinned at the top of every window showing this chat.
 	-- BufFilePost fires when CodeCompanion auto-titles the chat (set_title → nvim_buf_set_name),
 	-- so the title field updates within a second of the first response landing.
+	ensure_winbar_highlights()
+
 	local function winbar_text(bufnr)
 		local chat_obj = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
 		local title = (chat_obj and chat_obj.title) or "untitled"
 		local prov = chat_obj and chat_obj._ai_provider or sel.provider
 		local mod = chat_obj and chat_obj._ai_model or model
-		return ("%%#Comment# %s · %s   |   %s"):format(prov, mod, title)
+		local D = "%#AiWinBarDim#"
+		local P = "%#AiWinBarProvider#"
+		local Mh = "%#AiWinBarModel#"
+		local T = "%#AiWinBarTitle#"
+		local S = "%#AiWinBarSep#"
+		return {
+			("  %s%s%s · %s%s%s   │   %s%s%s  "):format(P, prov, D, Mh, mod, D, T, title, D),
+			("%s%=%s─%s"):format(S, S, S),
+		}
 	end
 
 	local function update_winbar(bufnr)
@@ -228,9 +269,7 @@ local function post_create(chat)
 		end
 		local text = winbar_text(bufnr)
 		for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
-			if vim.wo[win].winbar ~= text then
-				vim.wo[win].winbar = text
-			end
+			vim.wo[win].winbar = text
 		end
 	end
 
