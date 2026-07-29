@@ -14,6 +14,175 @@ local spinner_group
 local pending_agents = {} -- bufnr → agent name, applied on first ChatSubmitted
 
 --=============================================================================
+-- Session persistence — restore chats on startup
+--=============================================================================
+
+local state_dir = vim.fn.stdpath("state") .. "/ai"
+local state_file = state_dir .. "/open_chats.json"
+
+---Track which sessions are currently open as chat buffers.
+local function open_session_ids()
+	local ids = {}
+	for _, bufnr in ipairs(_G.codecompanion_buffers or {}) do
+		if api.nvim_buf_is_valid(bufnr) then
+			local chat = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
+			local sid = chat and chat.acp_connection and chat.acp_connection.session_id
+			if sid then
+				ids[sid] = true
+			end
+		end
+	end
+	return ids
+end
+
+local function save_open_chats()
+	local ids = open_session_ids()
+	local list = vim.tbl_keys(ids)
+	if #list == 0 then
+		return
+	end
+	vim.fn.mkdir(state_dir, "p")
+	local ok, encoded = pcall(vim.json.encode, list)
+	if ok then
+		local f, err = io.open(state_file, "w")
+		if f then
+			f:write(encoded)
+			f:close()
+		end
+	end
+end
+
+local function restore_open_chats()
+	local f, err = io.open(state_file, "r")
+	if not f then
+		return
+	end
+	local content = f:read("*a")
+	f:close()
+
+	local ok, list = pcall(vim.json.decode, content)
+	if not ok or type(list) ~= "table" or #list == 0 then
+		return
+	end
+
+	-- Restore the most recent 3 sessions so we don't overwhelm on startup
+	vim.defer_fn(function()
+		local providers = require("ai.providers")
+		local adapters = require("codecompanion.adapters")
+		local ACP = require("codecompanion.acp")
+		local Chat = require("codecompanion.interactions.chat")
+		local acp_commands = require("codecompanion.interactions.chat.acp.commands")
+		local render = require("codecompanion.interactions.chat.acp.render")
+
+		-- Resolve adapter once, same as resolve_chat_adapter
+		local sel = providers.current("chat")
+		if not sel or not sel.provider then
+			return
+		end
+		local adapter_name = providers.acp_adapter(sel.provider)
+		if not adapter_name then
+			return
+		end
+
+		local session_opts = {}
+		local spec = providers.providers[sel.provider]
+		local opts = sel.opts or {}
+		if spec then
+			for _, key in ipairs(spec.chat_options or {}) do
+				local option = (spec.options or {})[key]
+				local value = providers.resolve_chat_option_value(sel.provider, key, opts[key])
+				if option and option.category and value then
+					session_opts[option.category] = value
+				end
+			end
+		end
+		local adapter = adapters.resolve(adapter_name, { session_config_options = session_opts })
+		if not adapter then
+			return
+		end
+		if sel.provider == "opencode" and adapter.env then
+			adapter.env.OPENCODE_PERMISSION = nil
+		end
+
+		-- Snapshot before iterating — Chat.new mutates codecompanion_buffers
+		local count = 0
+		for i = #list, math.max(1, #list - 2), -1 do
+			local sid = list[i]
+			if count >= 3 then
+				break
+			end
+
+			local conn = ACP.new({ adapter = adapter })
+			if not conn:connect_and_authenticate() then
+				pcall(conn.disconnect, conn)
+				goto continue
+			end
+
+			local updates = {}
+			local ok_load = conn:load_session(sid, {
+				on_session_update = function(update)
+					table.insert(updates, update)
+				end,
+			})
+			if not ok_load then
+				pcall(conn.disconnect, conn)
+				goto continue
+			end
+
+			local chat = Chat.new({ adapter = adapter, buffer_context = { bufnr = api.nvim_get_current_buf() } })
+			if not chat then
+				pcall(conn.disconnect, conn)
+				goto continue
+			end
+
+			-- Chat.new may race its eager connect; disconnect it and swap ours in
+			if chat.acp_connection then
+				pcall(chat.acp_connection.disconnect, chat.acp_connection)
+			end
+			chat.acp_connection = conn
+			conn.chat = chat
+
+			acp_commands.link_buffer_to_session(chat.bufnr, conn.session_id)
+			render.restore_session(chat, updates)
+
+			-- post_create bookkeeping: winbar, agent, provider/model tracking
+			post_create(chat)
+			count = count + 1
+
+			::continue::
+		end
+	end, 200)
+end
+
+local function setup_persistence()
+	local augroup = api.nvim_create_augroup("AiChatPersistence", { clear = true })
+
+	-- Save on every buffer close so crashes don't lose everything
+	api.nvim_create_autocmd("BufWipeout", {
+		group = augroup,
+		callback = function(args)
+			if vim.tbl_contains(_G.codecompanion_buffers or {}, args.buf) then
+				vim.defer_fn(save_open_chats, 50)
+			end
+		end,
+	})
+
+	api.nvim_create_autocmd("VimLeavePre", {
+		group = augroup,
+		callback = save_open_chats,
+	})
+
+	-- Restore on startup, after plugins are loaded
+	api.nvim_create_autocmd("VimEnter", {
+		group = augroup,
+		once = true,
+		callback = function()
+			restore_open_chats()
+		end,
+	})
+end
+
+--=============================================================================
 -- Winbar styling — Catppuccin Mocha palette
 --=============================================================================
 
@@ -492,5 +661,7 @@ function M.pick()
 		end)
 	end)
 end
+
+setup_persistence()
 
 return M
