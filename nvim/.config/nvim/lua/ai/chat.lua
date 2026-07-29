@@ -114,7 +114,6 @@ local function restore_open_chats()
 		end
 
 		local count = 0
-		local prev_win = api.nvim_get_current_win()
 
 		-- Resolve a shared adapter and list all sessions first, so we only try to
 		-- load sessions that actually still exist on the agent side.  Stale or
@@ -143,7 +142,16 @@ local function restore_open_chats()
 			end
 		end
 		if stale then
-			save_open_chats() -- rewrite file with only the sessions that survived
+			-- Rewrite file with only the sessions that survived, not the
+			-- (currently empty) set of open buffers.
+			local ok, encoded = pcall(vim.json.encode, deduped)
+			if ok then
+				local f, err = io.open(state_file, "w")
+				if f then
+					f:write(encoded)
+					f:close()
+				end
+			end
 		end
 
 		for i = #deduped, math.max(1, #deduped - 2), -1 do
