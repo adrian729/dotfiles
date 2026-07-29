@@ -19,24 +19,23 @@ local function ensure_highlights()
 	hl_ready = true
 
 	vim.schedule(function()
-		-- Catppuccin mocha palette, with fallback if the module isn't loaded yet
-		local mauve, pink, blue
+		local prov, model, title
 		local ok, palette = pcall(function()
 			return require("catppuccin.palettes").get_palette()
 		end)
 		if ok and palette then
-				mauve = palette.mauve
-				pink = palette.pink
-				blue = palette.blue
-			else
-				mauve = "#c6a0f6"
-				pink = "#94e2d5" -- teal — visibly distinct from the real pink, screams "fallback"
-				blue = "#c6a0f6" -- mauve — same as provider, also screams "fallback"
-			end
+			prov = palette.mauve
+			model = palette.pink
+			title = palette.blue
+		else
+			prov = "#94e2d5" -- teal — screams "fallback"
+			model = "#94e2d5"
+			title = "#c6a0f6" -- mauve
+		end
 
-		vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = pink, bg = "NONE" }) -- teal in fallback
-		vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = pink, bg = "NONE" }) -- teal in fallback
-		vim.api.nvim_set_hl(0, "AiWinBarTitle", { fg = blue, bg = "NONE" }) -- mauve in fallback
+		vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = prov, bg = "NONE" })
+		vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = model, bg = "NONE" })
+		vim.api.nvim_set_hl(0, "AiWinBarTitle", { fg = title, bg = "NONE" })
 	end)
 end
 
