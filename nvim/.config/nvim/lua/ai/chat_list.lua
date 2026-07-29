@@ -7,36 +7,6 @@ local M = {}
 local api = vim.api
 
 --=============================================================================
--- Catppuccin Mocha highlights — same groups as the winbar
---=============================================================================
-
-local hl_ready = false
-
-local function ensure_highlights()
-	if hl_ready then
-		return
-	end
-	hl_ready = true
-
-	local ok, palette = pcall(function()
-		return require("catppuccin.palettes").get_palette()
-	end)
-	if not ok then
-		return
-	end
-
-	local groups = {
-		{ "AiWinBarProvider", palette.mauve, "NONE" },
-		{ "AiWinBarModel", palette.pink, "NONE" },
-		{ "AiWinBarTitle", palette.blue, "NONE" },
-		{ "AiWinBarDim", palette.surface1, "NONE" },
-	}
-	for _, g in ipairs(groups) do
-		vim.api.nvim_set_hl(0, g[1], { fg = g[2], bg = g[3] })
-	end
-end
-
---=============================================================================
 -- Helpers
 --=============================================================================
 
@@ -228,17 +198,11 @@ local function picker()
 
 	-- Live chats first
 	for _, chat in ipairs(live) do
+		local suffix = ("  %s · %s"):format(chat.provider, chat.model)
 		table.insert(entries, {
 			value = chat,
 			ordinal = "1" .. chat.title,
-			_ai_display = {
-				{ "💬 ", "Normal" },
-				{ chat.title, "AiWinBarTitle" },
-				{ "  ", "AiWinBarDim" },
-				{ chat.provider, "AiWinBarProvider" },
-				{ " · ", "AiWinBarDim" },
-				{ chat.model, "AiWinBarModel" },
-			},
+			display = "💬 " .. chat.title .. suffix,
 			kind = "live",
 		})
 	end
@@ -249,7 +213,7 @@ local function picker()
 			table.insert(entries, {
 				value = s,
 				ordinal = "2" .. s.title .. (s.updatedAt or ""),
-				_ai_display = "📋 " .. s.title .. "  " .. relative_time(s.updatedAt),
+				display = "📋 " .. s.title .. "  " .. relative_time(s.updatedAt),
 				kind = "session",
 			})
 		end
@@ -384,8 +348,6 @@ function M.open()
 		return vim.notify("[ai] telescope is required for the chat list", vim.log.levels.ERROR)
 	end
 
-	ensure_highlights()
-
 	local entries = picker()
 
 	local pickers = require("telescope.pickers")
@@ -394,23 +356,14 @@ function M.open()
 	local actions = require("telescope.actions")
 	local action_state = require("telescope.actions.state")
 
-	local function make_entry(e)
-		local display = e._ai_display
-		if type(display) == "table" then
-			e.display = display
-		elseif type(display) == "string" then
-			e.display = display
-		end
-		e._ai_display = nil
-		return e
-	end
-
 	pickers
 		.new({}, {
 			prompt_title = "Chats & Sessions",
 			finder = finders.new_table({
 				results = entries,
-				entry_maker = make_entry,
+				entry_maker = function(e)
+					return e
+				end,
 			}),
 			sorter = sorters.get_substr_matcher(),
 			attach_mappings = function(prompt_bufnr, map)
@@ -452,7 +405,7 @@ function M.open()
 					local current_picker = action_state.get_current_picker(prompt_bufnr)
 					if current_picker then
 						current_picker:refresh(
-							finders.new_table({ results = entries, entry_maker = make_entry }),
+							finders.new_table({ results = entries, entry_maker = function(e) return e end }),
 							{}
 						)
 					end
