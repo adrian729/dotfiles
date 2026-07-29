@@ -33,6 +33,16 @@ return {
 		"olimorris/codecompanion.nvim",
 		dependencies = { "nvim-lua/plenary.nvim" },
 		event = "VeryLazy",
+		init = function()
+			vim.api.nvim_create_autocmd("VimEnter", {
+				once = true,
+				callback = function()
+					vim.defer_fn(function()
+						pcall(require, "ai.chat")
+					end, 300)
+				end,
+			})
+		end,
 		keys = {
 			{
 				"<leader>cc",
@@ -201,7 +211,6 @@ return {
 			})
 
 			require("ai.debug").setup()
-			require("ai.chat") -- loads persistence autocmds, restores sessions on start
 		end,
 	},
 }
