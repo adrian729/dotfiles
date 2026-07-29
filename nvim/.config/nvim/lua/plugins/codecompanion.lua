@@ -32,6 +32,7 @@ return {
 	{
 		"olimorris/codecompanion.nvim",
 		dependencies = { "nvim-lua/plenary.nvim" },
+		event = "VeryLazy",
 		keys = {
 			{
 				"<leader>cc",
@@ -200,6 +201,7 @@ return {
 			})
 
 			require("ai.debug").setup()
+			require("ai.chat")
 		end,
 	},
 }
