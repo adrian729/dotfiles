@@ -20,24 +20,24 @@ local pending_agents = {} -- bufnr → agent name, applied on first ChatSubmitte
 local state_dir = vim.fn.stdpath("state") .. "/ai"
 local state_file = state_dir .. "/open_chats.json"
 
----Track which sessions are currently open as chat buffers.
+---Track which sessions are currently open as chat buffers, with their provider.
 local function open_session_ids()
-	local ids = {}
+	local list = {}
 	for _, bufnr in ipairs(_G.codecompanion_buffers or {}) do
 		if api.nvim_buf_is_valid(bufnr) then
 			local chat = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
 			local sid = chat and chat.acp_connection and chat.acp_connection.session_id
-			if sid then
-				ids[sid] = true
+			local prov = chat and chat._ai_provider
+			if sid and prov then
+				table.insert(list, { sessionId = sid, provider = prov })
 			end
 		end
 	end
-	return ids
+	return list
 end
 
 local function save_open_chats()
-	local ids = open_session_ids()
-	local list = vim.tbl_keys(ids)
+	local list = open_session_ids()
 	if #list == 0 then
 		return
 	end
@@ -50,6 +50,36 @@ local function save_open_chats()
 			f:close()
 		end
 	end
+end
+
+---Resolve an adapter for a specific provider.
+---@param provider string
+---@return table|nil
+local function adapter_for(provider)
+	local providers = require("ai.providers")
+	local adapters = require("codecompanion.adapters")
+	local sel = providers.current("chat")
+	local session_opts = {}
+	local spec = providers.providers[provider]
+	local opts = sel.opts or {}
+	if spec then
+		for _, key in ipairs(spec.chat_options or {}) do
+			local option = (spec.options or {})[key]
+			local value = providers.resolve_chat_option_value(provider, key, opts[key])
+			if option and option.category and value then
+				session_opts[option.category] = value
+			end
+		end
+	end
+	local adapter_name = providers.acp_adapter(provider)
+	if not adapter_name then
+		return nil
+	end
+	local adapter = adapters.resolve(adapter_name, { session_config_options = session_opts })
+	if adapter and provider == "opencode" and adapter.env then
+		adapter.env.OPENCODE_PERMISSION = nil
+	end
+	return adapter
 end
 
 local function restore_open_chats()
@@ -65,51 +95,35 @@ local function restore_open_chats()
 		return
 	end
 
-	-- Restore the most recent 3 sessions so we don't overwhelm on startup
 	vim.defer_fn(function()
-		local providers = require("ai.providers")
-		local adapters = require("codecompanion.adapters")
 		local ACP = require("codecompanion.acp")
 		local Chat = require("codecompanion.interactions.chat")
 		local acp_commands = require("codecompanion.interactions.chat.acp.commands")
 		local render = require("codecompanion.interactions.chat.acp.render")
 
-		-- Resolve adapter once, same as resolve_chat_adapter
-		local sel = providers.current("chat")
-		if not sel or not sel.provider then
-			return
-		end
-		local adapter_name = providers.acp_adapter(sel.provider)
-		if not adapter_name then
-			return
-		end
-
-		local session_opts = {}
-		local spec = providers.providers[sel.provider]
-		local opts = sel.opts or {}
-		if spec then
-			for _, key in ipairs(spec.chat_options or {}) do
-				local option = (spec.options or {})[key]
-				local value = providers.resolve_chat_option_value(sel.provider, key, opts[key])
-				if option and option.category and value then
-					session_opts[option.category] = value
-				end
+		-- Deduplicate by sessionId, keep last occurrence (most recent provider)
+		local seen = {}
+		local deduped = {}
+		for i = #list, 1, -1 do
+			local entry = list[i]
+			local sid = entry.sessionId or entry -- tolerate old format with plain strings
+			local prov = entry.provider or "claude"
+			if not seen[sid] then
+				seen[sid] = true
+				table.insert(deduped, 1, { sessionId = sid, provider = prov })
 			end
 		end
-		local adapter = adapters.resolve(adapter_name, { session_config_options = session_opts })
-		if not adapter then
-			return
-		end
-		if sel.provider == "opencode" and adapter.env then
-			adapter.env.OPENCODE_PERMISSION = nil
-		end
 
-		-- Snapshot before iterating — Chat.new mutates codecompanion_buffers
 		local count = 0
-		for i = #list, math.max(1, #list - 2), -1 do
-			local sid = list[i]
+		for i = #deduped, math.max(1, #deduped - 2), -1 do
+			local entry = deduped[i]
 			if count >= 3 then
 				break
+			end
+
+			local adapter = adapter_for(entry.provider)
+			if not adapter then
+				goto continue
 			end
 
 			local conn = ACP.new({ adapter = adapter })
@@ -119,7 +133,7 @@ local function restore_open_chats()
 			end
 
 			local updates = {}
-			local ok_load = conn:load_session(sid, {
+			local ok_load = conn:load_session(entry.sessionId, {
 				on_session_update = function(update)
 					table.insert(updates, update)
 				end,
@@ -135,7 +149,6 @@ local function restore_open_chats()
 				goto continue
 			end
 
-			-- Chat.new may race its eager connect; disconnect it and swap ours in
 			if chat.acp_connection then
 				pcall(chat.acp_connection.disconnect, chat.acp_connection)
 			end
@@ -145,7 +158,6 @@ local function restore_open_chats()
 			acp_commands.link_buffer_to_session(chat.bufnr, conn.session_id)
 			render.restore_session(chat, updates)
 
-			-- post_create bookkeeping: winbar, agent, provider/model tracking
 			post_create(chat)
 			count = count + 1
 
