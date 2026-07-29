@@ -59,6 +59,9 @@ function M.progress(bufnr, row_fn, label)
 	end
 
 	local function render()
+		if stopped then
+			return clear()
+		end
 		if not api.nvim_buf_is_valid(bufnr) then
 			return handle.stop()
 		end
@@ -81,17 +84,24 @@ function M.progress(bufnr, row_fn, label)
 
 	function handle.stop()
 		stopped = true
-		if timer then
-			timer:stop()
-			if not timer:is_closing() then
-				timer:close()
-			end
-			timer = nil
-		end
 		clear()
+		-- Defer timer teardown one tick so any mid-flight render() sees stopped and
+		-- clears itself rather than racing with the extmark deletion above.
+		vim.schedule(function()
+			if timer then
+				timer:stop()
+				if not timer:is_closing() then
+					timer:close()
+				end
+				timer = nil
+			end
+		end)
 	end
 
 	function handle.set_label(text)
+		if stopped then
+			return
+		end
 		label = text
 		render()
 	end
