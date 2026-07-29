@@ -16,6 +16,7 @@
 | `<leader>ca` | n, x | Action palette |
 | `<leader>cn` | n, x | New chat with current provider + options |
 | `<leader>cq` | n | Close all chats |
+| `<leader>cr` | n | Rename current chat |
 | `<leader>cs` | n | Status panel |
 | `<leader>cl` | n | Chat list (Telescope) |
 
@@ -62,3 +63,4 @@
 |---|---|
 | `<CR>` | Focus live chat or restore selected session |
 | `<C-d>` | Close selected live chat |
+| `r` | Rename selected live chat |

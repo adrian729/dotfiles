@@ -101,6 +101,13 @@ return {
 				desc = "AI: close all chats",
 			},
 			{
+				"<leader>cr",
+				function()
+					require("ai.chat").rename()
+				end,
+				desc = "AI: rename current chat",
+			},
+			{
 				"<leader>cs",
 				function()
 					require("ai.status").toggle()

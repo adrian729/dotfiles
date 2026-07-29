@@ -159,6 +159,7 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- <leader>ca - action palette
 -- <leader>cn - new chat with current provider + options
 -- <leader>cq - close all chats
+-- <leader>cr - rename current chat
 -- <leader>cs - status panel
 -- <leader>cl - chat list
 -- ga / gd / … - plugin-native, inside the chat buffer

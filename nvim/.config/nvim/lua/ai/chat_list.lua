@@ -472,6 +472,22 @@ function M.open()
 					end
 				end)
 
+				-- r: rename the selected live chat
+				map({ "i", "n" }, "r", function()
+					local selection = action_state.get_selected_entry()
+					if not selection or selection.kind ~= "live" then
+						return
+					end
+					local entry = selection.value
+					if entry.bufnr and api.nvim_buf_is_valid(entry.bufnr) then
+						local chat = require("codecompanion.interactions.chat").buf_get_chat(entry.bufnr)
+						if chat then
+							actions.close(prompt_bufnr)
+							require("ai.chat").rename(chat)
+						end
+					end
+				end)
+
 				return true
 			end,
 		})

@@ -58,6 +58,7 @@ Chat is a full conversation buffer where you can talk to a model, invoke tools, 
 - `<leader>cn` — start a new chat with the current provider and its preset options. The buffer title shows `provider · model` until the chat auto-titles from your first message
 - `<leader>cc` — toggle the last chat buffer (creates a new one if none exists)
 - `<leader>cq` — close all chat buffers
+- `<leader>cr` — rename the current chat
 - `<leader>cl` — open the chat list (Telescope picker, see below)
 
 **Switching chat provider or model:**
@@ -67,7 +68,7 @@ Press `<leader>cmc`. Same picker flow as inline but for the chat scope. Defaults
 **Chat list:**
 
 `<leader>cl` opens a Telescope picker showing two sections:
-- **Live chats** — every open chat buffer, suffixed with its `provider · model`. `<CR>` focuses it; `<C-d>` closes it from the picker
+- **Live chats** — every open chat buffer, suffixed with its `provider · model`. `<CR>` focuses it; `<C-d>` closes it; `r` renames it from the picker
 - **Resumable sessions** — past ACP sessions (including ones started in a terminal outside nvim), filtered to the current git repo. `<CR>` restores the session into a new chat buffer with full history
 
 Sessions are cached; the list updates on each open.

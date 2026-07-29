@@ -401,6 +401,26 @@ function M.stop()
 	end
 end
 
+---Rename the current chat. Prompts for a new title, sets it via CodeCompanion's
+---set_title which also updates the buffer name, and the winbar follows via BufFilePost.
+---@param chat? table Passed by the chat list to rename a specific entry.
+function M.rename(chat)
+	chat = chat or require("codecompanion.interactions.chat").buf_get_chat(api.nvim_get_current_buf())
+	if not chat then
+		chat = require("codecompanion.interactions.chat").last_chat()
+	end
+	if not chat or not api.nvim_buf_is_valid(chat.bufnr) then
+		return vim.notify("[ai] no chat to rename", vim.log.levels.INFO)
+	end
+
+	local current = chat.title or ""
+	vim.ui.input({ prompt = "Rename chat: ", default = current }, function(input)
+		if input and vim.trim(input) ~= "" and vim.trim(input) ~= current then
+			chat:set_title(vim.trim(input))
+		end
+	end)
+end
+
 ---Open a chat pre-loaded with messages — the prose-float upgrade. The caller
 ---passes `messages` and any other Chat.new argument, and the adapter is resolved
 ---from the current chat provider selection.
