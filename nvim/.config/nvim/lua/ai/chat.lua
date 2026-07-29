@@ -41,6 +41,7 @@ local function save_open_chats()
 	if #list == 0 then
 		return
 	end
+	vim.notify(("[ai] saving %d open session(s)"):format(#list), vim.log.levels.INFO)
 	vim.fn.mkdir(state_dir, "p")
 	local ok, encoded = pcall(vim.json.encode, list)
 	if ok then
@@ -207,6 +208,9 @@ local function restore_open_chats()
 			count = count + 1
 
 			::continue::
+		end
+		if count > 0 then
+			vim.notify(("[ai] restored %d chat(s)"):format(count), vim.log.levels.INFO)
 		end
 	end, 500)
 end
