@@ -114,6 +114,38 @@ local function restore_open_chats()
 		end
 
 		local count = 0
+		local prev_win = api.nvim_get_current_win()
+
+		-- Resolve a shared adapter and list all sessions first, so we only try to
+		-- load sessions that actually still exist on the agent side.  Stale or
+		-- deleted sessions are dropped from the state file without an error.
+		local active_ids = {}
+		for _, provider in ipairs({ "claude", "opencode" }) do
+			local adapter = adapter_for(provider)
+			if adapter then
+				local conn = ACP.new({ adapter = adapter })
+				if conn:connect_and_authenticate() then
+					local raw = conn:session_list({ max_sessions = 500 })
+					for _, s in ipairs(raw or {}) do
+						active_ids[s.sessionId] = provider
+					end
+					pcall(conn.disconnect, conn)
+				end
+			end
+		end
+
+		-- Only keep saved sessions that still exist
+		local stale = false
+		for i = #deduped, 1, -1 do
+			if not active_ids[deduped[i].sessionId] then
+				table.remove(deduped, i)
+				stale = true
+			end
+		end
+		if stale then
+			save_open_chats() -- rewrite file with only the sessions that survived
+		end
+
 		for i = #deduped, math.max(1, #deduped - 2), -1 do
 			local entry = deduped[i]
 			if count >= 3 then
