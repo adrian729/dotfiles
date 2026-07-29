@@ -25,14 +25,14 @@ local function ensure_highlights()
 			return require("catppuccin.palettes").get_palette()
 		end)
 		if ok and palette then
-			mauve = palette.mauve
-			pink = palette.pink
-			blue = palette.blue
-		else
-			mauve = "#c6a0f6"
-			pink = "#f5bde6"
-			blue = "#8aadf4"
-		end
+				mauve = palette.mauve
+				pink = palette.pink
+				blue = palette.blue
+			else
+				mauve = "#c6a0f6"
+				pink = "#94e2d5" -- teal — visibly distinct from the real pink, screams "fallback"
+				blue = "#c6a0f6" -- mauve — same as provider, also screams "fallback"
+			end
 
 		vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = mauve, bg = "NONE" })
 		vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = pink, bg = "NONE" })

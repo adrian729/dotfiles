@@ -38,10 +38,10 @@ local function ensure_winbar_highlights()
 		surface0 = palette.surface0
 	else
 		mauve = "#c6a0f6"
-		pink = "#f5bde6"
-		blue = "#8aadf4"
-		surface1 = "#45475a"
-		surface0 = "#313244"
+		pink = "#94e2d5" -- teal — visibly distinct from the real pink, screams "fallback"
+		blue = "#c6a0f6" -- mauve — same as provider, also screams "fallback"
+		surface1 = "#585b70"
+		surface0 = "#45475a"
 	end
 
 	vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = mauve, bg = "NONE" })
