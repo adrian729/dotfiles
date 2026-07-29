@@ -25,23 +25,30 @@ local function ensure_winbar_highlights()
 	end
 	winbar_hl_ready = true
 
+	-- Catppuccin mocha palette, with fallback if the module isn't loaded yet
+	local mauve, pink, blue, surface1, surface0
 	local ok, palette = pcall(function()
 		return require("catppuccin.palettes").get_palette()
 	end)
-	if not ok then
-		return
+	if ok and palette then
+		mauve = palette.mauve
+		pink = palette.pink
+		blue = palette.blue
+		surface1 = palette.surface1
+		surface0 = palette.surface0
+	else
+		mauve = "#c6a0f6"
+		pink = "#f5bde6"
+		blue = "#8aadf4"
+		surface1 = "#45475a"
+		surface0 = "#313244"
 	end
 
-	local groups = {
-		{ "AiWinBarProvider", palette.mauve, "NONE" },
-		{ "AiWinBarModel", palette.pink, "NONE" },
-		{ "AiWinBarTitle", palette.blue, "NONE" },
-		{ "AiWinBarDim", palette.surface1, "NONE" },
-		{ "AiWinBarSep", palette.surface0, "NONE" },
-	}
-	for _, g in ipairs(groups) do
-		vim.api.nvim_set_hl(0, g[1], { fg = g[2], bg = g[3] })
-	end
+	vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = mauve, bg = "NONE" })
+	vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = pink, bg = "NONE" })
+	vim.api.nvim_set_hl(0, "AiWinBarTitle", { fg = blue, bg = "NONE" })
+	vim.api.nvim_set_hl(0, "AiWinBarDim", { fg = surface1, bg = "NONE" })
+	vim.api.nvim_set_hl(0, "AiWinBarSep", { fg = surface0, bg = "NONE" })
 end
 
 --=============================================================================

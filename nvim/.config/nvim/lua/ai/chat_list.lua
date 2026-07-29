@@ -18,21 +18,26 @@ local function ensure_highlights()
 	end
 	hl_ready = true
 
-	local ok, palette = pcall(function()
-		return require("catppuccin.palettes").get_palette()
-	end)
-	if not ok then
-		return
-	end
+	vim.schedule(function()
+		-- Catppuccin mocha palette, with fallback if the module isn't loaded yet
+		local mauve, pink, blue
+		local ok, palette = pcall(function()
+			return require("catppuccin.palettes").get_palette()
+		end)
+		if ok and palette then
+			mauve = palette.mauve
+			pink = palette.pink
+			blue = palette.blue
+		else
+			mauve = "#c6a0f6"
+			pink = "#f5bde6"
+			blue = "#8aadf4"
+		end
 
-	local groups = {
-		{ "AiWinBarProvider", palette.mauve, "NONE" },
-		{ "AiWinBarModel", palette.pink, "NONE" },
-		{ "AiWinBarTitle", palette.blue, "NONE" },
-	}
-	for _, g in ipairs(groups) do
-		vim.api.nvim_set_hl(0, g[1], { fg = g[2], bg = g[3] })
-	end
+		vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = mauve, bg = "NONE" })
+		vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = pink, bg = "NONE" })
+		vim.api.nvim_set_hl(0, "AiWinBarTitle", { fg = blue, bg = "NONE" })
+	end)
 end
 
 --=============================================================================
@@ -245,9 +250,9 @@ local function picker()
 		local m_end = m_start + #model
 
 		local highlights = {
-			{ { t_start, t_end }, "Keyword" },
-			{ { p_start, p_end }, "String" },
-			{ { m_start, m_end }, "Function" },
+			{ { t_start, t_end }, "AiWinBarTitle" },
+			{ { p_start, p_end }, "AiWinBarProvider" },
+			{ { m_start, m_end }, "AiWinBarModel" },
 		}
 
 		-- Bind per-iteration: the closure below captures the current
