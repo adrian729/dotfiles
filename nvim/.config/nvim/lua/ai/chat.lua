@@ -23,13 +23,27 @@ local state_file = state_dir .. "/open_chats.json"
 ---Track which sessions are currently open as chat buffers, with their provider.
 local function open_session_ids()
 	local list = {}
-	for _, bufnr in ipairs(_G.codecompanion_buffers or {}) do
+	local bufs = _G.codecompanion_buffers
+	if not bufs or #bufs == 0 then
+		vim.notify("[ai] persistence: codecompanion_buffers is empty or nil", vim.log.levels.WARN)
+		return list
+	end
+	for _, bufnr in ipairs(bufs) do
 		if api.nvim_buf_is_valid(bufnr) then
 			local chat = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
-			local sid = chat and chat.acp_connection and chat.acp_connection.session_id
-			local prov = chat and chat._ai_provider
-			if sid and prov then
-				table.insert(list, { sessionId = sid, provider = prov })
+			if not chat then
+				vim.notify(("[ai] persistence: buf_get_chat returned nil for bufnr=%d"):format(bufnr), vim.log.levels.WARN)
+			else
+				local sid = chat.acp_connection and chat.acp_connection.session_id
+				local prov = chat._ai_provider
+				if not sid then
+					vim.notify(("[ai] persistence: no session_id — acp_conn=%s, provider=%s"):format(
+						tostring(chat.acp_connection ~= nil), tostring(prov)), vim.log.levels.WARN)
+				elseif not prov then
+					vim.notify(("[ai] persistence: no _ai_provider for session %s"):format(sid), vim.log.levels.WARN)
+				else
+					table.insert(list, { sessionId = sid, provider = prov })
+				end
 			end
 		end
 	end
