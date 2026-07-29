@@ -86,6 +86,13 @@ local function ensure_spinner_group()
 				end
 			end
 
+			-- Capture session ID now that the ACP connection is live (lazily created
+			-- on first submit).  post_create ran before the connection existed, so
+			-- _ai_session_id is still nil at that point.
+			if chat and not chat._ai_session_id and chat.acp_connection then
+				chat._ai_session_id = chat.acp_connection.session_id
+			end
+
 			-- An ACP submit that fails before a prompt exists — connection or session setup — still
 			-- fires ChatSubmitted, but RequestFinished only ever comes from the prompt builder, so a
 			-- spinner started here would never be stopped. That failure clears current_request
