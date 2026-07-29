@@ -207,6 +207,49 @@ local function resolve_chat_adapter()
 	return adapter
 end
 
+---Like resolve_chat_adapter but for a specific provider and model, used during
+---restore when the global selection may not match the saved chat's provider.
+---@param provider string
+---@param model string|nil
+---@return table|nil
+local function resolve_chat_adapter_for(provider, model)
+	local providers = require("ai.providers")
+	local adapters = require("codecompanion.adapters")
+
+	if provider == "ollama" then
+		return nil -- HTTP chats have no ACP session, can't persist
+	end
+
+	local session_opts = {}
+	local spec = providers.providers[provider]
+	if not spec then
+		return nil
+	end
+	local opts = (providers.defaults.chat.opts or {})[provider] or {}
+	if model then
+		opts.model = model
+	end
+
+	for _, key in ipairs(spec.chat_options or {}) do
+		local option = (spec.options or {})[key]
+		local value = providers.resolve_chat_option_value(provider, key, opts[key])
+		if option and option.category and value then
+			session_opts[option.category] = value
+		end
+	end
+
+	local adapter_name = providers.acp_adapter(provider)
+	if not adapter_name then
+		return nil
+	end
+
+	local adapter = adapters.resolve(adapter_name, { session_config_options = session_opts })
+	if adapter and provider == "opencode" and adapter.env then
+		adapter.env.OPENCODE_PERMISSION = nil
+	end
+	return adapter
+end
+
 --=============================================================================
 -- Public API
 --=============================================================================
@@ -248,10 +291,7 @@ local function post_create(chat)
 
 	chat._ai_provider = sel.provider
 	chat._ai_model = model
-
-	-- Persist immediately — on exit the ACP connection is already torn down,
-	-- so open_session_ids would return empty.
-	vim.defer_fn(save_open_chats, 1000)
+	chat._ai_session_id = chat.acp_connection and chat.acp_connection.session_id
 
 	-- Winbar header — stays pinned at the top of every window showing this chat.
 	-- BufFilePost fires when CodeCompanion auto-titles the chat (set_title → nvim_buf_set_name),
@@ -496,5 +536,155 @@ function M.pick()
 		end)
 	end)
 end
+
+--=============================================================================
+-- Chat persistence — full conversation saved to disk, restored on startup
+--=============================================================================
+
+local chats_dir = vim.fn.stdpath("state") .. "/ai/chats"
+
+local function chat_file(session_id)
+	return chats_dir .. "/" .. session_id .. ".json"
+end
+
+local function save_chat_state(chat)
+	local sid = chat._ai_session_id
+	if not sid then
+		return
+	end
+	vim.fn.mkdir(chats_dir, "p")
+
+	local messages = {}
+	for _, m in ipairs(chat.messages or {}) do
+		table.insert(messages, {
+			role = m.role,
+			content = m.content,
+			type = m.type,
+			tool_call = m.tool_call,
+			_meta = m._meta,
+		})
+	end
+
+	local data = {
+		provider = chat._ai_provider,
+		model = chat._ai_model,
+		title = chat.title,
+		messages = messages,
+	}
+
+	local ok, encoded = pcall(vim.json.encode, data)
+	if ok then
+		local f = io.open(chat_file(sid), "w")
+		if f then
+			f:write(encoded)
+			f:close()
+		end
+	end
+end
+
+local function save_all_chats()
+	for _, bufnr in ipairs(_G.codecompanion_buffers or {}) do
+		if api.nvim_buf_is_valid(bufnr) then
+			local chat = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
+			if chat then
+				save_chat_state(chat)
+			end
+		end
+	end
+end
+
+local function restore_chats()
+	local ok_dir = vim.fn.isdirectory(chats_dir)
+	if ok_dir == 0 then
+		return
+	end
+
+	vim.defer_fn(function()
+		local handles = vim.fn.readdir(chats_dir)
+		local count = 0
+		local max_restore = 3
+
+		for _, name in ipairs(handles) do
+			if count >= max_restore then
+				break
+			end
+			if not name:match("%.json$") then
+				goto continue
+			end
+
+			local ok, content = pcall(vim.fn.readfile, chats_dir .. "/" .. name)
+			if not ok then
+				goto continue
+			end
+			local ok_j, data = pcall(vim.json.decode, table.concat(content, "\n"))
+			if not ok_j or type(data) ~= "table" then
+				goto continue
+			end
+
+			local provider = data.provider or "claude"
+			local model = data.model
+			local title = data.title
+			local messages = data.messages or {}
+
+			local adapter = resolve_chat_adapter_for(provider, model)
+			if not adapter then
+				goto continue
+			end
+
+		local Chat = require("codecompanion.interactions.chat")
+		local chat = Chat.new({
+			adapter = adapter,
+			buffer_context = { bufnr = api.nvim_get_current_buf() },
+			messages = messages,
+		})
+
+		if not chat then
+			goto continue
+		end
+
+			post_create(chat)
+			if title then
+				pcall(chat.set_title, chat, title)
+			end
+
+			-- Hide the window — <leader>cc or chat list picks it up
+			if chat.ui and chat.ui.winnr and api.nvim_win_is_valid(chat.ui.winnr) then
+				api.nvim_win_close(chat.ui.winnr, true)
+			end
+
+			-- Clean up the file — session was restored
+			pcall(vim.fn.delete, chats_dir .. "/" .. name)
+
+			count = count + 1
+
+			::continue::
+		end
+	end, 500)
+end
+
+local function setup_persistence()
+	local augroup = api.nvim_create_augroup("AiChatPersistence", { clear = true })
+
+	api.nvim_create_autocmd("BufWipeout", {
+		group = augroup,
+		callback = function(args)
+			if vim.tbl_contains(_G.codecompanion_buffers or {}, args.buf) then
+				local chat = require("codecompanion.interactions.chat").buf_get_chat(args.buf)
+				if chat then
+					save_chat_state(chat)
+				end
+			end
+		end,
+	})
+
+	api.nvim_create_autocmd("VimLeavePre", {
+		group = augroup,
+		callback = save_all_chats,
+	})
+
+	vim.defer_fn(restore_chats, 500)
+end
+
+setup_persistence()
 
 return M
