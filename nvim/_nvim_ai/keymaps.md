@@ -63,4 +63,4 @@
 |---|---|
 | `<CR>` | Focus live chat or restore selected session |
 | `<C-d>` | Close selected live chat |
-| `r` | Rename selected live chat |
+| `r` | n | Rename selected live chat |
