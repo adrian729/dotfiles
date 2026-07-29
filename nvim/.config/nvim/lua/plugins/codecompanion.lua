@@ -32,15 +32,7 @@ return {
 	{
 		"olimorris/codecompanion.nvim",
 		dependencies = { "nvim-lua/plenary.nvim" },
-		cmd = {
-			"CodeCompanion",
-			"CodeCompanionChat",
-			"CodeCompanionActions",
-			-- Registered here, not only in config(): a command defined inside config() cannot
-			-- load the plugin that defines it, and at this point nothing else would.
-			"AiPoolStatus",
-			"AiDebugSend",
-		},
+		event = "VeryLazy",
 		keys = {
 			{
 				"<leader>cc",
@@ -209,6 +201,7 @@ return {
 			})
 
 			require("ai.debug").setup()
+			require("ai.chat") -- loads persistence autocmds, restores sessions on start
 		end,
 	},
 }

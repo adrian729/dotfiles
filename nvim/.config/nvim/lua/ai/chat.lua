@@ -183,14 +183,9 @@ local function setup_persistence()
 		callback = save_open_chats,
 	})
 
-	-- Restore on startup, after plugins are loaded
-	api.nvim_create_autocmd("VimEnter", {
-		group = augroup,
-		once = true,
-		callback = function()
-			restore_open_chats()
-		end,
-	})
+	-- Module now loads via VeryLazy (shortly after UIEnter), so plugins are ready.
+	-- No VimEnter autocmd needed — just defer and restore.
+	vim.defer_fn(restore_open_chats, 300)
 end
 
 --=============================================================================
