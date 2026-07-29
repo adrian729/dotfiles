@@ -259,7 +259,7 @@ local function post_create(chat)
 		local S = "%#AiWinBarSep#"
 		return {
 			("  %s%s%s · %s%s%s   │   %s%s%s  "):format(P, prov, D, Mh, mod, D, T, title, D),
-			("%s%=%s─%s"):format(S, S, S),
+			S .. string.rep("─", 120),
 		}
 	end
 
@@ -269,7 +269,14 @@ local function post_create(chat)
 		end
 		local text = winbar_text(bufnr)
 		for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
-			vim.wo[win].winbar = text
+			local ok = pcall(function()
+				vim.wo[win].winbar = text
+			end)
+			if not ok then
+				pcall(function()
+					vim.wo[win].winbar = text[1]
+				end)
+			end
 		end
 	end
 
