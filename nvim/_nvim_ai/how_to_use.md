@@ -56,6 +56,7 @@ Chat is a full conversation buffer where you can talk to a model, invoke tools, 
 - `<leader>cn` — start a new chat with the current provider and its preset options. The buffer title shows `provider · model` until the chat auto-titles from your first message
 - `<leader>cc` — toggle the last chat buffer (creates a new one if none exists)
 - `<leader>cq` — close all chat buffers
+- `<leader>cQ` — stop the running chat request (works from anywhere, chat doesn't need focus)
 - `<leader>cl` — open the chat list (Telescope picker, see below)
 
 **Switching chat provider or model:**

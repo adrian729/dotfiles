@@ -15,6 +15,7 @@
 | `<leader>ca` | n, x | Action palette |
 | `<leader>cn` | n, x | New chat with current provider + options |
 | `<leader>cq` | n | Close all chats |
+| `<leader>cQ` | n | Stop running chat request |
 | `<leader>cs` | n | Status panel |
 | `<leader>cl` | n | Chat list (Telescope) |
 

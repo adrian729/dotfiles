@@ -378,6 +378,21 @@ function M.close_all()
 	end
 end
 
+---Stop the running request in the last active chat. Works from anywhere —
+---the chat buffer doesn't need to be focused.
+function M.stop()
+	local chat = require("codecompanion.interactions.chat").last_chat()
+	if not chat or not api.nvim_buf_is_valid(chat.bufnr) then
+		return vim.notify("[ai] no chat to stop", vim.log.levels.INFO)
+	end
+	if chat.current_request or chat.tool_orchestrator then
+		chat:stop()
+		vim.notify("[ai] stopped", vim.log.levels.INFO)
+	else
+		vim.notify("[ai] nothing in flight", vim.log.levels.INFO)
+	end
+end
+
 ---Open a chat pre-loaded with messages — the prose-float upgrade. The caller
 ---passes `messages` and any other Chat.new argument, and the adapter is resolved
 ---from the current chat provider selection.
