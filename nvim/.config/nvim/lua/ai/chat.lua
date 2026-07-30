@@ -139,16 +139,20 @@ end
 --=============================================================================
 
 ---Post-resolution tweak: the opencode adapter in codecompanion.lua sets
----OPENCODE_PERMISSION denying writes — that is the inline defence and must not
----apply to chat sessions. Strip it here so the chat gets full tool access.
+---OPENCODE_PERMISSION denying writes, which is the inline defence and too strict for chat —
+---chat is supposed to be able to change things. It is swapped for the chat set rather than
+---dropped: dropping it handed chat silent write access, so edits happened with nothing
+---announcing them. `ask` gets the same confirm-first behaviour claude's `default` mode has.
 ---@param adapter table
 ---@param provider string
-local function strip_inline_defences(adapter, provider)
+local function apply_chat_permissions(adapter, provider)
 	if not adapter then
 		return
 	end
 	if provider == "opencode" and adapter.env then
-		adapter.env.OPENCODE_PERMISSION = nil
+		adapter.env.OPENCODE_PERMISSION = function()
+			return vim.json.encode(require("ai.providers").opencode_chat_permission)
+		end
 	end
 end
 
@@ -209,7 +213,7 @@ local function resolve_chat_adapter()
 	if not adapter then
 		return nil
 	end
-	strip_inline_defences(adapter, sel.provider)
+	apply_chat_permissions(adapter, sel.provider)
 	return adapter
 end
 
@@ -256,9 +260,7 @@ local function resolve_chat_adapter_for(provider, model, saved_opts)
 	end
 
 	local adapter = adapters.resolve(adapter_name, { session_config_options = session_opts })
-	if adapter and provider == "opencode" and adapter.env then
-		adapter.env.OPENCODE_PERMISSION = nil
-	end
+	apply_chat_permissions(adapter, provider)
 	return adapter
 end
 

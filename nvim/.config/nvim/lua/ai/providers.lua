@@ -47,6 +47,10 @@ M.providers = {
 			-- for a model that lacks it is harmless but logs a warning on every spawn, so it
 			-- stays unset by default and the status panel adds it when the session offers it.
 			fast = { label = "Fast", category = "model_config", values = { "on", "off" } },
+			-- What each value does, read off the agent rather than guessed from the name:
+			-- `default` asks before every mutating tool call, `acceptEdits` applies edits
+			-- unannounced, `plan` is read-only, and `dontAsk` auto-*denies* rather than
+			-- auto-allowing (acp-agent.js:1615 lists it beside rule-based denials).
 			mode = {
 				label = "Mode",
 				category = "mode",
@@ -83,7 +87,12 @@ M.defaults = {
 		provider = "claude",
 		opts = {
 			ollama = { endpoint = "cloud", model = "gpt-oss:120b", think = "off" },
-			claude = { model = "opus", effort = "xhigh", fast = "off", mode = "acceptEdits" },
+			-- `default` rather than `acceptEdits`: the agent asks before it writes, and
+			-- CodeCompanion answers with a diff of the proposed change. Edits landing
+			-- unannounced is worth avoiding even now that open buffers follow them (ai.reload)
+			-- — seeing the diff first is the difference between reviewing a change and
+			-- discovering it. Switch a single session with <leader>cs if it gets tedious.
+			claude = { model = "opus", effort = "xhigh", fast = "off", mode = "default" },
 			opencode = { model = M.AUTO, mode = "build" },
 		},
 	},
@@ -264,6 +273,21 @@ M.opencode_permission = {
 	write = "deny",
 	patch = "deny",
 	bash = "deny",
+	read = "allow",
+	grep = "allow",
+	glob = "allow",
+	list = "allow",
+}
+
+-- The chat counterpart: chat is meant to be able to change things, so the mutating tools are
+-- `ask` rather than `deny` — the same "show me before you do it" stance claude's `default`
+-- mode gives. Chat used to drop the permission block entirely, which handed it silent write
+-- access; nothing announced an edit and nvim did not even reload the file.
+M.opencode_chat_permission = {
+	edit = "ask",
+	write = "ask",
+	patch = "ask",
+	bash = "ask",
 	read = "allow",
 	grep = "allow",
 	glob = "allow",

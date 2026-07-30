@@ -116,6 +116,14 @@ Notes:
 - A chat you opened but never sent a message in comes back as an empty chat. The agent only commits a session to its own store once there has been a real exchange, so there is no history to reload — but the chat itself reopens on its original provider/model rather than disappearing.
 - If a saved session has since been deleted or aged out of the agent's store, the chat still reopens, just without its transcript, and you get one `[ai] session <id> is gone — reopened without history` warning.
 
+**The agent asks before it edits:**
+
+Chat can change files, but not silently — it asks first, and you see a diff of the proposed change before answering. Approve once, approve for the rest of the session, or reject; rejecting leaves the file exactly as it was. Requests queue, so a turn touching several files asks about each in turn.
+
+This is `mode = "default"` for claude and `edit/write/patch/bash = "ask"` for opencode, both set in `ai/providers.lua`. Inline is stricter and unchanged: claude inline forces `dontAsk`, which *denies* mutating tools outright (despite the name), and opencode inline denies them via `OPENCODE_PERMISSION`.
+
+To loosen it for one session, use `<leader>cs` and change Mode — `acceptEdits` applies edits without asking, `plan` makes it read-only. Changing the default means editing `providers.lua`.
+
 **Agent edits show up in your open buffers:**
 
 The chat agent edits files on disk rather than through nvim, and nvim does not notice that by itself — so a file you had open used to keep showing the pre-edit text while the version underneath it had moved on. Save from that stale buffer and you overwrite the agent's work.
@@ -128,7 +136,7 @@ The one case left to you is a genuine conflict: if the buffer has **unsaved chan
 [ai] foo.lua was edited by the agent but has unsaved changes here — :e! to take the agent's version, :w to keep yours
 ```
 
-Picking a winner automatically would throw away one side silently, so it asks instead. Note that this only applies to *chat*, which runs in `acceptEdits` mode; inline (`<leader>ci` / `<leader>cI`) works on your buffer directly and denies file writes outright.
+Picking a winner automatically would throw away one side silently, so it asks instead. This still matters even though the agent asks before editing: you approve the edit, and the reload has to land in a buffer you may meanwhile have typed into.
 
 **Inside the chat buffer:**
 
