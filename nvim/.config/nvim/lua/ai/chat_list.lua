@@ -19,7 +19,7 @@ local function ensure_highlights()
 	hl_ready = true
 
 	vim.schedule(function()
-		local prov, model, title
+		local prov, model, title, ready, starting, dead, current, dim
 		local ok, palette = pcall(function()
 			return require("catppuccin.palettes").get_palette()
 		end)
@@ -27,15 +27,30 @@ local function ensure_highlights()
 			prov = palette.mauve
 			model = palette.pink
 			title = palette.blue
+			ready = palette.green
+			starting = palette.yellow
+			dead = palette.red
+			current = palette.lavender
+			dim = palette.overlay1
 		else
 			prov = "#94e2d5" -- teal — screams "fallback"
 			model = "#94e2d5"
 			title = "#c6a0f6" -- mauve
+			ready = "#a6e3a1"
+			starting = "#f9e2af"
+			dead = "#f38ba8"
+			current = "#b4befe"
+			dim = "#7f849c"
 		end
 
 		vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = prov, bg = "NONE" })
 		vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = model, bg = "NONE" })
 		vim.api.nvim_set_hl(0, "AiWinBarTitle", { fg = title, bg = "NONE" })
+		vim.api.nvim_set_hl(0, "AiListReady", { fg = ready, bg = "NONE" })
+		vim.api.nvim_set_hl(0, "AiListStarting", { fg = starting, bg = "NONE" })
+		vim.api.nvim_set_hl(0, "AiListDead", { fg = dead, bg = "NONE" })
+		vim.api.nvim_set_hl(0, "AiListCurrent", { fg = current, bg = "NONE", bold = true })
+		vim.api.nvim_set_hl(0, "AiListDim", { fg = dim, bg = "NONE" })
 	end)
 end
 
@@ -214,8 +229,47 @@ local function resumable_sessions(opts)
 	return filtered
 end
 
----Live nvim chats, sorted most-recent first.
----@return { bufnr: number, title: string, session_id: string|nil }[]
+-- How alive a chat's agent is. A chat buffer existing says nothing about this: startup
+-- restores spend a second or two handshaking, and a crashed agent leaves the buffer
+-- behind intact, so "there is a chat here" and "you can send it a message" are different
+-- facts and the list shows both.
+local STATE = {
+	ready = { marker = "●", hl = "AiListReady", label = "ready" },
+	starting = { marker = "◌", hl = "AiListStarting", label = "starting" },
+	dead = { marker = "✕", hl = "AiListDead", label = "agent gone" },
+	none = { marker = "·", hl = "AiListDim", label = "no agent" },
+}
+
+---Classify a chat's agent connection.
+---@param chat table|nil
+---@return "ready"|"starting"|"dead"|"none"
+local function chat_state(chat)
+	if not chat then
+		return "none"
+	end
+	-- Only ACP chats have an agent process at all; an ollama chat is plain HTTP.
+	if not (chat.adapter and chat.adapter.type == "acp") then
+		return "none"
+	end
+
+	local conn = chat.acp_connection
+	if not conn then
+		-- Chat.new schedules the connection, so this is the first instant of a new chat
+		return "starting"
+	end
+	if conn:is_connected() then
+		return "ready"
+	end
+	-- handle_process_exit clears adapter_modified but leaves the handle set, which is what
+	-- separates an agent that died from one that has not finished starting.
+	if conn._state and conn._state.handle ~= nil and conn.adapter_modified == nil then
+		return "dead"
+	end
+	return "starting"
+end
+
+---Live nvim chats, in the order the plugin tracks them.
+---@return { bufnr: number, title: string, session_id: string|nil, provider: string, model: string, state: string, visible: boolean }[]
 local function live_chats()
 	local out = {}
 	local seen = {}
@@ -227,7 +281,15 @@ local function live_chats()
 			local session_id = chat and chat.acp_connection and chat.acp_connection.session_id
 			local provider = (chat and chat._ai_provider) or "?"
 			local model = (chat and chat._ai_model) or "?"
-			table.insert(out, { bufnr = bufnr, title = title, session_id = session_id, provider = provider, model = model })
+			table.insert(out, {
+				bufnr = bufnr,
+				title = title,
+				session_id = session_id,
+				provider = provider,
+				model = model,
+				state = chat_state(chat),
+				visible = #vim.fn.win_findbuf(bufnr) > 0,
+			})
 		end
 	end
 	return out
@@ -237,9 +299,29 @@ end
 -- Picker
 --=============================================================================
 
----@param opts? { no_spawn?: boolean } passed through to resumable_sessions
+---Assemble a display line from {text, highlight} segments. Telescope wants byte offsets,
+---and the markers below are multibyte, so the offsets are accumulated from the segments
+---rather than written out by hand.
+---@param segments { [1]: string, [2]: string|nil }[]
+---@return string text, table highlights
+local function render(segments)
+	local parts, highlights, offset = {}, {}, 0
+	for _, seg in ipairs(segments) do
+		local text = seg[1]
+		if seg[2] and text ~= "" then
+			table.insert(highlights, { { offset, offset + #text }, seg[2] })
+		end
+		table.insert(parts, text)
+		offset = offset + #text
+	end
+	return table.concat(parts), highlights
+end
+
+---@param opts? { no_spawn?: boolean, current_buf?: number } current_buf: the chat to mark,
+---captured by the caller before the picker took focus
 ---@return table
 local function picker(opts)
+	opts = opts or {}
 	local live = live_chats()
 	local sessions = resumable_sessions(opts)
 
@@ -254,48 +336,68 @@ local function picker(opts)
 
 	-- Live chats first
 	for _, chat in ipairs(live) do
-		local title = chat.title
-		local provider = chat.provider
-		local model = chat.model
+		local is_current = opts.current_buf ~= nil and chat.bufnr == opts.current_buf
+		local state = STATE[chat.state] or STATE.none
 
-		local prefix = "💬 "
-		local sep = "  "
-		local dot = " · "
-		local full = prefix .. title .. sep .. provider .. dot .. model
+		-- The state marker earns its column: a chat can be listed and still not be able to
+		-- take a message. Anything other than ready is spelled out, since a coloured glyph
+		-- alone does not say what is wrong.
+		local note = ""
+		if chat.state ~= "ready" then
+			note = ("  (%s)"):format(state.label)
+		elseif not chat.visible then
+			note = "  (hidden)"
+		end
 
-		-- 0-based byte offsets for highlight ranges
-		local t_start = #prefix
-		local t_end = t_start + #title
-		local p_start = t_end + #sep
-		local p_end = p_start + #provider
-		local m_start = p_end + #dot
-		local m_end = m_start + #model
-
-		local highlights = {
-			{ { t_start, t_end }, "AiWinBarTitle" },
-			{ { p_start, p_end }, "AiWinBarProvider" },
-			{ { m_start, m_end }, "AiWinBarModel" },
-		}
+		local text, highlights = render({
+			{ is_current and "▶ " or "  ", is_current and "AiListCurrent" or nil },
+			{ state.marker .. " ", state.hl },
+			{ chat.title, is_current and "AiListCurrent" or "AiWinBarTitle" },
+			{ "  " },
+			{ chat.provider, "AiWinBarProvider" },
+			{ " · " },
+			{ chat.model, "AiWinBarModel" },
+			{ note, "AiListDim" },
+		})
 
 		-- Bind per-iteration: the closure below captures the current
-		-- iteration's full/highlights, not the loop variable's final value.
-		local make_display = function() return full, highlights end
+		-- iteration's text/highlights, not the loop variable's final value.
+		local make_display = function()
+			return text, highlights
+		end
 
-		table.insert(entries, {
+		-- The leading digit is what keeps the current chat on top, and live chats above
+		-- stored sessions, once a filter is typed and the sorter starts ranking.
+		local entry = {
 			value = chat,
-			ordinal = "1" .. chat.title,
+			ordinal = (is_current and "0" or "1") .. chat.title,
 			display = make_display,
 			kind = "live",
-		})
+		}
+		-- With an empty prompt every entry scores the same, so the sorter leaves them in
+		-- finder order and the ordinal alone would not put the current chat first. Hoist it.
+		if is_current then
+			table.insert(entries, 1, entry)
+		else
+			table.insert(entries, entry)
+		end
 	end
 
-	-- Resumable sessions
+	-- Resumable sessions. Aligned with the live entries' marker column so both sections
+	-- read as one list, and dimmed: there is no agent behind these until you open one.
 	for _, s in ipairs(sessions) do
 		if not live_session_ids[s.sessionId] then
+			local text, highlights = render({
+				{ "  ○ ", "AiListDim" },
+				{ s.title },
+				{ "  " .. relative_time(s.updatedAt), "AiListDim" },
+			})
 			table.insert(entries, {
 				value = s,
 				ordinal = "2" .. s.title .. (s.updatedAt or ""),
-				display = "📋 " .. s.title .. "  " .. relative_time(s.updatedAt),
+				display = function()
+					return text, highlights
+				end,
 				kind = "session",
 			})
 		end
@@ -444,7 +546,12 @@ function M.open()
 
 	ensure_highlights()
 
-	local entries = picker()
+	-- Resolved now, before Telescope's prompt buffer becomes the current one: the answer
+	-- follows BufEnter, so asking again during a rebuild would give the prompt, not a chat.
+	local current = require("ai.chat").current_chat()
+	local current_buf = current and api.nvim_buf_is_valid(current.bufnr) and current.bufnr or nil
+
+	local entries = picker({ current_buf = current_buf })
 
 	local pickers = require("telescope.pickers")
 	local finders = require("telescope.finders")
@@ -453,7 +560,7 @@ function M.open()
 	local action_state = require("telescope.actions.state")
 
 	local function rebuild(p, popts)
-		entries = picker(popts)
+		entries = picker(vim.tbl_extend("keep", popts or {}, { current_buf = current_buf }))
 		p:refresh(
 			finders.new_table({
 				results = entries,
@@ -470,7 +577,7 @@ function M.open()
 			prompt_title = PROMPT_TITLE,
 			-- Telescope has no help overlay of its own, and these mappings are not
 			-- guessable — one of them deletes a transcript for good.
-			results_title = "<CR> open   <C-r> rename   <C-d> close   <C-x> delete",
+			results_title = "▶ current   ● ready  ◌ starting  ✕ gone  ○ stored   │   <CR> open  <C-r> rename  <C-d> close  <C-x> delete",
 			finder = finders.new_table({
 				results = entries,
 				entry_maker = function(e)

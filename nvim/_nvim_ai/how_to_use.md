@@ -72,6 +72,18 @@ Press `<leader>cmc`. Same picker flow as inline but for the chat scope. Defaults
 - **Live chats** — every open chat buffer, suffixed with its `provider · model`. `<CR>` focuses it
 - **Resumable sessions** — past ACP sessions (including ones started in a terminal outside nvim), filtered to the current git repo. `<CR>` restores the session into a new chat buffer with full history
 
+Each line leads with two markers, also spelled out in the picker's results border:
+
+| Marker | Means |
+|---|---|
+| `▶` | The chat `<leader>cc` reaches. Always listed first |
+| `●` | Agent up and ready to take a message |
+| `◌` | Agent still starting — a restore mid-handshake. Sending now would fail |
+| `✕` | Agent process is gone. The buffer survived a crash; reopen the session to get a working one |
+| `○` | A stored session, so no agent at all until you open it |
+
+Anything not `●` also carries a short reason in dim text, since a coloured glyph alone doesn't say what's wrong. Ready-but-hidden chats are annotated `(hidden)` — they hold a running agent even though no window shows them.
+
 Both sections take the same three edits, listed in the picker's own results border:
 
 | Key | Does |

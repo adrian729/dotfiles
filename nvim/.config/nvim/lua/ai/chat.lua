@@ -468,6 +468,14 @@ local function newest_chat()
 	end
 end
 
+---The chat `M.toggle` would reach — i.e. the one the user thinks of as current. Exposed
+---for the chat list, which marks it. Callers must read this *before* opening a picker:
+---last_chat follows BufEnter, so once a Telescope prompt has focus the answer can change.
+---@return table|nil
+function M.current_chat()
+	return newest_chat()
+end
+
 ---Toggle the last chat buffer. Delegates to the plugin's own toggle, which
 ---tracks last_chat internally and is the authority on show/hide state — but
 ---only once a real chat exists. Without this guard, the plugin's own toggle
