@@ -257,6 +257,62 @@ local function resolve_chat_adapter_for(provider, model, saved_opts)
 end
 
 --=============================================================================
+-- On-disk state
+--=============================================================================
+
+---@param path string
+---@return table
+local function read_json(path)
+	if vim.fn.filereadable(path) == 0 then
+		return {}
+	end
+	local ok, content = pcall(vim.fn.readfile, path)
+	if not ok then
+		return {}
+	end
+	local ok_json, data = pcall(vim.json.decode, table.concat(content, "\n"))
+	if not ok_json or type(data) ~= "table" then
+		return {}
+	end
+	return data
+end
+
+---@param path string
+---@param data table
+local function write_json(path, data)
+	vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+	local ok, encoded = pcall(vim.json.encode, data)
+	if ok then
+		pcall(vim.fn.writefile, { encoded }, path)
+	end
+end
+
+-- Titles the user chose, keyed by ACP session ID. Kept apart from chat_sessions.json
+-- because they outlive the chats that carried them: a renamed session still shows under
+-- that name when it turns up in the chat list as resumable, long after its buffer is
+-- gone. They also have to be distinguishable from titles the *agent* generated, which
+-- arrive at every turn end and are free to change — a user's name is not.
+local titles_file = vim.fn.stdpath("state") .. "/ai/chat_titles.json"
+
+---@return table<string, string> session ID → user-chosen title
+function M.saved_titles()
+	return read_json(titles_file)
+end
+
+---Record a user-chosen title for a session, or forget it when title is nil.
+---@param sid string|nil No-op without one — a chat with no exchange yet has no session
+---to key the title to, and save_open_chats backfills it once there is.
+---@param title string|nil
+function M.set_saved_title(sid, title)
+	if not sid then
+		return
+	end
+	local titles = M.saved_titles()
+	titles[sid] = title
+	write_json(titles_file, titles)
+end
+
+--=============================================================================
 -- Public API
 --=============================================================================
 
@@ -356,10 +412,24 @@ local function post_create(chat, override)
 			update_winbar(chat.bufnr)
 		end,
 	})
+	-- Also where a user-chosen title is defended. The agent pushes its own
+	-- auto-generated title at the end of every turn (session_info_update →
+	-- Chat:set_title, acp/init.lua:653) and nothing there asks whether the name was
+	-- the user's, so a rename would otherwise survive only until the next message.
+	-- set_title renames the buffer, so this fires for the agent's write as much as
+	-- for our own — hence the re-entrancy guard on the correction.
+	local reasserting = false
 	api.nvim_create_autocmd("BufFilePost", {
 		group = augroup,
 		buffer = chat.bufnr,
 		callback = function(args)
+			local chat_obj = require("codecompanion.interactions.chat").buf_get_chat(args.buf)
+			local want = chat_obj and chat_obj._ai_user_title
+			if want and chat_obj.title ~= want and not reasserting then
+				reasserting = true
+				pcall(chat_obj.set_title, chat_obj, want)
+				reasserting = false
+			end
 			update_winbar(args.buf)
 		end,
 	})
@@ -491,13 +561,25 @@ function M.stop()
 	end
 end
 
----Rename the current chat. Prompts for a new title, sets it via CodeCompanion's
----set_title which also updates the buffer name, and the winbar follows via BufFilePost.
+---Give a chat a title of the user's choosing and make it stick. Three places have to
+---agree for that: the chat itself (set_title, which also renames the buffer and so drags
+---the winbar along), `_ai_user_title` so the agent's own auto-title is corrected rather
+---than accepted, and the titles store so the name survives the buffer and the restart.
+---@param chat table
+---@param title string
+function M.apply_title(chat, title)
+	chat._ai_user_title = title
+	pcall(chat.set_title, chat, title)
+	local conn = chat.acp_connection
+	M.set_saved_title(conn and conn.session_id, title)
+end
+
+---Rename the current chat.
 ---@param chat? table Passed by the chat list to rename a specific entry.
 function M.rename(chat)
 	chat = chat or require("codecompanion.interactions.chat").buf_get_chat(api.nvim_get_current_buf())
 	if not chat then
-		chat = require("codecompanion.interactions.chat").last_chat()
+		chat = newest_chat()
 	end
 	if not chat or not api.nvim_buf_is_valid(chat.bufnr) then
 		return vim.notify("[ai] no chat to rename", vim.log.levels.INFO)
@@ -505,8 +587,9 @@ function M.rename(chat)
 
 	local current = chat.title or ""
 	vim.ui.input({ prompt = "Rename chat: ", default = current }, function(input)
-		if input and vim.trim(input) ~= "" and vim.trim(input) ~= current then
-			chat:set_title(vim.trim(input))
+		local name = input and vim.trim(input) or ""
+		if name ~= "" and name ~= current then
+			M.apply_title(chat, name)
 		end
 	end)
 end
@@ -598,27 +681,12 @@ local state_file = vim.fn.stdpath("state") .. "/ai/chat_sessions.json"
 
 ---@return table<string, table[]> cwd → saved chat entries
 local function read_state()
-	if vim.fn.filereadable(state_file) == 0 then
-		return {}
-	end
-	local ok, content = pcall(vim.fn.readfile, state_file)
-	if not ok then
-		return {}
-	end
-	local ok_json, data = pcall(vim.json.decode, table.concat(content, "\n"))
-	if not ok_json or type(data) ~= "table" then
-		return {}
-	end
-	return data
+	return read_json(state_file)
 end
 
 ---@param data table<string, table[]>
 local function write_state(data)
-	vim.fn.mkdir(vim.fn.fnamemodify(state_file, ":h"), "p")
-	local ok, encoded = pcall(vim.json.encode, data)
-	if ok then
-		pcall(vim.fn.writefile, { encoded }, state_file)
-	end
+	write_json(state_file, data)
 end
 
 ---Has this chat completed at least one exchange? Only then has the agent committed
@@ -671,6 +739,13 @@ local function save_open_chats()
 				if title == ("%s · %s"):format(tostring(chat._ai_provider), tostring(chat._ai_model)) then
 					title = nil
 				end
+
+				-- Backfill: a chat renamed before its first exchange had no session ID to
+				-- key the name to, so M.apply_title could only record it on the chat.
+				if chat._ai_user_title and conn and conn.session_id then
+					M.set_saved_title(conn.session_id, chat._ai_user_title)
+				end
+
 				table.insert(entries, {
 					session_id = resumable and conn.session_id or nil,
 					provider = chat._ai_provider,
@@ -685,6 +760,206 @@ local function save_open_chats()
 	local data = read_state()
 	data[vim.fn.getcwd()] = #entries > 0 and entries or nil
 	write_state(data)
+end
+
+--=============================================================================
+-- Removing chats and the sessions behind them
+--=============================================================================
+
+---Drop every local trace of a session: its saved entry for this cwd, and any name the
+---user gave it. Only correct once the agent has actually deleted it — forgetting a
+---session the agent still holds just means it reappears in the chat list, sourced from
+---session/list, under its agent-generated title.
+---@param sid string
+local function forget_session(sid)
+	local data = read_state()
+	local cwd = vim.fn.getcwd()
+	if type(data[cwd]) == "table" then
+		local kept = {}
+		for _, entry in ipairs(data[cwd]) do
+			if entry.session_id ~= sid then
+				table.insert(kept, entry)
+			end
+		end
+		data[cwd] = #kept > 0 and kept or nil
+		write_state(data)
+	end
+	M.set_saved_title(sid, nil)
+end
+
+---Whether the agent behind a connection advertises session/delete. Read straight off
+---the initialize response the connection cached, because CodeCompanion wraps `list` and
+---`load` in can_* helpers but not `delete` — and asking for an unadvertised method earns
+---a JSON-RPC method-not-found, which its own notify handler turns into a red box on
+---screen (acp/init.lua:596).
+---@param conn table|nil
+---@return boolean
+local function can_delete_sessions(conn)
+	local info = conn and conn._agent_info
+	local caps = info and info.agentCapabilities and info.agentCapabilities.sessionCapabilities
+	return type(caps) == "table" and caps.delete ~= nil
+end
+
+---Whether the agent still has this session in its store.
+---@param conn table
+---@param sid string
+---@return boolean
+local function session_is_listed(conn, sid)
+	if not (conn.can_list_sessions and conn:can_list_sessions()) then
+		-- No way to check, so take the agent at its word. Claiming a delete that did not
+		-- happen is the worse of the two mistakes.
+		return true
+	end
+	for _, s in ipairs(conn:session_list({ max_sessions = 500 }) or {}) do
+		if s.sessionId == sid then
+			return true
+		end
+	end
+	return false
+end
+
+---Delete a session from the agent's own store, then forget it here. Any ready connection
+---to the right agent will do: the agent deletes by ID, not by whatever session the
+---connection itself is holding.
+---@param sid string
+---@param conn table A ready ACP connection to the agent that owns the session
+---@return boolean deleted
+function M.delete_session(sid, conn)
+	if not can_delete_sessions(conn) then
+		vim.notify("[ai] this agent cannot delete sessions", vim.log.levels.WARN)
+		return false
+	end
+
+	-- The agent answers with an empty object; send_rpc_request maps both a JSON-RPC error
+	-- and a timeout to nil, so a nil answer is not by itself a surviving session.
+	local answered = conn:send_rpc_request("session/delete", { sessionId = sid }) ~= nil
+
+	-- Verify instead of trusting the answer, because neither answer means what it looks
+	-- like. A refusal is what a session the agent never stored gets — a chat closed before
+	-- its first exchange — and there is nothing to delete in that case anyway. An
+	-- acknowledgement is not proof either: the agent unlinks the transcript, but anything
+	-- still holding that session writes it straight back, and the RPC reports success
+	-- regardless (measured — hence the connection rules on connection_for_cleanup).
+	if session_is_listed(conn, sid) then
+		vim.notify(
+			answered and ("[ai] session %s survived being deleted — something still has it open"):format(sid:sub(1, 8))
+				or ("[ai] the agent would not delete session %s"):format(sid:sub(1, 8)),
+			vim.log.levels.ERROR
+		)
+		return false
+	end
+
+	forget_session(sid)
+	return true
+end
+
+---Whether the agent is still working on this chat's turn. `_active_prompt` is the ACP
+---side of it: chat.current_request only covers the HTTP adapters.
+---@param chat table
+---@return boolean
+local function in_flight(chat)
+	local conn = chat.acp_connection
+	return chat.current_request ~= nil or (conn ~= nil and conn._active_prompt ~= nil)
+end
+
+---A ready connection able to delete `sid`, which means any connection except one holding
+---it. Deleting a session over the connection that owns it does not stick: the agent
+---unlinks the transcript, the live session writes it straight back, and the RPC reports
+---success either way — measured, twice. Another live chat's connection will do; spawning
+---one costs a subprocess and a handshake, which is why it is the fallback.
+---@param provider string
+---@param sid string
+---@return table|nil conn, boolean spawned Caller disconnects it when spawned
+local function connection_for_cleanup(provider, sid)
+	for _, bufnr in ipairs(_G.codecompanion_buffers or {}) do
+		local other = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
+		local conn = other and other.acp_connection
+		if conn and conn:is_ready() and other._ai_provider == provider and conn.session_id ~= sid then
+			return conn, false
+		end
+	end
+
+	local adapter = resolve_chat_adapter_for(provider, nil, {})
+	if not adapter then
+		return nil, false
+	end
+	local conn = require("codecompanion.acp").new({ adapter = adapter })
+	if conn:connect_and_authenticate() then
+		return conn, true
+	end
+	pcall(conn.disconnect, conn)
+	return nil, false
+end
+
+---Remove a chat for good: the buffer closes and the agent's stored copy of the
+---conversation is deleted, so it does not come back as a resumable session. Irreversible
+---— the agent unlinks the transcript — hence the confirmation.
+---@param chat? table Defaults to the chat in the current buffer, else the newest one
+function M.delete(chat)
+	chat = chat or require("codecompanion.interactions.chat").buf_get_chat(api.nvim_get_current_buf()) or newest_chat()
+	if not chat or not api.nvim_buf_is_valid(chat.bufnr) then
+		return vim.notify("[ai] no chat to delete", vim.log.levels.INFO)
+	end
+
+	local title = chat.title or "this chat"
+	local provider = chat._ai_provider
+	local conn = chat.acp_connection
+	local sid = conn and conn.session_id
+	-- A session ID alone does not mean there is anything to lose: session/new happens at
+	-- creation, while the agent writes the transcript only once there has been an
+	-- exchange. Same test save_open_chats uses to decide whether an ID is worth keeping.
+	-- It informs the wording only — the deletion below still runs on the strength of the
+	-- session ID, since this test reads as false mid-answer, when there *is* a file.
+	local stored = sid ~= nil and (chat._ai_resumable or has_exchange(chat))
+	local question = stored
+			and ("Delete %s and its saved transcript? This cannot be undone."):format(title)
+		or ("Close %s? It has no saved transcript."):format(title)
+	if vim.fn.confirm(question, "&Delete\n&Cancel", 2) ~= 1 then
+		return
+	end
+
+	-- End the turn before pulling the session out from under it, so the agent is not
+	-- mid-write when its process goes away.
+	if sid and in_flight(chat) then
+		pcall(chat.stop, chat)
+		vim.wait(2000, function()
+			return not in_flight(chat)
+		end, 50)
+	end
+
+	-- Closing disconnects the chat's ACP connection, which is what releases the session:
+	-- the deletion below has to happen after that, and over a different connection.
+	chat:close()
+	require("ai.chat_list").clear_cache()
+
+	if not sid then
+		return vim.notify(("[ai] closed %s"):format(title), vim.log.levels.INFO)
+	end
+
+	-- The agent flushes the transcript as its process winds down, so let the close land
+	-- before asking for the file to go.
+	vim.wait(600)
+
+	local cleanup_conn, spawned = connection_for_cleanup(provider, sid)
+	if not cleanup_conn then
+		return vim.notify(
+			("[ai] closed %s, but no agent was available to delete its session"):format(title),
+			vim.log.levels.WARN
+		)
+	end
+
+	local deleted = M.delete_session(sid, cleanup_conn)
+	if spawned then
+		pcall(cleanup_conn.disconnect, cleanup_conn)
+	end
+
+	if deleted then
+		vim.notify(("[ai] deleted %s"):format(title), vim.log.levels.INFO)
+	else
+		-- The chat is gone but the agent still holds the session, so it will show up
+		-- under <leader>cl as resumable. Say so rather than implying a clean delete.
+		vim.notify(("[ai] closed %s, but the agent kept its session"):format(title), vim.log.levels.WARN)
+	end
 end
 
 ---Poll until the chat's own ACP connection has finished its handshake. Chat.new
@@ -770,13 +1045,23 @@ function M.restore_session(entry, opts)
 
 	post_create(chat, { provider = provider, model = entry.model, opts = saved_opts })
 
+	-- A name from the titles store is the user's and outranks the entry's own title,
+	-- which is only ever whatever the agent had auto-generated by the last save. Marking
+	-- it as such is what keeps the agent from taking the name back mid-session; an
+	-- inherited auto-title is deliberately left free to change.
+	local user_title = sid and M.saved_titles()[sid] or nil
+	local title = user_title or entry.title
+	if user_title then
+		chat._ai_user_title = user_title
+	end
+
 	-- Reapplied at every point something else may install a title: post_create sets the
 	-- `provider · model` placeholder, and during session/load the agent pushes its own
 	-- auto-generated one via session_info_update (acp/init.lua:653). Either would
 	-- otherwise replace a name the user chose with <leader>cr.
 	local function apply_saved_title()
-		if entry.title then
-			pcall(chat.set_title, chat, entry.title)
+		if title then
+			pcall(chat.set_title, chat, title)
 		end
 	end
 

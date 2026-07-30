@@ -160,6 +160,7 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- <leader>cn - new chat with current provider + options
 -- <leader>cq - close all chats
 -- <leader>cr - rename current chat
+-- <leader>cd - delete current chat and its saved transcript (confirms first)
 -- <leader>cs - status panel
--- <leader>cl - chat list
+-- <leader>cl - chat list (<C-r> rename, <C-d> close, <C-x> delete)
 -- ga / gd / … - plugin-native, inside the chat buffer

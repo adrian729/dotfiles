@@ -100,6 +100,13 @@ return {
 				desc = "AI: rename current chat",
 			},
 			{
+				"<leader>cd",
+				function()
+					require("ai.chat").delete()
+				end,
+				desc = "AI: delete current chat and its saved transcript",
+			},
+			{
 				"<leader>cs",
 				function()
 					require("ai.status").toggle()

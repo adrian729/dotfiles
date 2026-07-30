@@ -110,11 +110,15 @@ end
 
 ---Acquire a connection capable of listing sessions. Prefers a live chat's
 ---connection; falls back to spawning one through the pool's adapter resolution.
----@param opts? { no_spawn?: boolean } no_spawn: reuse a live chat's connection or give
----up. For repeated polling, where spawning an agent per attempt would cost a subprocess
----and a blocking handshake each time.
+---@param opts? { no_spawn?: boolean, provider?: string } no_spawn: reuse a live chat's
+---connection or give up. For repeated polling, where spawning an agent per attempt would
+---cost a subprocess and a blocking handshake each time. provider: insist on an agent that
+---can see a particular session — one agent's store is not another's, so a session listed
+---by claude cannot be loaded or deleted over an opencode connection.
 ---@return table|nil conn, string|nil provider, boolean|nil spawned
 local function session_connection(opts)
+	opts = opts or {}
+
 	-- Try an existing chat's ACP connection first
 	for _, bufnr in ipairs(_G.codecompanion_buffers or {}) do
 		local chat = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
@@ -124,12 +128,15 @@ local function session_connection(opts)
 			if name == "claude_code" or name == "opencode" then
 				-- Report the ai.providers key rather than the CodeCompanion adapter
 				-- name — callers feed it back into provider-keyed lookups.
-				return conn, chat._ai_provider or (name == "claude_code" and "claude" or "opencode")
+				local key = chat._ai_provider or (name == "claude_code" and "claude" or "opencode")
+				if not opts.provider or opts.provider == key then
+					return conn, key
+				end
 			end
 		end
 	end
 
-	if opts and opts.no_spawn then
+	if opts.no_spawn then
 		return nil, nil
 	end
 
@@ -137,8 +144,8 @@ local function session_connection(opts)
 	local adapters = require("codecompanion.adapters")
 	local ACP = require("codecompanion.acp")
 
-	-- Try claude first, then opencode
-	for _, provider in ipairs({ "claude", "opencode" }) do
+	-- The requested agent, or claude first and opencode second when it makes no difference
+	for _, provider in ipairs(opts.provider and { opts.provider } or { "claude", "opencode" }) do
 		local name = providers.acp_adapter(provider)
 		if name then
 			local adapter = adapters.resolve(name)
@@ -178,12 +185,15 @@ local function resumable_sessions(opts)
 	end
 
 	local raw = conn:session_list({ max_sessions = 500 })
+	-- A name the user gave the session outranks the agent's own summary of it, which is
+	-- what session/list reports and what it would otherwise be shown under.
+	local renamed = require("ai.chat").saved_titles()
 	local filtered = {}
 	for _, s in ipairs(raw) do
 		if s.cwd and vim.startswith(s.cwd, root) then
 			table.insert(filtered, {
 				sessionId = s.sessionId,
-				title = s.title or s.sessionId,
+				title = renamed[s.sessionId] or s.title or s.sessionId,
 				updatedAt = s.updatedAt or "",
 				cwd = s.cwd or "",
 				-- The agent that listed the session is the one that can load it
@@ -329,6 +339,50 @@ local function restore_session(entry)
 	M.clear_cache()
 end
 
+---Rename a stored session that has no chat open on it. Nothing is sent to the agent: it
+---names sessions from its own summary of the conversation and offers no way to override
+---that over ACP, so the chosen name is kept here and applied wherever the session is
+---shown or reopened.
+---@param entry table
+local function rename_stored_session(entry)
+	vim.ui.input({ prompt = "Rename session: ", default = entry.title }, function(input)
+		local name = input and vim.trim(input) or ""
+		if name == "" or name == entry.title then
+			return
+		end
+		require("ai.chat").set_saved_title(entry.sessionId, name)
+		M.clear_cache()
+		vim.notify(("[ai] renamed to %s"):format(name), vim.log.levels.INFO)
+	end)
+end
+
+---Delete a stored session that has no chat open on it, agent-side copy included.
+---@param entry table
+local function delete_stored_session(entry)
+	local question = ("Delete %s and its saved transcript? This cannot be undone."):format(entry.title)
+	if vim.fn.confirm(question, "&Delete\n&Cancel", 2) ~= 1 then
+		return
+	end
+
+	-- Insist on the agent that listed the session: only it can see the session's file.
+	local conn, _, spawned = session_connection({ provider = entry.provider })
+	if not conn then
+		return vim.notify(
+			("[ai] no %s connection to delete the session with"):format(tostring(entry.provider)),
+			vim.log.levels.ERROR
+		)
+	end
+
+	local deleted = require("ai.chat").delete_session(entry.sessionId, conn)
+	if spawned then
+		pcall(conn.disconnect, conn)
+	end
+	if deleted then
+		M.clear_cache()
+		vim.notify(("[ai] deleted %s"):format(entry.title), vim.log.levels.INFO)
+	end
+end
+
 local PROMPT_TITLE = "Chats & Sessions"
 local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
@@ -414,6 +468,9 @@ function M.open()
 	local chat_picker = pickers
 		.new({}, {
 			prompt_title = PROMPT_TITLE,
+			-- Telescope has no help overlay of its own, and these mappings are not
+			-- guessable — one of them deletes a transcript for good.
+			results_title = "<CR> open   <C-r> rename   <C-d> close   <C-x> delete",
 			finder = finders.new_table({
 				results = entries,
 				entry_maker = function(e)
@@ -440,20 +497,27 @@ function M.open()
 					end
 				end)
 
-				-- CTRL-d: close a single chat
+				---The chat behind a live entry, or nil if its buffer has gone.
+				local function selected_chat(entry)
+					if not (entry.bufnr and api.nvim_buf_is_valid(entry.bufnr)) then
+						return nil
+					end
+					return require("codecompanion.interactions.chat").buf_get_chat(entry.bufnr)
+				end
+
+				-- CTRL-d: close a live chat without touching its stored session, so it
+				-- stays resumable from this same list. Only live entries have anything to
+				-- close; <C-x> is the one that removes a session.
 				map({ "i", "n" }, "<C-d>", function()
 					local selection = action_state.get_selected_entry()
 					if not selection or selection.kind ~= "live" then
 						return
 					end
-					local entry = selection.value
-					if entry.bufnr and api.nvim_buf_is_valid(entry.bufnr) then
-						local chat = require("codecompanion.interactions.chat").buf_get_chat(entry.bufnr)
-						if chat then
-							chat:close()
-						else
-							pcall(api.nvim_buf_delete, entry.bufnr, { force = true })
-						end
+					local chat = selected_chat(selection.value)
+					if chat then
+						chat:close()
+					elseif selection.value.bufnr then
+						pcall(api.nvim_buf_delete, selection.value.bufnr, { force = true })
 					end
 					local current_picker = action_state.get_current_picker(prompt_bufnr)
 					if current_picker then
@@ -461,19 +525,45 @@ function M.open()
 					end
 				end)
 
-				-- r: rename the selected live chat
-				map("n", "r", function()
+				-- CTRL-r (or r from normal mode): rename. Works on a live chat and on a
+				-- stored session alike — the name is remembered against the session ID
+				-- either way, so it survives closing the chat and reopening it later.
+				local function rename_selected()
 					local selection = action_state.get_selected_entry()
-					if not selection or selection.kind ~= "live" then
+					if not selection then
 						return
 					end
-					local entry = selection.value
-					if entry.bufnr and api.nvim_buf_is_valid(entry.bufnr) then
-						local chat = require("codecompanion.interactions.chat").buf_get_chat(entry.bufnr)
+					-- The picker closes first: vim.ui.input over a picker fights it for the
+					-- prompt, and the answer can land in the filter instead.
+					actions.close(prompt_bufnr)
+					if selection.kind == "live" then
+						local chat = selected_chat(selection.value)
 						if chat then
-							actions.close(prompt_bufnr)
 							require("ai.chat").rename(chat)
 						end
+					else
+						rename_stored_session(selection.value)
+					end
+				end
+				map({ "i", "n" }, "<C-r>", rename_selected)
+				map("n", "r", rename_selected)
+
+				-- CTRL-x: remove for good — the chat and the agent's own copy of the
+				-- conversation, so it does not return as a resumable session. The picker
+				-- closes first because the confirmation is a modal cmdline prompt.
+				map({ "i", "n" }, "<C-x>", function()
+					local selection = action_state.get_selected_entry()
+					if not selection then
+						return
+					end
+					actions.close(prompt_bufnr)
+					if selection.kind == "live" then
+						local chat = selected_chat(selection.value)
+						if chat then
+							require("ai.chat").delete(chat)
+						end
+					else
+						delete_stored_session(selection.value)
 					end
 				end)
 
