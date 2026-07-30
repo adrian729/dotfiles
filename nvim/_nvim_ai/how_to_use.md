@@ -81,6 +81,7 @@ The agent keeps its own memory across the restart — this resumes the real ACP 
 
 Notes:
 - Restored chats start hidden, so startup stays visually unchanged. They cost one agent subprocess each.
+- Restoring takes a few seconds. Opening `<leader>cl` during that window is fine: the picker title shows a spinner and `restoring 1/2`, and chats drop into the list as they land — no need to close and reopen it.
 - Only ACP chats (claude, opencode) persist. ollama chats are HTTP with no server-side session, so they cannot be resumed.
 - Closing a chat (`<leader>cq`, or `<C-d>` in the chat list) drops it from the saved set — it will not come back.
 - Had more than 3 chats open? The rest are still resumable from `<leader>cl`; only the automatic restore is capped.

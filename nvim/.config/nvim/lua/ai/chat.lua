@@ -714,11 +714,20 @@ end
 ---transcript replayed; without one there is nothing to resume, so the chat simply
 ---reopens empty on its original provider/model.
 ---@param entry { session_id?: string, title?: string, provider?: string, model?: string, opts?: table }
----@param opts? { hide?: boolean } hide: park the chat out of sight once restored
+---@param opts? { hide?: boolean, on_done?: fun() } hide: park the chat out of sight once
+---restored. on_done: called once the restore has settled either way, so the caller can
+---track progress — every path that returns a chat reports through it, while the ones that
+---fail outright return nil synchronously instead.
 ---@return table|nil chat
 function M.restore_session(entry, opts)
 	opts = opts or {}
 	ensure_spinner_group()
+
+	local function report_done()
+		if opts.on_done then
+			opts.on_done()
+		end
+	end
 
 	local sid = entry.session_id
 	local sel = require("ai.providers").current("chat")
@@ -776,6 +785,7 @@ function M.restore_session(entry, opts)
 	-- Nothing to resume: the chat had no exchange behind it, so it reopens empty.
 	-- Attempting a load here is what used to raise "Resource not found".
 	if not sid then
+		report_done()
 		return chat
 	end
 
@@ -785,6 +795,7 @@ function M.restore_session(entry, opts)
 	-- behind it and so is saved without a session ID.
 	local function no_history(reason)
 		vim.notify(("[ai] %s — reopened without history"):format(reason), vim.log.levels.WARN)
+		report_done()
 	end
 
 	await_connection(chat, function(conn)
@@ -828,6 +839,7 @@ function M.restore_session(entry, opts)
 		chat._ai_resumable = true
 
 		apply_saved_title()
+		report_done()
 	end)
 
 	return chat
@@ -835,26 +847,53 @@ end
 
 local MAX_RESTORE = 3
 
-local function restore_chats()
-	local entries = read_state()[vim.fn.getcwd()]
-	if type(entries) ~= "table" or #entries == 0 then
-		return
-	end
+---@type table[]|nil Entries the startup batch will reopen, chosen before it starts
+local pending_restores = nil
 
-	local restoring = math.min(#entries, MAX_RESTORE)
-	if #entries > MAX_RESTORE then
+---@type { done: number, total: number }|nil nil once the batch has settled
+local restore_progress = nil
+
+---How far the startup restore has got, or nil when nothing is pending. Exists so that
+---anything listing chats can tell "none yet" apart from "none": the restores land on
+---timers a couple of seconds into the session, and ai.chat_list would otherwise show an
+---empty picker that looks like an answer.
+---@return { done: number, total: number }|nil
+function M.restore_progress()
+	return restore_progress
+end
+
+local function restore_chats()
+	local total = #pending_restores
+	local saved = #(read_state()[vim.fn.getcwd()] or {})
+	if saved > total then
 		vim.notify(
-			("[ai] restoring %d of %d saved chats — <leader>cl to resume the rest"):format(restoring, #entries),
+			("[ai] restoring %d of %d saved chats — <leader>cl to resume the rest"):format(total, saved),
 			vim.log.levels.INFO
 		)
 	end
 
-	for i = 1, restoring do
-		local entry = entries[i]
+	for i, entry in ipairs(pending_restores) do
 		-- Staggered: each restore spawns an agent subprocess and makes a blocking
 		-- session/load round trip, so firing them together stalls startup.
 		vim.defer_fn(function()
-			M.restore_session(entry, { hide = true })
+			local settled = false
+			local function settle()
+				if settled or not restore_progress then
+					return
+				end
+				settled = true
+				restore_progress.done = restore_progress.done + 1
+				if restore_progress.done >= restore_progress.total then
+					restore_progress = nil
+				end
+			end
+
+			-- restore_session reports the asynchronous outcomes through on_done; the paths
+			-- that fail outright return nil synchronously and are settled here instead.
+			local ok, chat = pcall(M.restore_session, entry, { hide = true, on_done = settle })
+			if not ok or not chat then
+				settle()
+			end
 		end, 400 * i)
 	end
 end
@@ -867,6 +906,15 @@ local function setup_persistence()
 		callback = save_open_chats,
 	})
 
+	local saved = read_state()[vim.fn.getcwd()]
+	if type(saved) ~= "table" or #saved == 0 then
+		return
+	end
+
+	pending_restores = vim.list_slice(saved, 1, math.min(#saved, MAX_RESTORE))
+	-- Published now rather than when the first restore fires: a <leader>cl inside that
+	-- opening half-second still has to know chats are on their way.
+	restore_progress = { done = 0, total = #pending_restores }
 	vim.defer_fn(restore_chats, 500)
 end
 

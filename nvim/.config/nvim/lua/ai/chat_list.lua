@@ -110,8 +110,11 @@ end
 
 ---Acquire a connection capable of listing sessions. Prefers a live chat's
 ---connection; falls back to spawning one through the pool's adapter resolution.
+---@param opts? { no_spawn?: boolean } no_spawn: reuse a live chat's connection or give
+---up. For repeated polling, where spawning an agent per attempt would cost a subprocess
+---and a blocking handshake each time.
 ---@return table|nil conn, string|nil provider, boolean|nil spawned
-local function session_connection()
+local function session_connection(opts)
 	-- Try an existing chat's ACP connection first
 	for _, bufnr in ipairs(_G.codecompanion_buffers or {}) do
 		local chat = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
@@ -124,6 +127,10 @@ local function session_connection()
 				return conn, chat._ai_provider or (name == "claude_code" and "claude" or "opencode")
 			end
 		end
+	end
+
+	if opts and opts.no_spawn then
+		return nil, nil
 	end
 
 	local providers = require("ai.providers")
@@ -153,8 +160,9 @@ local function session_connection()
 end
 
 ---Fetch and cache resumable sessions, filtered by git root.
+---@param opts? { no_spawn?: boolean } passed through to session_connection
 ---@return { sessionId: string, title: string, updatedAt: string, cwd: string, provider: string }[]
-local function resumable_sessions()
+local function resumable_sessions(opts)
 	if M._cached_sessions then
 		return M._cached_sessions
 	end
@@ -164,7 +172,7 @@ local function resumable_sessions()
 		return {}
 	end
 
-	local conn, provider, spawned = session_connection()
+	local conn, provider, spawned = session_connection(opts)
 	if not conn then
 		return {}
 	end
@@ -219,10 +227,11 @@ end
 -- Picker
 --=============================================================================
 
+---@param opts? { no_spawn?: boolean } passed through to resumable_sessions
 ---@return table
-local function picker()
+local function picker(opts)
 	local live = live_chats()
-	local sessions = resumable_sessions()
+	local sessions = resumable_sessions(opts)
 
 	local entries = {}
 
@@ -320,6 +329,58 @@ local function restore_session(entry)
 	M.clear_cache()
 end
 
+local PROMPT_TITLE = "Chats & Sessions"
+local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+
+---Track the startup restore from inside an open picker: spin in the prompt border while
+---chats are still coming back and pull them in as they land. Without this the picker is
+---simply empty for the first seconds of a session, which reads as "you have no chats"
+---rather than "not yet" — the chats only register as buffers once their staggered
+---restore fires.
+---@param p table The live Telescope picker
+---@param rebuild fun(p: table) Re-run the finder against the current chat list
+local function follow_restores(p, rebuild)
+	local chat = require("ai.chat")
+	if not chat.restore_progress() then
+		return
+	end
+
+	local frame = 1
+	local last_done = -1
+
+	local function tick()
+		-- The picker is gone the moment its prompt buffer is: nothing left to update.
+		if not (p.prompt_bufnr and api.nvim_buf_is_valid(p.prompt_bufnr)) then
+			return
+		end
+
+		local progress = chat.restore_progress()
+		local title = PROMPT_TITLE
+		if progress then
+			title = ("%s  %s restoring %d/%d"):format(PROMPT_TITLE, SPINNER[frame], progress.done, progress.total)
+			frame = frame % #SPINNER + 1
+		end
+		pcall(function()
+			p.layout.prompt.border:change_title(title)
+		end)
+
+		-- Rebuild only when the count moves, so a picker being typed into is not
+		-- reset ten times a second. `math.huge` fires the final rebuild once the
+		-- batch is finished, catching whatever the last restore added.
+		local done = progress and progress.done or math.huge
+		if done ~= last_done then
+			last_done = done
+			rebuild(p)
+		end
+
+		if progress then
+			vim.defer_fn(tick, 100)
+		end
+	end
+
+	tick()
+end
+
 ---Open the Telescope picker.
 function M.open()
 	local ok, _ = pcall(require, "telescope")
@@ -337,9 +398,22 @@ function M.open()
 	local actions = require("telescope.actions")
 	local action_state = require("telescope.actions.state")
 
-	pickers
+	local function rebuild(p, popts)
+		entries = picker(popts)
+		p:refresh(
+			finders.new_table({
+				results = entries,
+				entry_maker = function(e)
+					return e
+				end,
+			}),
+			{ reset_prompt = false }
+		)
+	end
+
+	local chat_picker = pickers
 		.new({}, {
-			prompt_title = "Chats & Sessions",
+			prompt_title = PROMPT_TITLE,
 			finder = finders.new_table({
 				results = entries,
 				entry_maker = function(e)
@@ -381,14 +455,9 @@ function M.open()
 							pcall(api.nvim_buf_delete, entry.bufnr, { force = true })
 						end
 					end
-					-- Refresh the picker
-					entries = picker()
 					local current_picker = action_state.get_current_picker(prompt_bufnr)
 					if current_picker then
-						current_picker:refresh(
-							finders.new_table({ results = entries, entry_maker = function(e) return e end }),
-							{}
-						)
+						rebuild(current_picker)
 					end
 				end)
 
@@ -411,7 +480,13 @@ function M.open()
 				return true
 			end,
 		})
-		:find()
+
+	chat_picker:find()
+	-- no_spawn: the polling rebuilds must not spawn an agent per tick just to list
+	-- sessions. The restores bring up connections of their own, which these then borrow.
+	follow_restores(chat_picker, function(p)
+		rebuild(p, { no_spawn = true })
+	end)
 end
 
 ---Clear the cached session list; the next open re-queries.
