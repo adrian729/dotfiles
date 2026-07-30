@@ -109,6 +109,17 @@ function M.current(scope)
 	return { provider = sel.provider, opts = sel.opts[sel.provider], spec = M.providers[sel.provider] }
 end
 
+---The live options for a provider within a scope, selected or not. `M.current` only reaches
+---the selected provider's, which is not enough when restoring a chat that belongs to the
+---other one.
+---@param scope "inline"|"chat"
+---@param provider string
+---@return table|nil
+function M.opts_for(scope, provider)
+	local sel = state[scope]
+	return sel and sel.opts[provider] or nil
+end
+
 ---@param scope "inline"|"chat"
 ---@param provider string
 function M.set_provider(scope, provider)

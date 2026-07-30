@@ -236,8 +236,8 @@ local function resolve_chat_adapter_for(provider, model, saved_opts)
 	if not spec then
 		return nil
 	end
-	-- Merge saved opts over provider defaults so effort/mode/fast from the
-	-- original chat are preserved
+	-- Merge saved opts over provider defaults so effort/fast from the original chat are
+	-- preserved ("keep" means the saved value wins)
 	local opts = vim.tbl_extend("keep",
 		saved_opts,
 		(providers.defaults.chat.opts or {})[provider] or {}
@@ -245,6 +245,13 @@ local function resolve_chat_adapter_for(provider, model, saved_opts)
 	if model then
 		opts.model = model
 	end
+
+	-- `mode` is the exception, and deliberately not inherited: it decides whether the agent
+	-- may write without asking, which is a standing decision about this machine rather than
+	-- a property of one old conversation. Inheriting it meant chats created while the
+	-- default was `acceptEdits` kept silent write access for good, so tightening the default
+	-- appeared to do nothing — every existing chat reopened under the old, laxer setting.
+	opts.mode = (providers.opts_for("chat", provider) or {}).mode
 
 	for _, key in ipairs(spec.chat_options or {}) do
 		local option = (spec.options or {})[key]
@@ -796,11 +803,17 @@ local function save_open_chats()
 					M.set_saved_title(conn.session_id, chat._ai_user_title)
 				end
 
+				-- `mode` is left out on the way to disk too, so the file stops carrying a
+				-- permission setting at all. Copied rather than edited in place: `_ai_opts`
+				-- is live state the winbar and status panel read.
+				local opts = vim.deepcopy(chat._ai_opts or {})
+				opts.mode = nil
+
 				table.insert(entries, {
 					session_id = resumable and conn.session_id or nil,
 					provider = chat._ai_provider,
 					model = chat._ai_model,
-					opts = chat._ai_opts,
+					opts = opts,
 					title = title,
 				})
 			end
@@ -1103,7 +1116,12 @@ function M.restore_session(entry, opts)
 
 	consume_pending(entry)
 
-	local saved_opts = entry.opts or {}
+	-- Corrected here as well as inside resolve_chat_adapter_for, because these opts are also
+	-- what post_create records as `_ai_opts` — the status panel and winbar read that, and
+	-- reporting a mode the session is not actually running under is its own kind of wrong.
+	local saved_opts = vim.deepcopy(entry.opts or {})
+	saved_opts.mode = (require("ai.providers").opts_for("chat", provider) or {}).mode
+
 	local adapter = resolve_chat_adapter_for(provider, entry.model, saved_opts)
 	if not adapter then
 		return vim.notify(("[ai] could not resolve adapter for %s"):format(tostring(provider)), vim.log.levels.ERROR)
