@@ -125,11 +125,9 @@ end
 
 ---Acquire a connection capable of listing sessions. Prefers a live chat's
 ---connection; falls back to spawning one through the pool's adapter resolution.
----@param opts? { no_spawn?: boolean, provider?: string } no_spawn: reuse a live chat's
----connection or give up. For repeated polling, where spawning an agent per attempt would
----cost a subprocess and a blocking handshake each time. provider: insist on an agent that
----can see a particular session — one agent's store is not another's, so a session listed
----by claude cannot be loaded or deleted over an opencode connection.
+---@param opts? { provider?: string } provider: insist on an agent that can see a
+---particular session — one agent's store is not another's, so a session listed by claude
+---cannot be loaded or deleted over an opencode connection.
 ---@return table|nil conn, string|nil provider, boolean|nil spawned
 local function session_connection(opts)
 	opts = opts or {}
@@ -149,10 +147,6 @@ local function session_connection(opts)
 				end
 			end
 		end
-	end
-
-	if opts.no_spawn then
-		return nil, nil
 	end
 
 	local providers = require("ai.providers")
@@ -182,9 +176,8 @@ local function session_connection(opts)
 end
 
 ---Fetch and cache resumable sessions, filtered by git root.
----@param opts? { no_spawn?: boolean } passed through to session_connection
 ---@return { sessionId: string, title: string, updatedAt: string, cwd: string, provider: string }[]
-local function resumable_sessions(opts)
+local function resumable_sessions()
 	if M._cached_sessions then
 		return M._cached_sessions
 	end
@@ -194,7 +187,7 @@ local function resumable_sessions(opts)
 		return {}
 	end
 
-	local conn, provider, spawned = session_connection(opts)
+	local conn, provider, spawned = session_connection()
 	if not conn then
 		return {}
 	end
@@ -299,6 +292,11 @@ end
 -- Picker
 --=============================================================================
 
+---@return table<string, string> session ID → the name the user gave it
+local function saved_titles()
+	return require("ai.chat").saved_titles()
+end
+
 ---Assemble a display line from {text, highlight} segments. Telescope wants byte offsets,
 ---and the markers below are multibyte, so the offsets are accumulated from the segments
 ---rather than written out by hand.
@@ -317,13 +315,13 @@ local function render(segments)
 	return table.concat(parts), highlights
 end
 
----@param opts? { no_spawn?: boolean, current_buf?: number } current_buf: the chat to mark,
----captured by the caller before the picker took focus
+---@param opts? { current_buf?: number } current_buf: the chat to mark, captured by the
+---caller before the picker took focus
 ---@return table
 local function picker(opts)
 	opts = opts or {}
 	local live = live_chats()
-	local sessions = resumable_sessions(opts)
+	local sessions = resumable_sessions()
 
 	local entries = {}
 
@@ -383,10 +381,48 @@ local function picker(opts)
 		end
 	end
 
+	-- Chats from the last session, not started yet. Listed above the general session list
+	-- because they are the ones the user actually left open, and read straight from
+	-- chat_sessions.json — no agent has to be running for these to appear.
+	-- A saved entry only carries a title if the agent had generated one before nvim quit,
+	-- which it does asynchronously at turn end — so a chat closed promptly after its first
+	-- reply has none. The session list has caught up by now, so borrow the title from there.
+	local listed_titles = {}
+	for _, s in ipairs(sessions) do
+		listed_titles[s.sessionId] = s.title
+	end
+
+	local pending_ids = {}
+	for _, entry in ipairs(require("ai.chat").pending_chats()) do
+		if not (entry.session_id and live_session_ids[entry.session_id]) then
+			if entry.session_id then
+				pending_ids[entry.session_id] = true
+			end
+			local sid = entry.session_id
+			local title = (sid and saved_titles()[sid]) or entry.title or (sid and listed_titles[sid])
+			local text, highlights = render({
+				{ "  ○ ", "AiListDim" },
+				{ title or "untitled chat" },
+				{ "  " .. tostring(entry.provider or "?"), "AiWinBarProvider" },
+				{ " · " },
+				{ tostring(entry.model or "?"), "AiWinBarModel" },
+				{ entry.session_id and "  (from last session)" or "  (from last session, empty)", "AiListDim" },
+			})
+			table.insert(entries, {
+				value = entry,
+				ordinal = "2" .. (title or ""),
+				display = function()
+					return text, highlights
+				end,
+				kind = "pending",
+			})
+		end
+	end
+
 	-- Resumable sessions. Aligned with the live entries' marker column so both sections
 	-- read as one list, and dimmed: there is no agent behind these until you open one.
 	for _, s in ipairs(sessions) do
-		if not live_session_ids[s.sessionId] then
+		if not live_session_ids[s.sessionId] and not pending_ids[s.sessionId] then
 			local text, highlights = render({
 				{ "  ○ ", "AiListDim" },
 				{ s.title },
@@ -394,7 +430,7 @@ local function picker(opts)
 			})
 			table.insert(entries, {
 				value = s,
-				ordinal = "2" .. s.title .. (s.updatedAt or ""),
+				ordinal = "3" .. s.title .. (s.updatedAt or ""),
 				display = function()
 					return text, highlights
 				end,
@@ -425,44 +461,79 @@ local function focus_live(entry)
 	end
 end
 
----Restore a past session into a fresh chat. Shares ai.chat's implementation with
----the startup restore, which waits for the chat's own connection instead of
----spawning a second one alongside it.
+---Open a session that is not currently a chat: either one the agent listed, or one saved
+---from the last nvim session. This is where an agent process is finally spawned — nothing
+---before this point starts one.
 ---@param entry table
-local function restore_session(entry)
-	require("ai.chat").restore_session({
-		session_id = entry.sessionId,
-		title = entry.title,
-		provider = entry.provider,
-	})
+---@param kind "session"|"pending"
+local function restore_session(entry, kind)
+	-- A pending entry is already in ai.chat's own shape, carrying the model and options the
+	-- chat originally had. A listed session has only what session/list reported, so its
+	-- chat comes up on the current selection.
+	local args = kind == "pending" and entry
+		or { session_id = entry.sessionId, title = entry.title, provider = entry.provider }
+
+	require("ai.chat").restore_session(args)
 
 	-- Session is now live; drop the stale cache so it stops appearing
 	-- under "resumable sessions" alongside its new live-chat entry.
 	M.clear_cache()
 end
 
----Rename a stored session that has no chat open on it. Nothing is sent to the agent: it
----names sessions from its own summary of the conversation and offers no way to override
----that over ACP, so the chosen name is kept here and applied wherever the session is
----shown or reopened.
+---The session an entry refers to, whichever section it came from. Stored sessions carry
+---the agent's own `sessionId`; live chats and pending ones carry our `session_id`.
+---@param entry table
+---@return string|nil
+local function entry_session(entry)
+	return entry.sessionId or entry.session_id
+end
+
+---Rename a session that has no chat open on it. Nothing is sent to the agent: it names
+---sessions from its own summary of the conversation and offers no way to override that
+---over ACP, so the chosen name is kept here and applied wherever the session is shown or
+---reopened.
 ---@param entry table
 local function rename_stored_session(entry)
-	vim.ui.input({ prompt = "Rename session: ", default = entry.title }, function(input)
+	local sid = entry_session(entry)
+	if not sid then
+		-- No session yet means nothing to key a name to. It would be dropped on the next
+		-- read, so promising otherwise would be a lie.
+		return vim.notify("[ai] this chat has no session yet — open it first, then rename", vim.log.levels.WARN)
+	end
+	local current = entry.title
+	vim.ui.input({ prompt = "Rename session: ", default = current }, function(input)
 		local name = input and vim.trim(input) or ""
-		if name == "" or name == entry.title then
+		if name == "" or name == current then
 			return
 		end
-		require("ai.chat").set_saved_title(entry.sessionId, name)
+		require("ai.chat").set_saved_title(sid, name)
 		M.clear_cache()
 		vim.notify(("[ai] renamed to %s"):format(name), vim.log.levels.INFO)
 	end)
 end
 
----Delete a stored session that has no chat open on it, agent-side copy included.
+---Delete a session that has no chat open on it, agent-side copy included.
 ---@param entry table
 local function delete_stored_session(entry)
-	local question = ("Delete %s and its saved transcript? This cannot be undone."):format(entry.title)
-	if vim.fn.confirm(question, "&Delete\n&Cancel", 2) ~= 1 then
+	local sid = entry_session(entry)
+	local label = entry.title or "this chat"
+
+	-- A pending chat with no session was never stored by the agent, so there is nothing to
+	-- delete — just stop offering it.
+	if not sid then
+		if vim.fn.confirm(("Forget %s? It has no saved transcript."):format(label), "&Forget\n&Cancel", 2) ~= 1 then
+			return
+		end
+		require("ai.chat").forget_pending(entry)
+		M.clear_cache()
+		return vim.notify(("[ai] forgot %s"):format(label), vim.log.levels.INFO)
+	end
+
+	if vim.fn.confirm(
+		("Delete %s and its saved transcript? This cannot be undone."):format(label),
+		"&Delete\n&Cancel",
+		2
+	) ~= 1 then
 		return
 	end
 
@@ -475,67 +546,17 @@ local function delete_stored_session(entry)
 		)
 	end
 
-	local deleted = require("ai.chat").delete_session(entry.sessionId, conn)
+	local deleted = require("ai.chat").delete_session(sid, conn)
 	if spawned then
 		pcall(conn.disconnect, conn)
 	end
 	if deleted then
 		M.clear_cache()
-		vim.notify(("[ai] deleted %s"):format(entry.title), vim.log.levels.INFO)
+		vim.notify(("[ai] deleted %s"):format(label), vim.log.levels.INFO)
 	end
 end
 
 local PROMPT_TITLE = "Chats & Sessions"
-local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
-
----Track the startup restore from inside an open picker: spin in the prompt border while
----chats are still coming back and pull them in as they land. Without this the picker is
----simply empty for the first seconds of a session, which reads as "you have no chats"
----rather than "not yet" — the chats only register as buffers once their staggered
----restore fires.
----@param p table The live Telescope picker
----@param rebuild fun(p: table) Re-run the finder against the current chat list
-local function follow_restores(p, rebuild)
-	local chat = require("ai.chat")
-	if not chat.restore_progress() then
-		return
-	end
-
-	local frame = 1
-	local last_done = -1
-
-	local function tick()
-		-- The picker is gone the moment its prompt buffer is: nothing left to update.
-		if not (p.prompt_bufnr and api.nvim_buf_is_valid(p.prompt_bufnr)) then
-			return
-		end
-
-		local progress = chat.restore_progress()
-		local title = PROMPT_TITLE
-		if progress then
-			title = ("%s  %s restoring %d/%d"):format(PROMPT_TITLE, SPINNER[frame], progress.done, progress.total)
-			frame = frame % #SPINNER + 1
-		end
-		pcall(function()
-			p.layout.prompt.border:change_title(title)
-		end)
-
-		-- Rebuild only when the count moves, so a picker being typed into is not
-		-- reset ten times a second. `math.huge` fires the final rebuild once the
-		-- batch is finished, catching whatever the last restore added.
-		local done = progress and progress.done or math.huge
-		if done ~= last_done then
-			last_done = done
-			rebuild(p)
-		end
-
-		if progress then
-			vim.defer_fn(tick, 100)
-		end
-	end
-
-	tick()
-end
 
 ---Open the Telescope picker.
 function M.open()
@@ -577,7 +598,7 @@ function M.open()
 			prompt_title = PROMPT_TITLE,
 			-- Telescope has no help overlay of its own, and these mappings are not
 			-- guessable — one of them deletes a transcript for good.
-			results_title = "▶ current   ● ready  ◌ starting  ✕ gone  ○ stored   │   <CR> open  <C-r> rename  <C-d> close  <C-x> delete",
+			results_title = "▶ current  ● ready  ◌ starting  ✕ gone  ○ not started   │   <CR> open  <C-r> rename  <C-d> close  <C-x> delete",
 			finder = finders.new_table({
 				results = entries,
 				entry_maker = function(e)
@@ -599,8 +620,8 @@ function M.open()
 
 					if kind == "live" then
 						focus_live(entry)
-					elseif kind == "session" then
-						restore_session(entry)
+					else
+						restore_session(entry, kind)
 					end
 				end)
 
@@ -612,19 +633,28 @@ function M.open()
 					return require("codecompanion.interactions.chat").buf_get_chat(entry.bufnr)
 				end
 
-				-- CTRL-d: close a live chat without touching its stored session, so it
-				-- stays resumable from this same list. Only live entries have anything to
-				-- close; <C-x> is the one that removes a session.
+				-- CTRL-d: stop this chat coming back, without touching its stored session —
+				-- so it stays resumable from this same list. <C-x> is the one that removes a
+				-- session. On a live chat that means closing the buffer and freeing its agent
+				-- process; on a pending one it means dropping it from the reopen set, which
+				-- demotes it to an ordinary stored session.
 				map({ "i", "n" }, "<C-d>", function()
 					local selection = action_state.get_selected_entry()
-					if not selection or selection.kind ~= "live" then
+					if not selection then
 						return
 					end
-					local chat = selected_chat(selection.value)
-					if chat then
-						chat:close()
-					elseif selection.value.bufnr then
-						pcall(api.nvim_buf_delete, selection.value.bufnr, { force = true })
+					if selection.kind == "live" then
+						local chat = selected_chat(selection.value)
+						if chat then
+							chat:close()
+						elseif selection.value.bufnr then
+							pcall(api.nvim_buf_delete, selection.value.bufnr, { force = true })
+						end
+					elseif selection.kind == "pending" then
+						require("ai.chat").forget_pending(selection.value)
+						M.clear_cache()
+					else
+						return -- a stored session has nothing to close
 					end
 					local current_picker = action_state.get_current_picker(prompt_bufnr)
 					if current_picker then
@@ -679,11 +709,6 @@ function M.open()
 		})
 
 	chat_picker:find()
-	-- no_spawn: the polling rebuilds must not spawn an agent per tick just to list
-	-- sessions. The restores bring up connections of their own, which these then borrow.
-	follow_restores(chat_picker, function(p)
-		rebuild(p, { no_spawn = true })
-	end)
 end
 
 ---Clear the cached session list; the next open re-queries.

@@ -13,6 +13,12 @@ local last_chat_buf = nil
 local spinner_group
 local pending_agents = {} -- bufnr → agent name, applied on first ChatSubmitted
 
+-- Chats that were open when nvim last quit and have not been reopened yet. Read from
+-- chat_sessions.json at startup and drained as the user picks them. Nothing here holds an
+-- agent process — that is the point: a pending chat costs a JSON entry, not a subprocess.
+---@type table[]
+local pending = {}
+
 --=============================================================================
 -- Winbar styling — Catppuccin Mocha palette
 --=============================================================================
@@ -476,6 +482,29 @@ function M.current_chat()
 	return newest_chat()
 end
 
+---Chats saved from the last session that have not been reopened yet, oldest first.
+---@return table[]
+function M.pending_chats()
+	return pending
+end
+
+---Take an entry out of the pending set, because it is about to become a live chat and the
+---live-chat scan governs it from then on. Without this a reopened chat would be counted
+---twice on quit, and — worse — a chat reopened and then deliberately closed would be
+---carried forward and come back anyway.
+---@param entry table
+local function consume_pending(entry)
+	for i, p in ipairs(pending) do
+		-- By identity for the entry we were handed, by session for one reconstructed
+		-- elsewhere (the chat list rebuilds its own tables from the same JSON).
+		if p == entry or (entry.session_id ~= nil and p.session_id == entry.session_id) then
+			table.remove(pending, i)
+			return
+		end
+	end
+end
+
+
 ---Toggle the last chat buffer. Delegates to the plugin's own toggle, which
 ---tracks last_chat internally and is the authority on show/hide state — but
 ---only once a real chat exists. Without this guard, the plugin's own toggle
@@ -484,6 +513,17 @@ end
 function M.toggle()
 	local chat = newest_chat()
 	if not chat then
+		-- Nothing live, but something may be waiting to be reopened. Reviving beats
+		-- creating a blank chat here: the whole promise of persistence is that this keymap
+		-- reaches the work you left, and `<leader>cn` is what asks for a fresh one.
+		local entry = pending[#pending]
+		if entry then
+			vim.notify(("[ai] reopening %s…"):format(entry.title or "your last chat"), vim.log.levels.INFO)
+			local revived = M.restore_session(entry)
+			if revived then
+				return
+			end
+		end
 		return M.new()
 	end
 	-- The plugin's toggle acts on its own last_chat, which is nil for a restored
@@ -765,6 +805,23 @@ local function save_open_chats()
 		end
 	end
 
+	-- Carry forward everything still pending. Since nothing is restored at startup, the
+	-- live scan above sees only what the user actually opened, and writing that alone would
+	-- quietly forget every chat they left untouched. Entries are dropped from `pending` the
+	-- moment they are reopened or deleted, so this cannot resurrect a chat that was
+	-- reopened and then closed on purpose, and cannot duplicate one that is now live.
+	local live_sessions = {}
+	for _, e in ipairs(entries) do
+		if e.session_id then
+			live_sessions[e.session_id] = true
+		end
+	end
+	for _, e in ipairs(pending) do
+		if not (e.session_id and live_sessions[e.session_id]) then
+			table.insert(entries, e)
+		end
+	end
+
 	local data = read_state()
 	data[vim.fn.getcwd()] = #entries > 0 and entries or nil
 	write_state(data)
@@ -780,6 +837,14 @@ end
 ---session/list, under its agent-generated title.
 ---@param sid string
 local function forget_session(sid)
+	-- Pending first: it is written back over the state file on quit, so pruning only the
+	-- file would see the deleted session reappear at the next start.
+	for i = #pending, 1, -1 do
+		if pending[i].session_id == sid then
+			table.remove(pending, i)
+		end
+	end
+
 	local data = read_state()
 	local cwd = vim.fn.getcwd()
 	if type(data[cwd]) == "table" then
@@ -793,6 +858,30 @@ local function forget_session(sid)
 		write_state(data)
 	end
 	M.set_saved_title(sid, nil)
+end
+
+---Stop offering a pending chat without deleting anything. Its session, if it has one,
+---stays in the agent's store and so stays resumable from the chat list — this only says
+---"do not reopen this one for me". Defined here rather than beside the other pending
+---helpers because it needs the state file, which is set up in this half of the module.
+---@param entry table
+function M.forget_pending(entry)
+	consume_pending(entry)
+
+	-- Written through now rather than left to the quit-time save, so the decision survives
+	-- a crash and matches what the user just watched happen.
+	local data = read_state()
+	local cwd = vim.fn.getcwd()
+	if type(data[cwd]) == "table" and entry.session_id ~= nil then
+		local kept = {}
+		for _, e in ipairs(data[cwd]) do
+			if e.session_id ~= entry.session_id then
+				table.insert(kept, e)
+			end
+		end
+		data[cwd] = #kept > 0 and kept or nil
+		write_state(data)
+	end
 end
 
 ---Whether the agent behind a connection advertises session/delete. Read straight off
@@ -997,20 +1086,11 @@ end
 ---transcript replayed; without one there is nothing to resume, so the chat simply
 ---reopens empty on its original provider/model.
 ---@param entry { session_id?: string, title?: string, provider?: string, model?: string, opts?: table }
----@param opts? { hide?: boolean, on_done?: fun() } hide: park the chat out of sight once
----restored. on_done: called once the restore has settled either way, so the caller can
----track progress — every path that returns a chat reports through it, while the ones that
----fail outright return nil synchronously instead.
+---@param opts? { hide?: boolean } hide: park the chat out of sight once restored
 ---@return table|nil chat
 function M.restore_session(entry, opts)
 	opts = opts or {}
 	ensure_spinner_group()
-
-	local function report_done()
-		if opts.on_done then
-			opts.on_done()
-		end
-	end
 
 	local sid = entry.session_id
 	local sel = require("ai.providers").current("chat")
@@ -1018,6 +1098,8 @@ function M.restore_session(entry, opts)
 	if provider == "ollama" then
 		return vim.notify("[ai] ollama chats have no ACP session to resume", vim.log.levels.WARN)
 	end
+
+	consume_pending(entry)
 
 	local saved_opts = entry.opts or {}
 	local adapter = resolve_chat_adapter_for(provider, entry.model, saved_opts)
@@ -1078,7 +1160,6 @@ function M.restore_session(entry, opts)
 	-- Nothing to resume: the chat had no exchange behind it, so it reopens empty.
 	-- Attempting a load here is what used to raise "Resource not found".
 	if not sid then
-		report_done()
 		return chat
 	end
 
@@ -1088,10 +1169,14 @@ function M.restore_session(entry, opts)
 	-- behind it and so is saved without a session ID.
 	local function no_history(reason)
 		vim.notify(("[ai] %s — reopened without history"):format(reason), vim.log.levels.WARN)
-		report_done()
 	end
 
 	await_connection(chat, function(conn)
+		-- Closed while the history was still loading. Nothing to report: the chat is gone
+		-- because the user shut it, not because the load failed.
+		if not api.nvim_buf_is_valid(chat.bufnr) then
+			return
+		end
 		if not conn then
 			return no_history("ACP connection never came up")
 		end
@@ -1132,63 +1217,9 @@ function M.restore_session(entry, opts)
 		chat._ai_resumable = true
 
 		apply_saved_title()
-		report_done()
 	end)
 
 	return chat
-end
-
-local MAX_RESTORE = 3
-
----@type table[]|nil Entries the startup batch will reopen, chosen before it starts
-local pending_restores = nil
-
----@type { done: number, total: number }|nil nil once the batch has settled
-local restore_progress = nil
-
----How far the startup restore has got, or nil when nothing is pending. Exists so that
----anything listing chats can tell "none yet" apart from "none": the restores land on
----timers a couple of seconds into the session, and ai.chat_list would otherwise show an
----empty picker that looks like an answer.
----@return { done: number, total: number }|nil
-function M.restore_progress()
-	return restore_progress
-end
-
-local function restore_chats()
-	local total = #pending_restores
-	local saved = #(read_state()[vim.fn.getcwd()] or {})
-	if saved > total then
-		vim.notify(
-			("[ai] restoring %d of %d saved chats — <leader>cl to resume the rest"):format(total, saved),
-			vim.log.levels.INFO
-		)
-	end
-
-	for i, entry in ipairs(pending_restores) do
-		-- Staggered: each restore spawns an agent subprocess and makes a blocking
-		-- session/load round trip, so firing them together stalls startup.
-		vim.defer_fn(function()
-			local settled = false
-			local function settle()
-				if settled or not restore_progress then
-					return
-				end
-				settled = true
-				restore_progress.done = restore_progress.done + 1
-				if restore_progress.done >= restore_progress.total then
-					restore_progress = nil
-				end
-			end
-
-			-- restore_session reports the asynchronous outcomes through on_done; the paths
-			-- that fail outright return nil synchronously and are settled here instead.
-			local ok, chat = pcall(M.restore_session, entry, { hide = true, on_done = settle })
-			if not ok or not chat then
-				settle()
-			end
-		end, 400 * i)
-	end
 end
 
 local function setup_persistence()
@@ -1199,16 +1230,13 @@ local function setup_persistence()
 		callback = save_open_chats,
 	})
 
+	-- Nothing is restored here. The saved entries are simply held as pending, and each
+	-- becomes a real chat only when the user picks it — which is why an nvim start costs no
+	-- agent subprocesses at all, however many chats were open when it last quit.
 	local saved = read_state()[vim.fn.getcwd()]
-	if type(saved) ~= "table" or #saved == 0 then
-		return
+	if type(saved) == "table" then
+		pending = vim.deepcopy(saved)
 	end
-
-	pending_restores = vim.list_slice(saved, 1, math.min(#saved, MAX_RESTORE))
-	-- Published now rather than when the first restore fires: a <leader>cl inside that
-	-- opening half-second still has to know chats are on their way.
-	restore_progress = { done = 0, total = #pending_restores }
-	vim.defer_fn(restore_chats, 500)
 end
 
 setup_persistence()

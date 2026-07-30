@@ -68,9 +68,10 @@ Press `<leader>cmc`. Same picker flow as inline but for the chat scope. Defaults
 
 **Chat list:**
 
-`<leader>cl` opens a Telescope picker showing two sections:
+`<leader>cl` opens a Telescope picker showing three sections:
 - **Live chats** — every open chat buffer, suffixed with its `provider · model`. `<CR>` focuses it
-- **Resumable sessions** — past ACP sessions (including ones started in a terminal outside nvim), filtered to the current git repo. `<CR>` restores the session into a new chat buffer with full history
+- **From last session** — chats that were open when nvim last quit and haven't been reopened yet, marked `(from last session)`. `<CR>` starts one and replays its history. Nothing is running behind these
+- **Resumable sessions** — every other past ACP session (including ones started in a terminal outside nvim), filtered to the current git repo. `<CR>` opens it in a new chat buffer with full history
 
 Each line leads with two markers, also spelled out in the picker's results border:
 
@@ -78,18 +79,18 @@ Each line leads with two markers, also spelled out in the picker's results borde
 |---|---|
 | `▶` | The chat `<leader>cc` reaches. Always listed first |
 | `●` | Agent up and ready to take a message |
-| `◌` | Agent still starting — a restore mid-handshake. Sending now would fail |
+| `◌` | Agent still starting. Sending now would fail |
 | `✕` | Agent process is gone. The buffer survived a crash; reopen the session to get a working one |
-| `○` | A stored session, so no agent at all until you open it |
+| `○` | Not started — no agent behind it at all until you open it |
 
 Anything not `●` also carries a short reason in dim text, since a coloured glyph alone doesn't say what's wrong. Ready-but-hidden chats are annotated `(hidden)` — they hold a running agent even though no window shows them.
 
-Both sections take the same three edits, listed in the picker's own results border:
+Every section takes the same three edits, listed in the picker's own results border:
 
 | Key | Does |
 |---|---|
-| `<C-r>` (or `r` in normal mode) | Rename. On a live chat or a stored session alike |
-| `<C-d>` | Close a live chat. Its session stays, so it drops back into the resumable section |
+| `<C-r>` (or `r` in normal mode) | Rename. Live chat, pending chat, or stored session alike |
+| `<C-d>` | Stop it coming back, without deleting anything. On a live chat that closes the buffer and frees its agent; on a pending one it drops out of the reopen set and becomes an ordinary stored session |
 | `<C-x>` | Delete for good — the chat *and* the agent's copy of the conversation. Asks first |
 
 Renaming is local: agents name a session from their own summary of it and ACP has no way to override that, so chosen names are kept in `~/.local/state/nvim/ai/chat_titles.json`, keyed by session ID. That is also what makes a rename stick — the agent pushes a fresh auto-title at the end of every turn, and a name you chose is re-applied over it.
@@ -98,17 +99,20 @@ Sessions are cached; the list updates on each open.
 
 **Chats survive restarts:**
 
-Open ACP chats are remembered per directory. On quit, their session IDs are written to `~/.local/state/nvim/ai/chat_sessions.json`; the next time you start nvim in the same directory, up to 3 of them are resumed automatically in the background and their transcripts replayed into buffers. `<leader>cc` reaches the most recent one, `<leader>cl` lists them all.
+Open ACP chats are remembered per directory. On quit, their session IDs are written to `~/.local/state/nvim/ai/chat_sessions.json`; the next time you start nvim in the same directory they wait in `<leader>cl` under **from last session**, and open on demand.
+
+Nothing is started for you. A restore spawns an agent subprocess and makes a blocking `session/load` round trip, so starting them eagerly meant paying for chats you might never look at — an nvim start now costs zero agent processes no matter how many chats were open when it quit. `<leader>cc` reopens the most recent one when no chat is live, so continuing where you left off is still one keypress; `<leader>cn` is what asks for a fresh chat instead.
 
 The agent keeps its own memory across the restart — this resumes the real ACP session (`session/load`), it does not just repaint the text. A follow-up question can refer back to anything from before the restart.
 
 Notes:
-- Restored chats start hidden, so startup stays visually unchanged. They cost one agent subprocess each.
-- Restoring takes a few seconds. Opening `<leader>cl` during that window is fine: the picker title shows a spinner and `restoring 1/2`, and chats drop into the list as they land — no need to close and reopen it.
+- Reopening takes a few seconds while the agent starts and replays the transcript. Only the chat you picked pays that cost.
+- Pending chats are read straight from the JSON, so they show instantly and are listed even with no agent running anywhere.
 - Only ACP chats (claude, opencode) persist. ollama chats are HTTP with no server-side session, so they cannot be resumed.
 - Closing a chat (`<leader>cq`, or `<C-d>` in the chat list) drops it from the saved set, so it is not reopened on the next start — but its session survives and stays resumable from `<leader>cl`. `<leader>cd` / `<C-x>` is what removes the session itself.
 - A name you gave a chat comes back with it, and keeps applying to the session afterwards even if you close the chat.
-- Had more than 3 chats open? The rest are still resumable from `<leader>cl`; only the automatic restore is capped.
+- There is no cap. Nothing is spawned until you pick something, so however many chats were open, all of them wait in the list.
+- A pending chat you never open stays pending across as many restarts as you like — quitting does not quietly drop it.
 - A chat you opened but never sent a message in comes back as an empty chat. The agent only commits a session to its own store once there has been a real exchange, so there is no history to reload — but the chat itself reopens on its original provider/model rather than disappearing.
 - If a saved session has since been deleted or aged out of the agent's store, the chat still reopens, just without its transcript, and you get one `[ai] session <id> is gone — reopened without history` warning.
 
