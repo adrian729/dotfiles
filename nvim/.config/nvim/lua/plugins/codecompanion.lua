@@ -208,6 +208,7 @@ return {
 			})
 
 			require("ai.debug").setup()
+			require("ai.reload").setup()
 			require("ai.chat")
 		end,
 	},
