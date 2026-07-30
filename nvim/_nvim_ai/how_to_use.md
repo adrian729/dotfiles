@@ -73,6 +73,20 @@ Press `<leader>cmc`. Same picker flow as inline but for the chat scope. Defaults
 
 Sessions are cached; the list updates on each open.
 
+**Chats survive restarts:**
+
+Open ACP chats are remembered per directory. On quit, their session IDs are written to `~/.local/state/nvim/ai/chat_sessions.json`; the next time you start nvim in the same directory, up to 3 of them are resumed automatically in the background and their transcripts replayed into buffers. `<leader>cc` reaches the most recent one, `<leader>cl` lists them all.
+
+The agent keeps its own memory across the restart — this resumes the real ACP session (`session/load`), it does not just repaint the text. A follow-up question can refer back to anything from before the restart.
+
+Notes:
+- Restored chats start hidden, so startup stays visually unchanged. They cost one agent subprocess each.
+- Only ACP chats (claude, opencode) persist. ollama chats are HTTP with no server-side session, so they cannot be resumed.
+- Closing a chat (`<leader>cq`, or `<C-d>` in the chat list) drops it from the saved set — it will not come back.
+- Had more than 3 chats open? The rest are still resumable from `<leader>cl`; only the automatic restore is capped.
+- A chat you opened but never sent a message in comes back as an empty chat. The agent only commits a session to its own store once there has been a real exchange, so there is no history to reload — but the chat itself reopens on its original provider/model rather than disappearing.
+- If a saved session has since been deleted or aged out of the agent's store, the chat still reopens, just without its transcript, and you get one `[ai] session <id> is gone — reopened without history` warning.
+
 **Inside the chat buffer:**
 
 The chat buffer has its own set of keymaps and features. Send a message with `<CR>` or `<C-s>` in normal mode (or `<C-c>` in insert mode). Stop a running request with `q`.

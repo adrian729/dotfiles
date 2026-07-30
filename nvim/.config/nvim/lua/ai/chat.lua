@@ -86,13 +86,6 @@ local function ensure_spinner_group()
 				end
 			end
 
-			-- Capture session ID now that the ACP connection is live (lazily created
-			-- on first submit).  post_create ran before the connection existed, so
-			-- _ai_session_id is still nil at that point.
-			if chat and not chat._ai_session_id and chat.acp_connection then
-				chat._ai_session_id = chat.acp_connection.session_id
-			end
-
 			-- An ACP submit that fails before a prompt exists — connection or session setup — still
 			-- fires ChatSubmitted, but RequestFinished only ever comes from the prompt builder, so a
 			-- spinner started here would never be stopped. That failure clears current_request
@@ -279,33 +272,39 @@ end
 ---option has category = nil and can only reach the session via conn:set_config_option,
 ---which needs the live session that does not exist at Chat.new time.
 ---@param bufnr number
-local function stash_agent(bufnr)
-	local providers = require("ai.providers")
-	local sel = providers.current("chat")
-	if sel and sel.provider == "claude" and sel.opts and sel.opts.agent and sel.opts.agent ~= "default" then
-		pending_agents[bufnr] = sel.opts.agent
+---@param provider string
+---@param opts table
+local function stash_agent(bufnr, provider, opts)
+	if provider == "claude" and opts and opts.agent and opts.agent ~= "default" then
+		pending_agents[bufnr] = opts.agent
 	end
 end
 
 ---Post-creation guard: track the buffer, set an informative title, stash the agent, and
 ---record provider/model so the chat list can surface them without guessing from the adapter.
 ---@param chat table|nil
-local function post_create(chat)
+---@param override? { provider: string, model?: string, opts?: table } A restored chat
+---carries the provider/model/opts it was originally created with, which need not
+---match the current selection.
+local function post_create(chat, override)
 	if not chat then
 		return
 	end
 	last_chat_buf = chat.bufnr
-	stash_agent(chat.bufnr)
 
 	local sel = require("ai.providers").current("chat")
-	local model = tostring(sel.opts.model)
-	local display = ("%s · %s"):format(sel.provider, model)
+	local provider = (override and override.provider) or sel.provider
+	local opts = (override and override.opts) or sel.opts or {}
+	local model = tostring((override and override.model) or opts.model)
+
+	stash_agent(chat.bufnr, provider, opts)
+
+	local display = ("%s · %s"):format(provider, model)
 	pcall(chat.set_title, chat, display)
 
-	chat._ai_provider = sel.provider
+	chat._ai_provider = provider
 	chat._ai_model = model
-	chat._ai_session_id = chat.acp_connection and chat.acp_connection.session_id
-	chat._ai_opts = vim.deepcopy(sel.opts) -- capture effort, mode, fast, etc.
+	chat._ai_opts = vim.deepcopy(opts) -- capture effort, mode, fast, etc.
 
 	-- Winbar header — stays pinned at the top of every window showing this chat.
 	-- BufFilePost fires when CodeCompanion auto-titles the chat (set_title → nvim_buf_set_name),
@@ -315,7 +314,7 @@ local function post_create(chat)
 	local function winbar_text(bufnr)
 		local chat_obj = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
 		local title = (chat_obj and chat_obj.title) or "untitled"
-		local prov = chat_obj and chat_obj._ai_provider or sel.provider
+		local prov = chat_obj and chat_obj._ai_provider or provider
 		local mod = chat_obj and chat_obj._ai_model or model
 		local D = "%#AiWinBarDim#"
 		local P = "%#AiWinBarProvider#"
@@ -377,15 +376,48 @@ local function post_create(chat)
 	})
 end
 
+---The most recently created live chat. Falls back to walking codecompanion_buffers
+---(append-ordered, so the tail is newest) because the plugin only records `last_chat`
+---for chats it opened a window for, plus on BufEnter — and a restored chat is created
+---hidden and never entered, so it is invisible to that bookkeeping until first opened.
+---@return table|nil
+local function newest_chat()
+	local Chat = require("codecompanion.interactions.chat")
+	local chat = Chat.last_chat()
+	if chat and api.nvim_buf_is_valid(chat.bufnr) then
+		return chat
+	end
+	local bufs = _G.codecompanion_buffers or {}
+	for i = #bufs, 1, -1 do
+		if api.nvim_buf_is_valid(bufs[i]) then
+			local found = Chat.buf_get_chat(bufs[i])
+			if found then
+				return found
+			end
+		end
+	end
+end
+
 ---Toggle the last chat buffer. Delegates to the plugin's own toggle, which
 ---tracks last_chat internally and is the authority on show/hide state — but
 ---only once a real chat exists. Without this guard, the plugin's own toggle
 ---creates a brand-new chat with adapter = nil when there is none, bypassing
 ---all of this repo's provider/model/effort/mode setup.
 function M.toggle()
-	local chat = require("codecompanion.interactions.chat").last_chat()
-	if not chat or not api.nvim_buf_is_valid(chat.bufnr) then
+	local chat = newest_chat()
+	if not chat then
 		return M.new()
+	end
+	-- The plugin's toggle acts on its own last_chat, which is nil for a restored
+	-- chat — it would create a brand-new chat and shadow the restored one. Open the
+	-- chat we found directly; entering the buffer sets last_chat, so subsequent
+	-- toggles can go through the plugin as usual.
+	if not require("codecompanion.interactions.chat").last_chat() then
+		chat.ui:open()
+		if chat.ui.winnr and api.nvim_win_is_valid(chat.ui.winnr) then
+			pcall(api.nvim_set_current_win, chat.ui.winnr)
+		end
+		return
 	end
 	vim.cmd("CodeCompanionChat Toggle")
 end
@@ -552,157 +584,287 @@ function M.pick()
 end
 
 --=============================================================================
--- Chat persistence — full conversation saved to disk, restored on startup
+-- Chat persistence — ACP session IDs saved per cwd, resumed via session/load
 --=============================================================================
+-- What persists is the agent's *own* session, not a private copy of the transcript.
+-- Replaying saved `chat.messages` into a fresh session restores the buffer text but
+-- leaves the agent with no memory of the conversation: the ACP adapter's
+-- form_messages (adapters/acp/helpers.lua) forwards only user messages not yet
+-- marked sent, and the agent holds its history server-side. claude-agent-acp
+-- advertises loadSession, so the durable record is the session ID — persist that and
+-- let session/load replay the transcript back to us.
 
-local chats_dir = vim.fn.stdpath("state") .. "/ai/chats"
+local state_file = vim.fn.stdpath("state") .. "/ai/chat_sessions.json"
 
-local function chat_file(session_id)
-	return chats_dir .. "/" .. session_id .. ".json"
+---@return table<string, table[]> cwd → saved chat entries
+local function read_state()
+	if vim.fn.filereadable(state_file) == 0 then
+		return {}
+	end
+	local ok, content = pcall(vim.fn.readfile, state_file)
+	if not ok then
+		return {}
+	end
+	local ok_json, data = pcall(vim.json.decode, table.concat(content, "\n"))
+	if not ok_json or type(data) ~= "table" then
+		return {}
+	end
+	return data
 end
 
-local function save_chat_state(chat)
-	local sid = chat._ai_session_id
-	if not sid then
-		return
-	end
-	vim.fn.mkdir(chats_dir, "p")
-
-	local messages = {}
-	for _, m in ipairs(chat.messages or {}) do
-		table.insert(messages, {
-			role = m.role,
-			content = m.content,
-			type = m.type,
-			tool_call = m.tool_call,
-			_meta = m._meta,
-		})
-	end
-
-	local data = {
-		provider = chat._ai_provider,
-		model = chat._ai_model,
-		opts = chat._ai_opts,
-		title = chat.title,
-		messages = messages,
-		cwd = vim.fn.getcwd(),
-	}
-
+---@param data table<string, table[]>
+local function write_state(data)
+	vim.fn.mkdir(vim.fn.fnamemodify(state_file, ":h"), "p")
 	local ok, encoded = pcall(vim.json.encode, data)
 	if ok then
-		local f = io.open(chat_file(sid), "w")
-		if f then
-			f:write(encoded)
-			f:close()
-		end
+		pcall(vim.fn.writefile, { encoded }, state_file)
 	end
 end
 
-local function save_all_chats()
+---Has this chat completed at least one exchange? Only then has the agent committed
+---the session to its own store, so only then is its session ID worth saving — an
+---unused chat's ID resolves to "Resource not found" on the next start, which
+---CodeCompanion reports as an error notification. Presence of an LLM reply is the
+---provider-agnostic proxy for "the agent saved it".
+---@param chat table
+---@return boolean
+local function has_exchange(chat)
+	local llm_role = require("codecompanion.config").constants.LLM_ROLE
+	for _, m in ipairs(chat.messages or {}) do
+		if m.role == llm_role and type(m.content) == "string" and m.content:find("%S") then
+			return true
+		end
+	end
+	return false
+end
+
+---Record every live ACP chat under the current cwd, replacing whatever was stored
+---for it before. A chat the user closed is simply absent from the new list, which
+---is what stops it coming back on the next start.
+---
+---Every chat is remembered; only its `session_id` is conditional. A chat with no
+---exchange behind it is stored without one and comes back as an empty chat — there
+---is no history to lose, so it reopens rather than disappearing.
+local function save_open_chats()
+	local entries = {}
 	for _, bufnr in ipairs(_G.codecompanion_buffers or {}) do
 		if api.nvim_buf_is_valid(bufnr) then
 			local chat = require("codecompanion.interactions.chat").buf_get_chat(bufnr)
-			if chat then
-				save_chat_state(chat)
+			local is_acp = chat and chat.adapter and chat.adapter.type == "acp"
+			if is_acp and chat._ai_provider then
+				-- Read the session ID off the live connection rather than a value cached at
+				-- creation time: Chat.new establishes the connection on a scheduled tick, so
+				-- anything captured synchronously after it returns is still nil.
+				-- `_ai_resumable` covers the restored-chat case: replaying a transcript goes
+				-- through add_buf_message, which writes the buffer without repopulating
+				-- chat.messages (and restore_session clears it first), so a chat resumed and
+				-- not yet written to looks empty to has_exchange. Its session is known-good
+				-- by definition — it was just loaded from the agent's own store.
+				local conn = chat.acp_connection
+				local resumable = conn and conn.session_id and (chat._ai_resumable or has_exchange(chat))
+
+				-- The auto-title only lands after the first response; before that the title
+				-- is the `provider · model` placeholder set at creation. Saving that would
+				-- pin the placeholder forever, so leave it out and let the restore fall
+				-- back to whatever the agent reports.
+				local title = chat.title
+				if title == ("%s · %s"):format(tostring(chat._ai_provider), tostring(chat._ai_model)) then
+					title = nil
+				end
+				table.insert(entries, {
+					session_id = resumable and conn.session_id or nil,
+					provider = chat._ai_provider,
+					model = chat._ai_model,
+					opts = chat._ai_opts,
+					title = title,
+				})
 			end
 		end
 	end
+
+	local data = read_state()
+	data[vim.fn.getcwd()] = #entries > 0 and entries or nil
+	write_state(data)
 end
 
-local function restore_chats()
-	local ok_dir = vim.fn.isdirectory(chats_dir)
-	if ok_dir == 0 then
+---Poll until the chat's own ACP connection has finished its handshake. Chat.new
+---kicks it off via vim.schedule and the initialize/authenticate round trip takes a
+---second or more, so there is nothing usable when Chat.new returns.
+---@param chat table
+---@param cb fun(conn: table|nil)
+---@param tries? number
+local function await_connection(chat, cb, tries)
+	tries = tries or 150 -- 150 × 100ms ≈ 15s
+	if not api.nvim_buf_is_valid(chat.bufnr) then
+		return cb(nil)
+	end
+	local conn = chat.acp_connection
+	if conn and conn:is_ready() and conn.session_id then
+		return cb(conn)
+	end
+	if tries <= 0 then
+		return cb(nil)
+	end
+	vim.defer_fn(function()
+		await_connection(chat, cb, tries - 1)
+	end, 100)
+end
+
+---Reopen a saved chat. With a `session_id` the agent's own session is resumed and its
+---transcript replayed; without one there is nothing to resume, so the chat simply
+---reopens empty on its original provider/model.
+---@param entry { session_id?: string, title?: string, provider?: string, model?: string, opts?: table }
+---@param opts? { hide?: boolean } hide: park the chat out of sight once restored
+---@return table|nil chat
+function M.restore_session(entry, opts)
+	opts = opts or {}
+	ensure_spinner_group()
+
+	local sid = entry.session_id
+	local sel = require("ai.providers").current("chat")
+	local provider = entry.provider or (sel and sel.provider)
+	if provider == "ollama" then
+		return vim.notify("[ai] ollama chats have no ACP session to resume", vim.log.levels.WARN)
+	end
+
+	local saved_opts = entry.opts or {}
+	local adapter = resolve_chat_adapter_for(provider, entry.model, saved_opts)
+	if not adapter then
+		return vim.notify(("[ai] could not resolve adapter for %s"):format(tostring(provider)), vim.log.levels.ERROR)
+	end
+
+	-- `hidden` matters for more than tidiness: these restores land on timers, and a
+	-- chat created visible opens a window and takes focus whenever it happens to fire.
+	-- Doing that under a Telescope picker dismisses it, and any in-flight insert-mode
+	-- keystrokes then hit the locked chat buffer as `E21: 'modifiable' is off`.
+	-- Creating it hidden touches no window at all; `newest_chat()` covers the
+	-- last_chat bookkeeping that Chat.new skips for hidden chats.
+	local Chat = require("codecompanion.interactions.chat")
+	local chat = Chat.new({
+		adapter = adapter,
+		buffer_context = current_buffer_context(),
+		hidden = opts.hide or nil,
+	})
+	if not chat then
 		return
 	end
 
-	vim.defer_fn(function()
-		local handles = vim.fn.readdir(chats_dir)
-		local count = 0
-		local max_restore = 3
+	-- Chat.new schedules `vim.treesitter.start(bufnr)` with no language argument, so the
+	-- parser is resolved from the buffer's filetype — and the only thing that sets that
+	-- filetype is ui:open() (via shared/ui.lua's nvim_set_option_value). A hidden chat
+	-- opens no window, so when that scheduled call fires the filetype is still empty, it
+	-- fails inside its own pcall, and the buffer ends up with no markdown highlighting.
+	-- Setting it here, synchronously, gets in ahead of that callback.
+	if opts.hide then
+		vim.bo[chat.bufnr].filetype = "codecompanion"
+	end
 
-		for _, name in ipairs(handles) do
-			if count >= max_restore then
-				break
-			end
-			if not name:match("%.json$") then
-				goto continue
-			end
+	post_create(chat, { provider = provider, model = entry.model, opts = saved_opts })
 
-			local ok, content = pcall(vim.fn.readfile, chats_dir .. "/" .. name)
-			if not ok then
-				goto continue
-			end
-			local ok_j, data = pcall(vim.json.decode, table.concat(content, "\n"))
-			if not ok_j or type(data) ~= "table" then
-				goto continue
-			end
+	-- Reapplied at every point something else may install a title: post_create sets the
+	-- `provider · model` placeholder, and during session/load the agent pushes its own
+	-- auto-generated one via session_info_update (acp/init.lua:653). Either would
+	-- otherwise replace a name the user chose with <leader>cr.
+	local function apply_saved_title()
+		if entry.title then
+			pcall(chat.set_title, chat, entry.title)
+		end
+	end
 
-			local provider = data.provider or "claude"
-			local model = data.model
-			local title = data.title
-			local messages = data.messages or {}
-			local saved_opts = data.opts or {}
-			local saved_cwd = data.cwd or ""
+	apply_saved_title()
 
-			-- Only restore chats from the current directory
-			if saved_cwd ~= vim.fn.getcwd() then
-				goto continue
+	-- Nothing to resume: the chat had no exchange behind it, so it reopens empty.
+	-- Attempting a load here is what used to raise "Resource not found".
+	if not sid then
+		return chat
+	end
+
+	-- The history is unreachable, but the chat itself stays — it just carries no
+	-- transcript. Keeping it means a chat never silently disappears; it cannot breed
+	-- dead entries either, because the fallback session it now holds has no exchange
+	-- behind it and so is saved without a session ID.
+	local function no_history(reason)
+		vim.notify(("[ai] %s — reopened without history"):format(reason), vim.log.levels.WARN)
+	end
+
+	await_connection(chat, function(conn)
+		if not conn then
+			return no_history("ACP connection never came up")
+		end
+
+		-- Ask before loading. A session/load for an unknown ID is answered with a
+		-- JSON-RPC error, which CodeCompanion logs at ERROR level and its notify
+		-- handler turns into a full red box on screen — noise for a case we can
+		-- detect quietly first.
+		if conn.can_list_sessions and conn:can_list_sessions() then
+			local known = false
+			for _, s in ipairs(conn:session_list({ max_sessions = 500 }) or {}) do
+				if s.sessionId == sid then
+					known = true
+					break
+				end
 			end
-
-			local adapter = resolve_chat_adapter_for(provider, model, saved_opts)
-			if not adapter then
-				goto continue
+			if not known then
+				return no_history(("session %s is gone"):format(sid:sub(1, 8)))
 			end
+		end
 
-		local Chat = require("codecompanion.interactions.chat")
-		local chat = Chat.new({
-			adapter = adapter,
-			buffer_context = { bufnr = api.nvim_get_current_buf() },
-			messages = messages,
+		local updates = {}
+		local ok = conn:load_session(sid, {
+			on_session_update = function(update)
+				table.insert(updates, update)
+			end,
 		})
 
-		if not chat then
-			goto continue
+		-- _establish_session quietly falls back to session/new when session/load
+		-- fails, so a true return does not mean the session was found — the surviving
+		-- session ID is the only reliable signal.
+		if not ok or conn.session_id ~= sid then
+			return no_history(("session %s could not be loaded"):format(sid:sub(1, 8)))
 		end
 
-			post_create(chat)
-			if title then
-				pcall(chat.set_title, chat, title)
-			end
+		require("codecompanion.interactions.chat.acp.commands").link_buffer_to_session(chat.bufnr, conn.session_id)
+		require("codecompanion.interactions.chat.acp.render").restore_session(chat, updates)
+		chat._ai_resumable = true
 
-			-- Hide the window — <leader>cc or chat list picks it up
-			if chat.ui and chat.ui.winnr and api.nvim_win_is_valid(chat.ui.winnr) then
-				api.nvim_win_close(chat.ui.winnr, true)
-			end
+		apply_saved_title()
+	end)
 
-			-- Clean up the file — session was restored
-			pcall(vim.fn.delete, chats_dir .. "/" .. name)
+	return chat
+end
 
-			count = count + 1
+local MAX_RESTORE = 3
 
-			::continue::
-		end
-	end, 500)
+local function restore_chats()
+	local entries = read_state()[vim.fn.getcwd()]
+	if type(entries) ~= "table" or #entries == 0 then
+		return
+	end
+
+	local restoring = math.min(#entries, MAX_RESTORE)
+	if #entries > MAX_RESTORE then
+		vim.notify(
+			("[ai] restoring %d of %d saved chats — <leader>cl to resume the rest"):format(restoring, #entries),
+			vim.log.levels.INFO
+		)
+	end
+
+	for i = 1, restoring do
+		local entry = entries[i]
+		-- Staggered: each restore spawns an agent subprocess and makes a blocking
+		-- session/load round trip, so firing them together stalls startup.
+		vim.defer_fn(function()
+			M.restore_session(entry, { hide = true })
+		end, 400 * i)
+	end
 end
 
 local function setup_persistence()
 	local augroup = api.nvim_create_augroup("AiChatPersistence", { clear = true })
 
-	api.nvim_create_autocmd("BufWipeout", {
-		group = augroup,
-		callback = function(args)
-			if vim.tbl_contains(_G.codecompanion_buffers or {}, args.buf) then
-				local chat = require("codecompanion.interactions.chat").buf_get_chat(args.buf)
-				if chat then
-					save_chat_state(chat)
-				end
-			end
-		end,
-	})
-
 	api.nvim_create_autocmd("VimLeavePre", {
 		group = augroup,
-		callback = save_all_chats,
+		callback = save_open_chats,
 	})
 
 	vim.defer_fn(restore_chats, 500)

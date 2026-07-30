@@ -119,7 +119,9 @@ local function session_connection()
 		if conn and conn:is_ready() and conn.session_id then
 			local name = chat.adapter and chat.adapter.name
 			if name == "claude_code" or name == "opencode" then
-				return conn, name
+				-- Report the ai.providers key rather than the CodeCompanion adapter
+				-- name — callers feed it back into provider-keyed lookups.
+				return conn, chat._ai_provider or (name == "claude_code" and "claude" or "opencode")
 			end
 		end
 	end
@@ -136,7 +138,7 @@ local function session_connection()
 			if adapter then
 				local conn = ACP.new({ adapter = adapter })
 				if conn:connect_and_authenticate() then
-					return conn, name, true
+					return conn, provider, true
 				else
 					-- connect_and_authenticate can fail after the child process has
 					-- already spawned (e.g. initialize RPC or auth failure); avoid
@@ -151,7 +153,7 @@ local function session_connection()
 end
 
 ---Fetch and cache resumable sessions, filtered by git root.
----@return { sessionId: string, title: string, updatedAt: string, cwd: string }[]
+---@return { sessionId: string, title: string, updatedAt: string, cwd: string, provider: string }[]
 local function resumable_sessions()
 	if M._cached_sessions then
 		return M._cached_sessions
@@ -176,6 +178,8 @@ local function resumable_sessions()
 				title = s.title or s.sessionId,
 				updatedAt = s.updatedAt or "",
 				cwd = s.cwd or "",
+				-- The agent that listed the session is the one that can load it
+				provider = provider,
 			})
 		end
 	end
@@ -300,100 +304,16 @@ local function focus_live(entry)
 	end
 end
 
----Restore a past session into a fresh chat.
+---Restore a past session into a fresh chat. Shares ai.chat's implementation with
+---the startup restore, which waits for the chat's own connection instead of
+---spawning a second one alongside it.
 ---@param entry table
 local function restore_session(entry)
-	local Chat = require("codecompanion.interactions.chat")
-	local providers = require("ai.providers")
-	local adapters = require("codecompanion.adapters")
-
-	-- Resolve adapter from chat provider defaults, same as resolve_chat_adapter in chat.lua
-	local sel = providers.current("chat")
-	if not sel or not sel.provider then
-		return vim.notify("[ai] no chat provider selected", vim.log.levels.WARN)
-	end
-	local adapter
-	if sel.provider == "ollama" then
-		local name = providers.http_adapter("chat")
-		adapter = adapters.resolve(name)
-	else
-		local adapter_name = providers.acp_adapter(sel.provider)
-		if not adapter_name then
-			return vim.notify("[ai] no ACP adapter for " .. sel.provider, vim.log.levels.WARN)
-		end
-		local session_opts = {}
-		local spec = providers.providers[sel.provider]
-		local opts = sel.opts or {}
-		if spec then
-			for _, key in ipairs(spec.chat_options or {}) do
-				local option = (spec.options or {})[key]
-				local value = providers.resolve_chat_option_value(sel.provider, key, opts[key])
-				if option and option.category and value then
-					session_opts[option.category] = value
-				end
-			end
-		end
-		adapter = adapters.resolve(adapter_name, { session_config_options = session_opts })
-		if adapter and sel.provider == "opencode" and adapter.env then
-			adapter.env.OPENCODE_PERMISSION = nil
-		end
-	end
-	if not adapter then
-		return vim.notify("[ai] could not resolve chat adapter", vim.log.levels.ERROR)
-	end
-
-	local chat = Chat.new({
-		adapter = adapter,
-		buffer_context = { bufnr = api.nvim_get_current_buf() },
+	require("ai.chat").restore_session({
+		session_id = entry.sessionId,
+		title = entry.title,
+		provider = entry.provider,
 	})
-	if not chat then
-		return
-	end
-
-	-- We need an ACP connection on this chat to load the session.
-	-- Chat.new doesn't establish it until first submit, but we can create
-	-- one through the ACP handler pattern.
-	local ACP = require("codecompanion.acp")
-	local conn = ACP.new({ adapter = adapter, chat = chat })
-	if not conn:connect_and_authenticate() then
-		return vim.notify("[ai] could not connect to restore session", vim.log.levels.ERROR)
-	end
-
-	local updates = {}
-	local ok = conn:load_session(entry.sessionId, {
-		on_session_update = function(update)
-			table.insert(updates, update)
-		end,
-	})
-
-	if not ok then
-		conn:disconnect()
-		return vim.notify("[ai] failed to load session", vim.log.levels.ERROR)
-	end
-
-	-- Swap the chat's connection to this one so the session is live. Chat.new's
-	-- own eager auto-connect (scheduled via vim.schedule) can race with the
-	-- vim.wait busy-wait above and assign its own connection to
-	-- chat.acp_connection first; disconnect that orphan before overwriting it,
-	-- or it leaks its subprocess for the rest of the nvim session.
-	if chat.acp_connection then
-		pcall(chat.acp_connection.disconnect, chat.acp_connection)
-	end
-	chat.acp_connection = conn
-	conn.chat = chat
-
-	local acp_commands = require("codecompanion.interactions.chat.acp.commands")
-	acp_commands.link_buffer_to_session(chat.bufnr, conn.session_id)
-
-	require("codecompanion.interactions.chat.acp.render").restore_session(chat, updates)
-
-	local sel = providers.current("chat")
-	chat._ai_provider = sel.provider
-	chat._ai_model = tostring(sel.opts.model)
-
-	if entry.title then
-		chat:set_title(entry.title)
-	end
 
 	-- Session is now live; drop the stale cache so it stops appearing
 	-- under "resumable sessions" alongside its new live-chat entry.
