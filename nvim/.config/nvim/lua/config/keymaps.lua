@@ -162,5 +162,8 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- <leader>cr - rename current chat
 -- <leader>cd - delete current chat and its saved transcript (confirms first)
 -- <leader>cs - status panel
--- <leader>cl - chat list (<C-r> rename, <C-d> close, <C-x> delete)
+-- <leader>cl - chat list (? in the picker lists its keys and markers)
+--
+-- In a chat buffer the footer along the bottom shows the keys worth knowing; ? there opens
+-- CodeCompanion's own full keymap list.
 -- ga / gd / … - plugin-native, inside the chat buffer

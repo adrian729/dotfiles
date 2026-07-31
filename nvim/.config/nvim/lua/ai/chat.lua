@@ -20,7 +20,7 @@ local pending_agents = {} -- bufnr → agent name, applied on first ChatSubmitte
 local pending = {}
 
 --=============================================================================
--- Winbar styling — Catppuccin Mocha palette
+-- Winbar and footer styling — Catppuccin Mocha palette
 --=============================================================================
 
 local winbar_hl_ready = false
@@ -32,7 +32,7 @@ local function ensure_winbar_highlights()
 	winbar_hl_ready = true
 
 	-- Catppuccin mocha palette, with fallback if the module isn't loaded yet
-	local prov, model, title, dim, sep
+	local prov, model, title, dim, sep, key, label, faint
 	local ok, palette = pcall(function()
 		return require("catppuccin.palettes").get_palette()
 	end)
@@ -42,12 +42,18 @@ local function ensure_winbar_highlights()
 		title = palette.blue
 		dim = palette.surface1
 		sep = palette.surface0
+		key = palette.blue
+		label = palette.subtext0
+		faint = palette.overlay0
 	else
 		prov = "#94e2d5" -- teal — screams "fallback"
 		model = "#94e2d5"
 		title = "#c6a0f6" -- mauve
 		dim = "#585b70"
 		sep = "#45475a"
+		key = "#94e2d5"
+		label = "#a6adc8"
+		faint = "#6c7086"
 	end
 
 	vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = prov, bg = "NONE" })
@@ -55,6 +61,67 @@ local function ensure_winbar_highlights()
 	vim.api.nvim_set_hl(0, "AiWinBarTitle", { fg = title, bg = "NONE" })
 	vim.api.nvim_set_hl(0, "AiWinBarDim", { fg = dim, bg = "NONE" })
 	vim.api.nvim_set_hl(0, "AiWinBarSep", { fg = sep, bg = "NONE" })
+
+	-- The footer sits in the statusline, so it has to carry StatusLine's own background or
+	-- it reads as a hole punched in the bar. A transparent theme leaves bg nil, which is
+	-- then the right answer anyway.
+	local sl = vim.api.nvim_get_hl(0, { name = "StatusLine", link = false })
+	local bg = sl and sl.bg or nil
+	vim.api.nvim_set_hl(0, "AiFooterKey", { fg = key, bg = bg, bold = true })
+	vim.api.nvim_set_hl(0, "AiFooterLabel", { fg = label, bg = bg })
+	vim.api.nvim_set_hl(0, "AiFooterDim", { fg = faint, bg = bg })
+end
+
+--=============================================================================
+-- Chat footer
+--=============================================================================
+
+-- The chat lives in a half-width vertical split, so the full line does not always fit.
+-- Ordered widest-first; the first tier that measures small enough for the window wins.
+-- `?` survives into every tier because it opens CodeCompanion's own list of every chat
+-- keymap — the footer only has to get you there, not be exhaustive.
+local FOOTER_TIERS = {
+	{
+		keys = { { "<CR>", "send" }, { "q", "stop" }, { "ga", "model" }, { "?", "keys" } },
+		chat = { { "<leader>cr", "rename" }, { "<leader>cd", "delete" } },
+	},
+	{
+		keys = { { "<CR>", "send" }, { "q", "stop" }, { "ga", "model" }, { "?", "keys" } },
+		chat = { { "<leader>cr", "rename" } },
+	},
+	{ keys = { { "<CR>", "send" }, { "q", "stop" }, { "?", "keys" } } },
+	{ keys = { { "<CR>", "send" }, { "?", "keys" } } },
+	{ keys = { { "?", "keys" } } },
+}
+
+---Statusline string for a chat window of the given width.
+---
+---Each tier is rendered and measured rather than carrying a hand-written minimum width:
+---editing a label would otherwise silently invalidate the number next to it, and the line
+---would come back clipped mid-word.
+---@param width number
+---@return string
+local function footer_text(width)
+	local function group(items)
+		local out = {}
+		for _, item in ipairs(items) do
+			table.insert(out, ("%%#AiFooterKey#%s %%#AiFooterLabel#%s"):format(item[1], item[2]))
+		end
+		return table.concat(out, "%#AiFooterDim# · ")
+	end
+
+	for _, tier in ipairs(FOOTER_TIERS) do
+		local text = " " .. group(tier.keys)
+		if tier.chat then
+			text = text .. "%#AiFooterDim#   │   " .. group(tier.chat)
+		end
+		text = text .. " "
+		-- Statusline markup costs no columns, so it comes out of the measurement.
+		if vim.fn.strdisplaywidth((text:gsub("%%#%w+#", ""))) <= width then
+			return text
+		end
+	end
+	return "" -- narrower than the shortest hint we have; better blank than clipped
 end
 
 --=============================================================================
@@ -398,7 +465,9 @@ local function post_create(chat, override)
 		}
 	end
 
-	local function update_winbar(bufnr)
+	---Winbar and footer for every window showing this chat. The footer tier depends on the
+	---window's width, so this has to run per window rather than once per buffer.
+	local function update_chrome(bufnr)
 		if not api.nvim_buf_is_valid(bufnr) then
 			return
 		end
@@ -412,19 +481,47 @@ local function post_create(chat, override)
 					vim.wo[win].winbar = text[1]
 				end)
 			end
+			pcall(function()
+				vim.wo[win].statusline = footer_text(api.nvim_win_get_width(win))
+			end)
 		end
 	end
 
 	local augroup = api.nvim_create_augroup("AiChatWinbar" .. chat.bufnr, { clear = true })
 	vim.defer_fn(function()
-		update_winbar(chat.bufnr)
+		update_chrome(chat.bufnr)
 	end, 10) -- wait for the window to materialise
 
 	api.nvim_create_autocmd("BufWinEnter", {
 		group = augroup,
 		buffer = chat.bufnr,
 		callback = function()
-			update_winbar(chat.bufnr)
+			update_chrome(chat.bufnr)
+		end,
+	})
+	-- Re-tier the footer when the window changes width: a narrowed window would otherwise
+	-- keep the wider line it was given, clipped mid-word.
+	api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
+		group = augroup,
+		callback = function()
+			update_chrome(chat.bufnr)
+		end,
+	})
+	-- Winbar and statusline are window options, so they outlive the buffer that asked for
+	-- them: opening a file in the chat's window would otherwise leave that file wearing the
+	-- chat's header and key line. Only the window the buffer is leaving is cleared — another
+	-- split showing the same chat keeps its own.
+	api.nvim_create_autocmd("BufWinLeave", {
+		group = augroup,
+		buffer = chat.bufnr,
+		callback = function(args)
+			local win = api.nvim_get_current_win()
+			if api.nvim_win_is_valid(win) and api.nvim_win_get_buf(win) == args.buf then
+				pcall(function()
+					vim.wo[win].winbar = nil
+					vim.wo[win].statusline = nil
+				end)
+			end
 		end,
 	})
 	-- Also where a user-chosen title is defended. The agent pushes its own
@@ -445,7 +542,7 @@ local function post_create(chat, override)
 				pcall(chat_obj.set_title, chat_obj, want)
 				reasserting = false
 			end
-			update_winbar(args.buf)
+			update_chrome(args.buf)
 		end,
 	})
 	api.nvim_create_autocmd("BufWipeout", {
@@ -455,6 +552,7 @@ local function post_create(chat, override)
 		callback = function(args)
 			for _, win in ipairs(vim.fn.win_findbuf(args.buf)) do
 				vim.wo[win].winbar = nil
+				vim.wo[win].statusline = nil
 			end
 			pcall(api.nvim_del_augroup_by_id, augroup)
 		end,

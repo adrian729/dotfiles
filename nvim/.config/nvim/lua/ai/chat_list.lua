@@ -51,6 +51,8 @@ local function ensure_highlights()
 		vim.api.nvim_set_hl(0, "AiListDead", { fg = dead, bg = "NONE" })
 		vim.api.nvim_set_hl(0, "AiListCurrent", { fg = current, bg = "NONE", bold = true })
 		vim.api.nvim_set_hl(0, "AiListDim", { fg = dim, bg = "NONE" })
+		vim.api.nvim_set_hl(0, "AiListHeader", { fg = prov, bg = "NONE", bold = true })
+		vim.api.nvim_set_hl(0, "AiListKey", { fg = title, bg = "NONE", bold = true })
 	end)
 end
 
@@ -556,6 +558,122 @@ local function delete_stored_session(entry)
 	end
 end
 
+--=============================================================================
+-- Help overlay
+--=============================================================================
+
+-- Everything the picker can do, plus what the markers mean. This exists because none of it
+-- fits on the picker's borders: Telescope centres a title in a border line and silently
+-- clips whatever is too long for the window, so a legend there is only as complete as the
+-- terminal is wide. Here it is never truncated, and the borders only have to advertise `?`.
+local HELP = {
+	{ header = "Selection" },
+	{ key = "<CR>", desc = "open it — a stored session is restored first" },
+	{ key = "<C-r>", desc = "rename; kept against the session, so it survives reopening" },
+	{ key = "<C-d>", desc = "close a live chat, or drop a pending one — session stays" },
+	{ key = "<C-x>", desc = "delete for good, the agent's own transcript included" },
+	{},
+	{ header = "Chats" },
+	{ key = "<leader>cc", desc = "toggle the last chat, reopening it after a restart" },
+	{ key = "<leader>cn", desc = "new chat on the current provider" },
+	{ key = "<leader>cr", desc = "rename the current chat" },
+	{ key = "<leader>cd", desc = "delete the current chat" },
+	{ key = "<leader>cq", desc = "close every chat" },
+	{ key = "<leader>cl", desc = "this list" },
+	{},
+	{ header = "Markers" },
+	{ key = "▶", key_hl = "AiListCurrent", desc = "the chat you were in" },
+	{ key = "●", key_hl = "AiListReady", desc = "agent up and ready" },
+	{ key = "◌", key_hl = "AiListStarting", desc = "agent still connecting" },
+	{ key = "✕", key_hl = "AiListDead", desc = "agent gone; opening it starts a new one" },
+	{ key = "·", key_hl = "AiListDim", desc = "live chat with no agent yet" },
+	{ key = "○", key_hl = "AiListDim", desc = "not started — costs nothing until opened" },
+	{},
+	{ header = "Navigate" },
+	{ key = "<C-n> <C-p>", desc = "move the selection (j and k in normal mode)" },
+	{ key = "?", desc = "close this help" },
+	{ key = "<Esc>", desc = "normal mode; again to close the list" },
+}
+
+local KEY_COLUMN = 13
+
+local help_win, help_buf
+
+local function close_help()
+	if help_win and api.nvim_win_is_valid(help_win) then
+		pcall(api.nvim_win_close, help_win, true)
+	end
+	if help_buf and api.nvim_buf_is_valid(help_buf) then
+		pcall(api.nvim_buf_delete, help_buf, { force = true })
+	end
+	help_win, help_buf = nil, nil
+end
+
+---Pad to a display width — the markers are multibyte, so `#text` would over-pad them.
+local function pad(text, width)
+	return text .. string.rep(" ", math.max(width - vim.fn.strdisplaywidth(text), 1))
+end
+
+---Toggle the help overlay over an open picker.
+---
+---The float is deliberately unfocusable: Telescope closes a picker when its prompt buffer
+---is left, so focusing this window would dismiss the very list it documents. Keys keep
+---going to the prompt, and `?` toggles it back off.
+local function toggle_help()
+	if help_win and api.nvim_win_is_valid(help_win) then
+		return close_help()
+	end
+
+	local ns = api.nvim_create_namespace("AiChatListHelp")
+	local lines, all_highlights, width = {}, {}, 0
+	for _, row in ipairs(HELP) do
+		local text, highlights
+		if row.header then
+			text, highlights = render({ { "  " }, { row.header, "AiListHeader" } })
+		elseif row.key then
+			text, highlights = render({
+				{ "  " },
+				{ pad(row.key, KEY_COLUMN), row.key_hl or "AiListKey" },
+				{ row.desc, "AiListDim" },
+			})
+		else
+			text, highlights = "", {}
+		end
+		table.insert(lines, text)
+		table.insert(all_highlights, highlights)
+		width = math.max(width, vim.fn.strdisplaywidth(text))
+	end
+
+	help_buf = api.nvim_create_buf(false, true)
+	api.nvim_buf_set_lines(help_buf, 0, -1, false, lines)
+	for lnum, highlights in ipairs(all_highlights) do
+		for _, hl in ipairs(highlights) do
+			pcall(api.nvim_buf_set_extmark, help_buf, ns, lnum - 1, hl[1][1], {
+				end_col = hl[1][2],
+				hl_group = hl[2],
+			})
+		end
+	end
+	vim.bo[help_buf].modifiable = false
+
+	width = math.min(width + 2, vim.o.columns - 4)
+	local height = math.min(#lines, vim.o.lines - 4)
+	help_win = api.nvim_open_win(help_buf, false, {
+		relative = "editor",
+		width = width,
+		height = height,
+		row = math.max(math.floor((vim.o.lines - height) / 2) - 1, 0),
+		col = math.max(math.floor((vim.o.columns - width) / 2), 0),
+		style = "minimal",
+		border = "rounded",
+		title = " Chat list ",
+		title_pos = "center",
+		focusable = false,
+		noautocmd = true,
+		zindex = 300, -- above Telescope's own windows
+	})
+end
+
 local PROMPT_TITLE = "Chats & Sessions"
 
 ---Open the Telescope picker.
@@ -596,9 +714,10 @@ function M.open()
 	local chat_picker = pickers
 		.new({}, {
 			prompt_title = PROMPT_TITLE,
-			-- Telescope has no help overlay of its own, and these mappings are not
-			-- guessable — one of them deletes a transcript for good.
-			results_title = "▶ current  ● ready  ◌ starting  ✕ gone  ○ not started   │   <CR> open  <C-r> rename  <C-d> close  <C-x> delete",
+			-- The keys and the marker legend live in the `?` overlay rather than here: a
+			-- border title is clipped to the window's width without saying so, and one of
+			-- these mappings deletes a transcript for good.
+			results_title = "?  help",
 			finder = finders.new_table({
 				results = entries,
 				entry_maker = function(e)
@@ -607,6 +726,21 @@ function M.open()
 			}),
 			sorter = sorters.get_substr_matcher(),
 			attach_mappings = function(prompt_bufnr, map)
+				-- The overlay is a plain float, so nothing would otherwise take it down with
+				-- the picker it belongs to.
+				api.nvim_create_autocmd({ "BufLeave", "BufWipeout" }, {
+					buffer = prompt_bufnr,
+					once = true,
+					callback = close_help,
+				})
+
+				-- `?` is Telescope's own which_key, which lists keys but cannot explain the
+				-- markers, so it is replaced. <C-_> is what the terminal sends for <C-/> and
+				-- is the way in from insert mode, where `?` has to stay a literal `?`.
+				map("n", "?", toggle_help)
+				map({ "i", "n" }, "<C-_>", toggle_help)
+				map({ "i", "n" }, "<C-/>", toggle_help)
+
 				actions.select_default:replace(function()
 					local selection = action_state.get_selected_entry()
 					if not selection then

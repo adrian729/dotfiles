@@ -64,7 +64,17 @@ Chat is a full conversation buffer where you can talk to a model, invoke tools, 
 
 **Switching chat provider or model:**
 
-Press `<leader>cmc`. Same picker flow as inline but for the chat scope. Defaults: claude with opus + xhigh effort + acceptEdits mode.
+Press `<leader>cmc`. Same picker flow as inline but for the chat scope. Defaults: claude with opus + xhigh effort + `default` mode, which is the mode that asks before editing.
+
+**The chat's own key line:**
+
+Every chat window carries a footer along its bottom edge with the keys you need most:
+
+```
+ <CR> send · q stop · ga model · ? keys   │   <leader>cr rename · <leader>cd delete
+```
+
+`?` is the important one — it opens CodeCompanion's full list of chat keymaps, so the footer only has to get you there. The line shortens as the window narrows (dropping the rename/delete pair first, then `ga`, then `q`) rather than being clipped mid-word, so a narrow split shows less but always shows `?`.
 
 **Chat list:**
 
@@ -73,7 +83,9 @@ Press `<leader>cmc`. Same picker flow as inline but for the chat scope. Defaults
 - **From last session** — chats that were open when nvim last quit and haven't been reopened yet, marked `(from last session)`. `<CR>` starts one and replays its history. Nothing is running behind these
 - **Resumable sessions** — every other past ACP session (including ones started in a terminal outside nvim), filtered to the current git repo. `<CR>` opens it in a new chat buffer with full history
 
-Each line leads with two markers, also spelled out in the picker's results border:
+Press `?` (or `<C-/>` without leaving insert mode) for an overlay listing every key and marker. The picker's border only advertises `?`, because Telescope clips a border title to the window width without saying so — a legend there would be as complete as your terminal is wide and no more.
+
+Each line leads with two markers:
 
 | Marker | Means |
 |---|---|
@@ -85,7 +97,7 @@ Each line leads with two markers, also spelled out in the picker's results borde
 
 Anything not `●` also carries a short reason in dim text, since a coloured glyph alone doesn't say what's wrong. Ready-but-hidden chats are annotated `(hidden)` — they hold a running agent even though no window shows them.
 
-Every section takes the same three edits, listed in the picker's own results border:
+Every section takes the same three edits, also listed under `?`:
 
 | Key | Does |
 |---|---|
