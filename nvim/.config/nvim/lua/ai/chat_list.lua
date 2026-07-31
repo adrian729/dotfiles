@@ -6,53 +6,11 @@ local M = {}
 
 local api = vim.api
 
---=============================================================================
--- Catppuccin Mocha highlights — same groups the winbar defines
---=============================================================================
-
-local hl_ready = false
-
+-- List colours come from ai.ui, which owns the palette for every ai surface. Scheduled
+-- because resolving it before catppuccin has loaded would latch the stand-in colours in.
 local function ensure_highlights()
-	if hl_ready then
-		return
-	end
-	hl_ready = true
-
 	vim.schedule(function()
-		local prov, model, title, ready, starting, dead, current, dim
-		local ok, palette = pcall(function()
-			return require("catppuccin.palettes").get_palette()
-		end)
-		if ok and palette then
-			prov = palette.mauve
-			model = palette.pink
-			title = palette.blue
-			ready = palette.green
-			starting = palette.yellow
-			dead = palette.red
-			current = palette.lavender
-			dim = palette.overlay1
-		else
-			prov = "#94e2d5" -- teal — screams "fallback"
-			model = "#94e2d5"
-			title = "#c6a0f6" -- mauve
-			ready = "#a6e3a1"
-			starting = "#f9e2af"
-			dead = "#f38ba8"
-			current = "#b4befe"
-			dim = "#7f849c"
-		end
-
-		vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = prov, bg = "NONE" })
-		vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = model, bg = "NONE" })
-		vim.api.nvim_set_hl(0, "AiWinBarTitle", { fg = title, bg = "NONE" })
-		vim.api.nvim_set_hl(0, "AiListReady", { fg = ready, bg = "NONE" })
-		vim.api.nvim_set_hl(0, "AiListStarting", { fg = starting, bg = "NONE" })
-		vim.api.nvim_set_hl(0, "AiListDead", { fg = dead, bg = "NONE" })
-		vim.api.nvim_set_hl(0, "AiListCurrent", { fg = current, bg = "NONE", bold = true })
-		vim.api.nvim_set_hl(0, "AiListDim", { fg = dim, bg = "NONE" })
-		vim.api.nvim_set_hl(0, "AiListHeader", { fg = prov, bg = "NONE", bold = true })
-		vim.api.nvim_set_hl(0, "AiListKey", { fg = title, bg = "NONE", bold = true })
+		require("ai.ui").ensure_highlights()
 	end)
 end
 
@@ -299,23 +257,8 @@ local function saved_titles()
 	return require("ai.chat").saved_titles()
 end
 
----Assemble a display line from {text, highlight} segments. Telescope wants byte offsets,
----and the markers below are multibyte, so the offsets are accumulated from the segments
----rather than written out by hand.
----@param segments { [1]: string, [2]: string|nil }[]
----@return string text, table highlights
-local function render(segments)
-	local parts, highlights, offset = {}, {}, 0
-	for _, seg in ipairs(segments) do
-		local text = seg[1]
-		if seg[2] and text ~= "" then
-			table.insert(highlights, { { offset, offset + #text }, seg[2] })
-		end
-		table.insert(parts, text)
-		offset = offset + #text
-	end
-	return table.concat(parts), highlights
-end
+-- Shared with the provider picker, which builds its rows the same way.
+local render = require("ai.ui").render
 
 ---@param opts? { current_buf?: number } current_buf: the chat to mark, captured by the
 ---caller before the picker took focus
@@ -613,10 +556,7 @@ local function close_help()
 	help_win, help_buf = nil, nil
 end
 
----Pad to a display width — the markers are multibyte, so `#text` would over-pad them.
-local function pad(text, width)
-	return text .. string.rep(" ", math.max(width - vim.fn.strdisplaywidth(text), 1))
-end
+local pad = require("ai.ui").pad
 
 ---Toggle the help overlay over an open picker.
 ---

@@ -184,4 +184,116 @@ function M.message(opts)
 	return win
 end
 
+--=============================================================================
+-- Highlighted list lines
+--=============================================================================
+
+---Assemble a display line from {text, highlight} segments. Telescope wants byte offsets,
+---and the markers these lines carry are multibyte, so the offsets are accumulated from the
+---segments rather than written out by hand — hand-written ones drift the moment a glyph
+---changes, and a range landing mid-codepoint corrupts the whole line.
+---@param segments { [1]: string, [2]: string|nil }[]
+---@return string text, table highlights
+function M.render(segments)
+	local parts, highlights, offset = {}, {}, 0
+	for _, seg in ipairs(segments) do
+		local text = seg[1]
+		if seg[2] and text ~= "" then
+			table.insert(highlights, { { offset, offset + #text }, seg[2] })
+		end
+		table.insert(parts, text)
+		offset = offset + #text
+	end
+	return table.concat(parts), highlights
+end
+
+---Pad to a display width — `#text` would over-pad anything holding a multibyte glyph.
+---
+---Only ever pads *to* the width. Callers wanting a gap after the column append it
+---themselves: folding a minimum gap in here reads as "width plus the gap" but cannot be,
+---since the two would have to be added rather than maxed, and a column narrower than the
+---widest entry would silently lose its alignment instead of its gap.
+---@param text string
+---@param width number
+---@return string
+function M.pad(text, width)
+	return text .. string.rep(" ", math.max(width - vim.fn.strdisplaywidth(text), 0))
+end
+
+--=============================================================================
+-- Highlights — Catppuccin Mocha palette
+--=============================================================================
+
+-- Every ai surface draws from one palette, so the groups are defined once here rather than
+-- per module: the winbar, the chat footer, the chat list and the provider picker had started
+-- to keep their own copies of the same colours, which is how two of them drift apart.
+
+local hl_ready = false
+
+---Define every `Ai*` highlight group. Latches, so it is cheap to call from anywhere.
+---
+---Call it from a scheduled context at startup: the fallback branch below is permanent once
+---this has run, so resolving the palette before catppuccin has loaded would leave the whole
+---UI in stand-in colours for the rest of the session.
+function M.ensure_highlights()
+	if hl_ready then
+		return
+	end
+	hl_ready = true
+
+	local p = {}
+	local ok, palette = pcall(function()
+		return require("catppuccin.palettes").get_palette()
+	end)
+	if ok and palette then
+		p = vim.tbl_extend("keep", { key = palette.blue }, palette)
+	else
+		-- Teal where it shows — a fallback that screams rather than looking plausible
+		p = {
+			mauve = "#94e2d5",
+			pink = "#94e2d5",
+			blue = "#c6a0f6", -- mauve
+			key = "#94e2d5",
+			green = "#a6e3a1",
+			yellow = "#f9e2af",
+			red = "#f38ba8",
+			lavender = "#b4befe",
+			overlay1 = "#7f849c",
+			overlay0 = "#6c7086",
+			subtext0 = "#a6adc8",
+			surface1 = "#585b70",
+			surface0 = "#45475a",
+		}
+	end
+
+	local set = function(name, opts)
+		vim.api.nvim_set_hl(0, name, opts)
+	end
+
+	-- Chat winbar
+	set("AiWinBarProvider", { fg = p.mauve, bg = "NONE" })
+	set("AiWinBarModel", { fg = p.pink, bg = "NONE" })
+	set("AiWinBarTitle", { fg = p.blue, bg = "NONE" })
+	set("AiWinBarDim", { fg = p.surface1, bg = "NONE" })
+	set("AiWinBarSep", { fg = p.surface0, bg = "NONE" })
+
+	-- Chat footer. It sits in the statusline, so it has to carry StatusLine's own background
+	-- or it reads as a hole punched in the bar. A transparent theme leaves bg nil, which is
+	-- then the right answer anyway.
+	local sl = vim.api.nvim_get_hl(0, { name = "StatusLine", link = false })
+	local bg = sl and sl.bg or nil
+	set("AiFooterKey", { fg = p.key, bg = bg, bold = true })
+	set("AiFooterLabel", { fg = p.subtext0, bg = bg })
+	set("AiFooterDim", { fg = p.overlay0, bg = bg })
+
+	-- Chat list and the provider/model picker
+	set("AiListReady", { fg = p.green, bg = "NONE" })
+	set("AiListStarting", { fg = p.yellow, bg = "NONE" })
+	set("AiListDead", { fg = p.red, bg = "NONE" })
+	set("AiListCurrent", { fg = p.lavender, bg = "NONE", bold = true })
+	set("AiListDim", { fg = p.overlay1, bg = "NONE" })
+	set("AiListHeader", { fg = p.mauve, bg = "NONE", bold = true })
+	set("AiListKey", { fg = p.blue, bg = "NONE", bold = true })
+end
+
 return M

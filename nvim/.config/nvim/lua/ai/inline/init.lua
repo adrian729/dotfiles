@@ -785,60 +785,9 @@ function M.cancel_all()
 	vim.notify(("[ai] cancelled %d request(s)"):format(#targets))
 end
 
----Switch the inline backend and model. The full option UX is the status panel's job (step 05);
----this is the minimum needed to exercise every transport.
+---Switch the inline backend and model. Shared with chat — see ai.pick.
 function M.pick()
-	local names = vim.tbl_keys(providers.providers)
-	table.sort(names)
-
-	vim.ui.select(names, { prompt = "Inline provider" }, function(provider)
-		if not provider then
-			return
-		end
-
-		-- Committed only once a model has been picked: abandoning the second prompt used to leave
-		-- the provider switched, which is a change the user did not finish asking for.
-		local function commit(model, extra)
-			providers.set_provider("inline", provider)
-			for key, value in pairs(extra or {}) do
-				providers.set_option("inline", key, value)
-			end
-			if model then
-				providers.set_option("inline", "model", model)
-			end
-			require("ai.acp_pool").drain_provider(providers.current("inline").provider)
-			local current = providers.current("inline")
-			vim.notify(("[ai] inline → %s · %s"):format(provider, tostring(current.opts.model)))
-		end
-
-		local function choose_model(list, extra)
-			vim.ui.select(list, { prompt = provider .. " model" }, function(model)
-				if not model then
-					return
-				end
-				commit(model, extra)
-			end)
-		end
-
-		if provider == "opencode" then
-			return choose_model(providers.opencode_models())
-		end
-		if provider == "claude" then
-			return choose_model(providers.providers.claude.options.model.values)
-		end
-
-		vim.ui.select({ "cloud", "local" }, { prompt = "ollama endpoint" }, function(endpoint)
-			if not endpoint then
-				return
-			end
-			providers.ollama_models(endpoint, function(models, err)
-				if not models then
-					return vim.notify("[ai] " .. err, vim.log.levels.ERROR)
-				end
-				choose_model(models, { endpoint = endpoint })
-			end)
-		end)
-	end)
+	require("ai.pick").open("inline")
 end
 
 ---How many requests and diffs this buffer is carrying. Handy when checking by hand whether

@@ -19,57 +19,9 @@ local pending_agents = {} -- bufnr → agent name, applied on first ChatSubmitte
 ---@type table[]
 local pending = {}
 
---=============================================================================
--- Winbar and footer styling — Catppuccin Mocha palette
---=============================================================================
-
-local winbar_hl_ready = false
-
+-- Winbar and footer colours come from ai.ui, which owns the palette for every ai surface.
 local function ensure_winbar_highlights()
-	if winbar_hl_ready then
-		return
-	end
-	winbar_hl_ready = true
-
-	-- Catppuccin mocha palette, with fallback if the module isn't loaded yet
-	local prov, model, title, dim, sep, key, label, faint
-	local ok, palette = pcall(function()
-		return require("catppuccin.palettes").get_palette()
-	end)
-	if ok and palette then
-		prov = palette.mauve
-		model = palette.pink
-		title = palette.blue
-		dim = palette.surface1
-		sep = palette.surface0
-		key = palette.blue
-		label = palette.subtext0
-		faint = palette.overlay0
-	else
-		prov = "#94e2d5" -- teal — screams "fallback"
-		model = "#94e2d5"
-		title = "#c6a0f6" -- mauve
-		dim = "#585b70"
-		sep = "#45475a"
-		key = "#94e2d5"
-		label = "#a6adc8"
-		faint = "#6c7086"
-	end
-
-	vim.api.nvim_set_hl(0, "AiWinBarProvider", { fg = prov, bg = "NONE" })
-	vim.api.nvim_set_hl(0, "AiWinBarModel", { fg = model, bg = "NONE" })
-	vim.api.nvim_set_hl(0, "AiWinBarTitle", { fg = title, bg = "NONE" })
-	vim.api.nvim_set_hl(0, "AiWinBarDim", { fg = dim, bg = "NONE" })
-	vim.api.nvim_set_hl(0, "AiWinBarSep", { fg = sep, bg = "NONE" })
-
-	-- The footer sits in the statusline, so it has to carry StatusLine's own background or
-	-- it reads as a hole punched in the bar. A transparent theme leaves bg nil, which is
-	-- then the right answer anyway.
-	local sl = vim.api.nvim_get_hl(0, { name = "StatusLine", link = false })
-	local bg = sl and sl.bg or nil
-	vim.api.nvim_set_hl(0, "AiFooterKey", { fg = key, bg = bg, bold = true })
-	vim.api.nvim_set_hl(0, "AiFooterLabel", { fg = label, bg = bg })
-	vim.api.nvim_set_hl(0, "AiFooterDim", { fg = faint, bg = bg })
+	require("ai.ui").ensure_highlights()
 end
 
 --=============================================================================
@@ -768,57 +720,9 @@ function M.open_with_context(opts)
 	post_create(chat)
 end
 
----Switch the chat provider and model. Mirror of inline.pick() for the chat scope.
+---Switch the chat provider and model. Shared with inline — see ai.pick.
 function M.pick()
-	local providers = require("ai.providers")
-	local names = vim.tbl_keys(providers.providers)
-	table.sort(names)
-
-	vim.ui.select(names, { prompt = "Chat provider" }, function(provider)
-		if not provider then
-			return
-		end
-
-		local function commit(model, extra)
-			providers.set_provider("chat", provider)
-			for key, value in pairs(extra or {}) do
-				providers.set_option("chat", key, value)
-			end
-			if model then
-				providers.set_option("chat", "model", model)
-			end
-			local current = providers.current("chat")
-			vim.notify(("[ai] chat → %s · %s"):format(provider, tostring(current.opts.model)))
-		end
-
-		local function choose_model(list, extra)
-			vim.ui.select(list, { prompt = provider .. " model" }, function(model)
-				if not model then
-					return
-				end
-				commit(model, extra)
-			end)
-		end
-
-		if provider == "opencode" then
-			return choose_model(providers.opencode_models())
-		end
-		if provider == "claude" then
-			return choose_model(providers.providers.claude.options.model.values)
-		end
-
-		vim.ui.select({ "cloud", "local" }, { prompt = "ollama endpoint" }, function(endpoint)
-			if not endpoint then
-				return
-			end
-			providers.ollama_models(endpoint, function(models, err)
-				if not models then
-					return vim.notify("[ai] " .. err, vim.log.levels.ERROR)
-				end
-				choose_model(models, { endpoint = endpoint })
-			end)
-		end)
-	end)
+	require("ai.pick").open("chat")
 end
 
 --=============================================================================

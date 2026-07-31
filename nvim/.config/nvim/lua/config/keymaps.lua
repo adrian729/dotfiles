@@ -149,8 +149,8 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- ------------------------------------------------------------------
 -- <leader>ci - inline prompt (forbids tools)
 -- <leader>cI - inline prompt, may read the repo (ACP transports only)
--- <leader>cmi - switch inline backend / model
--- <leader>cmc - switch chat backend / model
+-- <leader>cmi - switch inline provider + model, then its options (<CR> applies, q discards)
+-- <leader>cmc - the same for chat
 -- <leader>cx - cancel inline request under cursor; in a chat buffer stops the agent
 -- <leader>cX - cancel all inline requests in this buffer
 -- <leader>cj / <leader>ck - next / previous inline diff hunk

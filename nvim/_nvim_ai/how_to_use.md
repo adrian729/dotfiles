@@ -35,11 +35,35 @@ Press `<leader>cX` to cancel every in-flight inline request in the buffer at onc
 
 **Switching provider or model:**
 
-Press `<leader>cmi`. You are prompted to pick a provider, then a model (two pickers, in order):
+Press `<leader>cmi`. One flat Telescope list of every provider/model pair, so finding what you want is one search — type `opus` or `qwen` rather than working through a provider step first. The current selection is marked `▶` and sits nearest the prompt.
 
-- **ollama** — sub-pick `cloud` (free, fast, always available) or `local` (private, needs ollama running). Model lists are fetched live from the ollama API and cached for the session
-- **claude** — runs over ACP. You can also pick the effort level (default/medium is what inline uses; higher effort is slower and more expensive). Fast mode (on claude models that offer it) trades some quality for speed. The session runs in `dontAsk` mode, which denies mutating tools
+- **ollama** — contributes one row per endpoint, listed as `ollama cloud` (free, fast, always available) and `ollama local` (private, needs ollama running), because the endpoint decides which models you get. Both lists are fetched from the ollama API and cached for the session
+- **claude** — runs over ACP. The session runs in `dontAsk` mode, which denies mutating tools
 - **opencode** — for `ci` runs through the `opencode-llm` relay (a free-tier cloud model, no tools at all). For `cI` runs over ACP with repo-read permission but mutation denied
+
+The list opens immediately rather than waiting on ollama: its models come off the network, and blocking every switch on a curl would slow down switching to claude, which needs no network at all. Ollama's rows appear as they arrive. An endpoint that cannot be reached is left out with one warning naming the reason, and everything else still works.
+
+`<CR>` on a row continues into that provider's other options — effort, mode and fast for claude, mode for opencode, think for ollama:
+
+```
+┌ claude · opus ────────────────────────────────────────┐
+│  Effort  ◂ xhigh ▸                                    │
+│  Fast      off                   opus only            │
+│  Mode      default               asks before editing  │
+└ h/l cycle · j/k move · <CR> apply · q discard ────────┘
+```
+
+`h`/`l` cycles the value under the cursor and wraps around; `j`/`k` moves between rows.
+
+**The whole run is one decision, applied only by `<CR>`.** Nothing — not the model, not the options — reaches the configuration until then, so leaving with `q`, `<Esc>` or by clicking away keeps the provider, model and options exactly as they were, and says so. That is what makes it safe to scroll through `mode` values to read what each one does: nothing you pass through on the way is kept.
+
+A provider with nothing left to choose (inline + opencode) commits on the list's own `<CR>`, since there was nothing to confirm.
+
+An option with no stored value shows as `unset` rather than being filled in with its first value, and stays unset unless you cycle it. Claude's `fast` is the case that matters: it is deliberately unset *and* its first value is `on`, so defaulting it would quietly enable it on every switch. It is also model-dependent — opus offers it, sonnet does not — which the row says as `opus only` rather than pretending to filter. Once cycled there is no way back to unset, same as the status panel.
+
+Claude's `agent` is not offered here at all, because the list of agents only exists on a running agent; `<leader>cs` is where that lives, since it can read the live connection.
+
+`<leader>cmc` is the same list for chat. One difference worth knowing: an inline switch takes effect on the next request (the connection pool is drained so nothing reuses the old model), while a chat switch sets the default for **new** chats — a conversation already open keeps the model it was created with. `<leader>cs` is what reaches into a chat already in progress.
 
 Defaults: ollama cloud with `gpt-oss:120b` — measured ~4s on a typical refactor, no local RAM cost, free.
 
@@ -64,7 +88,7 @@ Chat is a full conversation buffer where you can talk to a model, invoke tools, 
 
 **Switching chat provider or model:**
 
-Press `<leader>cmc`. Same picker flow as inline but for the chat scope. Defaults: claude with opus + xhigh effort + `default` mode, which is the mode that asks before editing.
+Press `<leader>cmc` — the same flat list described under [Switching provider or model](#switching-provider-or-model), for the chat scope. It sets the default for new chats; `<leader>cs` changes a chat already open. Defaults: claude with opus + xhigh effort + `default` mode, which is the mode that asks before editing.
 
 **The chat's own key line:**
 
