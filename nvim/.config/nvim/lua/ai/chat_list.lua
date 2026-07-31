@@ -591,13 +591,17 @@ local HELP = {
 	{},
 	{ header = "Navigate" },
 	{ key = "<C-n> <C-p>", desc = "move the selection (j and k in normal mode)" },
-	{ key = "?", desc = "close this help" },
-	{ key = "<Esc>", desc = "normal mode; again to close the list" },
+	{ key = "<Esc> q ?", desc = "close this help, keeping the list" },
+	{ key = "<C-c>", desc = "close the list" },
 }
 
 local KEY_COLUMN = 13
 
 local help_win, help_buf
+
+local function help_is_open()
+	return help_win ~= nil and api.nvim_win_is_valid(help_win)
+end
 
 local function close_help()
 	if help_win and api.nvim_win_is_valid(help_win) then
@@ -620,7 +624,7 @@ end
 ---is left, so focusing this window would dismiss the very list it documents. Keys keep
 ---going to the prompt, and `?` toggles it back off.
 local function toggle_help()
-	if help_win and api.nvim_win_is_valid(help_win) then
+	if help_is_open() then
 		return close_help()
 	end
 
@@ -740,6 +744,26 @@ function M.open()
 				map("n", "?", toggle_help)
 				map({ "i", "n" }, "<C-_>", toggle_help)
 				map({ "i", "n" }, "<C-/>", toggle_help)
+
+				-- <Esc> and q are what a hand reaches for to dismiss a popup, and both
+				-- otherwise close the picker — which took the list away along with the help
+				-- it was showing. While the overlay is up they dismiss it and stop there;
+				-- with it down they keep their usual meaning, so <Esc> still closes the list.
+				local function dismiss_help_or(fallback)
+					return function(prompt_buf)
+						if help_is_open() then
+							return close_help()
+						end
+						return fallback(prompt_buf)
+					end
+				end
+				map("n", "<Esc>", dismiss_help_or(actions.close))
+				map("n", "q", dismiss_help_or(actions.close))
+				map("i", "<Esc>", dismiss_help_or(function()
+					vim.cmd("stopinsert") -- Telescope leaves <Esc> alone in insert mode
+				end))
+				-- The documented way out of the list regardless, so it must not be swallowed.
+				map({ "i", "n" }, "<C-c>", actions.close)
 
 				actions.select_default:replace(function()
 					local selection = action_state.get_selected_entry()

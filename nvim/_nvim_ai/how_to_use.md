@@ -85,6 +85,8 @@ Every chat window carries a footer along its bottom edge with the keys you need 
 
 Press `?` (or `<C-/>` without leaving insert mode) for an overlay listing every key and marker. The picker's border only advertises `?`, because Telescope clips a border title to the window width without saying so — a legend there would be as complete as your terminal is wide and no more.
 
+`<Esc>`, `q` and `?` all dismiss the overlay and leave the list up; with no overlay open, `<Esc>` and `q` close the list as usual, and `<C-c>` closes it either way.
+
 Each line leads with two markers:
 
 | Marker | Means |
