@@ -233,15 +233,82 @@ function M.ollama_models(endpoint, cb)
 	end)
 end
 
----The relay's free-tier fallback list, read from the same config `opencode-llm` walks.
----@return string[]
-function M.opencode_models()
-	if cache.opencode then
-		return cache.opencode
-	end
+-- Which tier a model belongs to is decided by its provider prefix, per MODELS.md's own rule:
+-- `opencode/` is the free tier, `opencode-go/` is the Go subscription. Not by the `-free`
+-- suffix, which `opencode/big-pickle` does not carry despite being free.
+local GO_PREFIX = "opencode-go/"
+local FREE_PREFIX = "opencode/"
 
-	local models = { M.AUTO }
-	-- Same two locations `opencode-llm` itself checks, in the same order
+---Is this a free-tier opencode model?
+---@param model string
+---@return boolean
+function M.is_free_opencode_model(model)
+	return type(model) == "string" and vim.startswith(model, FREE_PREFIX)
+end
+
+---Is this an OpenCode Go model, i.e. one that draws on the Go subscription?
+---@param model string
+---@return boolean
+function M.is_go_opencode_model(model)
+	return type(model) == "string" and vim.startswith(model, GO_PREFIX)
+end
+
+-- What running a model draws on, so the picker can say so where the choice is made. Every
+-- claim below is traceable, because "free" is the kind of label that rots quietly:
+--
+--   opencode/…      free tier      MODELS.md's prefix rule
+--   opencode-go/…   Go plan        MODELS.md "Limits" — $12/5h, $30/wk, $60/mo rolling
+--                                  windows, and "Free models don't count", so these are what
+--                                  consume them
+--   ollama local    free           runs on this machine; no account, no quota
+--   ollama cloud    free tier      MODELS.md "Ollama Cloud (Free)" — light GPU-time usage,
+--                                  1 concurrent model, so free but rate-limited
+--   claude          Claude plan    claude-agent-acp authenticates with CLAUDE_CODE_OAUTH_TOKEN
+--                                  (no ANTHROPIC_API_KEY anywhere in this config), so usage
+--                                  counts against the subscription
+--
+-- Both subscriptions are labelled the same way on purpose. An earlier revision called Go
+-- "paid" because its allowance happens to be denominated in dollars while Claude's is not —
+-- but that is the unit the window is measured in, not who is paying. Both are plans already
+-- paid for, with rolling usage windows; neither bills per token. (Go can overflow into Zen
+-- credits once its windows are spent, but that is opt-in from opencode's console, not what a
+-- request costs by default.)
+--
+-- `free` is what drives the highlight, so anything drawing on a plan reads as such at a glance.
+---@param provider string
+---@param model string|nil
+---@param endpoint string|nil ollama's, which is what decides local versus ollama.com
+---@return { label: string, free: boolean }|nil
+function M.model_tier(provider, model, endpoint)
+	if provider == "claude" then
+		return { label = "subscription · claude", free = false }
+	end
+	if provider == "ollama" then
+		return { label = endpoint == "local" and "free · local" or "free · cloud", free = true }
+	end
+	if provider == "opencode" then
+		if model == M.AUTO then
+			-- The relay only ever walks free models, and resolve_chat_option_value pins a free
+			-- one when a live session needs something concrete, so this cannot cost anything.
+			return { label = "free", free = true }
+		end
+		if M.is_go_opencode_model(model) then
+			return { label = "subscription · Go", free = false }
+		end
+		if M.is_free_opencode_model(model) then
+			return { label = "free", free = true }
+		end
+	end
+	return nil -- an unrecognised model: saying nothing beats guessing at what it draws on
+end
+
+---The relay's free-tier fallback list, read from the same config `opencode-llm` walks.
+---
+---This is the floor, not the whole story: it is what can be answered without asking opencode
+---anything, so it is what the synchronous callers see until `opencode models` has been run.
+---@return string[]
+local function configured_free_models()
+	-- Same locations `opencode-llm` itself checks, in the same order
 	local candidates = {
 		vim.fn.expand("$XDG_CONFIG_HOME/opencode/opencode-models.json"),
 		vim.fn.expand("~/.config/opencode/opencode-models.json"),
@@ -255,17 +322,76 @@ function M.opencode_models()
 				decoded_ok, json = pcall(vim.json.decode, table.concat(content, "\n"))
 			end
 			if decoded_ok and type(json) == "table" and type(json.relay) == "table" then
-				vim.list_extend(models, json.relay)
-				break
+				return json.relay
 			end
 		end
 	end
+	return {}
+end
+
+---Every opencode model that can be selected, free tier and Go alike.
+---
+---Synchronous and never blocking: it answers from the cache `M.opencode_models_async` fills,
+---and until that has happened from `opencode-models.json`'s relay list. Callers that want the
+---Go models to be present have to have asked for them first.
+---@return string[]
+function M.opencode_models()
+	if cache.opencode then
+		return cache.opencode
+	end
+
+	local models = { M.AUTO }
+	vim.list_extend(models, configured_free_models())
 	if #models == 1 then
 		vim.notify("[ai] could not read opencode-models.json — opencode falls back to its ambient model", vim.log.levels.WARN)
 	end
-
-	cache.opencode = models
 	return models
+end
+
+---Ask opencode itself what this machine can reach, then cache it.
+---
+---`opencode models` is the only source that knows about the Go subscription — the JSON config
+---only ever described the free relay walk, which is why Go models were missing from the
+---pickers even with a subscription. It takes about half a second, so it is fetched rather than
+---waited on, the same way the ollama lists are.
+---
+---`ollama-cloud/*` entries are dropped: opencode can reach them, but this config already has
+---its own ollama provider for those, and listing them twice under two providers would only
+---raise the question of which one to pick.
+---@param cb fun(models: string[], err: string|nil)
+function M.opencode_models_async(cb)
+	if cache.opencode then
+		return cb(cache.opencode)
+	end
+
+	vim.system({ "opencode", "models" }, { text = true }, function(out)
+		vim.schedule(function()
+			if out.code ~= 0 then
+				return cb(M.opencode_models(), vim.trim(out.stderr or "`opencode models` failed"))
+			end
+
+			local models = { M.AUTO }
+			local free, go = {}, {}
+			for line in (out.stdout or ""):gmatch("[^\r\n]+") do
+				local model = vim.trim(line)
+				if M.is_free_opencode_model(model) then
+					table.insert(free, model)
+				elseif M.is_go_opencode_model(model) then
+					table.insert(go, model)
+				end
+			end
+			-- Free first, per AGENTS.md: the option that consumes nothing is the one that should
+			-- be under the cursor when the list opens, with the Go tier a deliberate scroll away.
+			vim.list_extend(models, free)
+			vim.list_extend(models, go)
+
+			if #models == 1 then
+				return cb(M.opencode_models(), "`opencode models` listed no opencode models")
+			end
+			cache.opencode = models
+			cb(models)
+		end)
+	end)
 end
 
 ---Reset the model caches so the next lookup re-queries. Exposed for the status panel.
@@ -318,8 +444,18 @@ function M.resolve_chat_option_value(provider, key, value)
 	end
 	-- AUTO means "let opencode-llm walk its fallback list", which only has meaning on the
 	-- relay. A live session has to be pinned to something, and leaving it unset lands on
-	-- opencode's ambient default — currently the paid-tier-adjacent `big-pickle`.
-	local resolved = M.opencode_models()[2]
+	-- opencode's ambient default — which is not guaranteed to be a free-tier model.
+	--
+	-- Searched for rather than taken from a fixed index: the list holds Go models too now, and
+	-- index 2 being free was only ever true because of how the list happened to be sorted. AUTO
+	-- resolving to a Go model would spend subscription budget on a value the user never picked.
+	local resolved
+	for _, model in ipairs(M.opencode_models()) do
+		if M.is_free_opencode_model(model) then
+			resolved = model
+			break
+		end
+	end
 	if not resolved then
 		-- Nothing to pin to, so staying quiet here would land on exactly the default this
 		-- branch exists to avoid. Say so where the user will see it.

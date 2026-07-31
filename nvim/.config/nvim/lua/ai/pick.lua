@@ -32,8 +32,9 @@ local pad = require("ai.ui").pad
 ---which model you get rather than a separate question — the two lists barely overlap.
 ---@param scope "inline"|"chat"
 ---@param ollama table<string, string[]> endpoint → models, only what has arrived so far
+---@param opencode string[] every opencode model known so far, free tier and Go
 ---@return table[]
-local function build_entries(scope, ollama)
+local function build_entries(scope, ollama, opencode)
 	local providers = require("ai.providers")
 	local current = providers.current(scope)
 
@@ -42,13 +43,24 @@ local function build_entries(scope, ollama)
 		local is_current = provider == current.provider
 			and model == current.opts.model
 			and endpoint == current.opts.endpoint
-		table.insert(rows, { provider = provider, model = model, endpoint = endpoint, is_current = is_current })
+		-- What a row draws on belongs on the row, not in the docs: nothing in these names says
+		-- whether picking one consumes a usage budget or nothing at all. providers.model_tier is
+		-- where that is decided, and where each claim's source is recorded.
+		local tier = providers.model_tier(provider, model, endpoint)
+		table.insert(rows, {
+			provider = provider,
+			model = model,
+			endpoint = endpoint,
+			is_current = is_current,
+			tier = tier and tier.label or nil,
+			free = tier and tier.free or false,
+		})
 	end
 
 	for _, model in ipairs(providers.providers.claude.options.model.values) do
 		add("claude", model)
 	end
-	for _, model in ipairs(providers.opencode_models()) do
+	for _, model in ipairs(opencode) do
 		add("opencode", model)
 	end
 	for _, endpoint in ipairs({ "cloud", "local" }) do
@@ -57,12 +69,14 @@ local function build_entries(scope, ollama)
 		end
 	end
 
-	-- Widest name column, so the models line up in a single column across providers
-	local name_width = 0
+	-- Widest name and model columns, so both line up in one column across providers and the
+	-- tier annotations form a column of their own rather than trailing each name's length.
+	local name_width, model_width = 0, 0
 	for _, row in ipairs(rows) do
 		local name = row.endpoint and ("ollama " .. row.endpoint) or row.provider
 		row.name = name
 		name_width = math.max(name_width, vim.fn.strdisplaywidth(name))
+		model_width = math.max(model_width, vim.fn.strdisplaywidth(row.model))
 	end
 
 	local entries = {}
@@ -72,13 +86,17 @@ local function build_entries(scope, ollama)
 			{ marker, row.is_current and "AiListCurrent" or nil },
 			{ pad(row.name, name_width + 2), "AiWinBarProvider" },
 			{ "· ", "AiListDim" },
-			{ row.model, "AiWinBarModel" },
-			{ row.is_current and "   current" or "", "AiListDim" },
+			{ pad(row.model, model_width), "AiWinBarModel" },
+			-- Anything drawing on a plan is highlighted rather than dimmed, so it registers
+			-- without being read for.
+			{ row.tier and ("   " .. row.tier) or "", row.free and "AiListDim" or "AiListStarting" },
+			{ row.is_current and "   current" or "", "AiListCurrent" },
 		})
 		table.insert(entries, {
 			value = row,
-			-- Both names are searchable, so "ollama gpt" and "opus" both land
-			ordinal = ("%s %s"):format(row.name, row.model),
+			-- Provider, model and tier are all searchable, so "ollama gpt", "opus" and
+			-- "subscription" each narrow the list
+			ordinal = ("%s %s %s"):format(row.name, row.model, row.tier or ""),
 			display = function(entry)
 				return entry.text, entry.highlights
 			end,
@@ -474,6 +492,9 @@ function M.open(scope)
 
 	local providers = require("ai.providers")
 	local ollama, picker = {}, nil
+	-- Starts at whatever can be answered without asking opencode — the free relay list — and is
+	-- replaced by the full one, Go subscription included, when the query lands.
+	local opencode = providers.opencode_models()
 
 	local function rebuild()
 		if not picker then
@@ -486,15 +507,15 @@ function M.open(scope)
 			return
 		end
 		picker:refresh(
-			t.finders.new_table({ results = build_entries(scope, ollama), entry_maker = entry_maker }),
+			t.finders.new_table({ results = build_entries(scope, ollama, opencode), entry_maker = entry_maker }),
 			{ reset_prompt = false }
 		)
 	end
 
-	-- Both endpoints are queried, and the list opens without waiting: ollama's models come
-	-- off the network, and blocking the picker on a curl to make one provider's rows arrive
-	-- with the rest would make every switch feel slow — including switches to claude, which
-	-- needs no network at all.
+	-- Every list is queried, and the picker opens without waiting on any of them: ollama's
+	-- models come off the network and opencode's out of a subprocess, so blocking until they
+	-- arrive together would make every switch feel slow — including switches to claude, which
+	-- needs neither. Rows appear as each answers, and both are cached for the session.
 	for _, endpoint in ipairs({ "cloud", "local" }) do
 		providers.ollama_models(endpoint, function(models, err)
 			if models then
@@ -505,11 +526,20 @@ function M.open(scope)
 			end
 		end)
 	end
+	providers.opencode_models_async(function(models, err)
+		opencode = models
+		rebuild()
+		if err then
+			-- Still usable: `models` falls back to the configured free list, so the warning is
+			-- about the Go models being absent rather than about the picker being broken.
+			vim.notify(("[ai] opencode Go models not listed: %s"):format(err), vim.log.levels.WARN)
+		end
+	end)
 
 	local chat_picker = t.pickers.new({}, {
 		prompt_title = scope == "chat" and "Chat provider & model" or "Inline provider & model",
 		results_title = "<CR> continue to options",
-		finder = t.finders.new_table({ results = build_entries(scope, ollama), entry_maker = entry_maker }),
+		finder = t.finders.new_table({ results = build_entries(scope, ollama, opencode), entry_maker = entry_maker }),
 		sorter = t.sorters.get_substr_matcher(),
 		attach_mappings = function(prompt_bufnr)
 			-- The row is carried forward as a pending selection rather than written now, so

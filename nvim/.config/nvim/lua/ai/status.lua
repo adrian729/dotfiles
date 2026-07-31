@@ -438,6 +438,11 @@ local function open()
 		return
 	end
 
+	-- Warms the opencode list so cycling its Model row can reach the Go subscription and not
+	-- just the free relay tier. Asked for here rather than inside get_values because that runs
+	-- on every keypress, and the answer comes out of a subprocess.
+	require("ai.providers").opencode_models_async(function() end)
+
 	state.rows = build_rows()
 	state.cursor = 1
 	state.editing = nil

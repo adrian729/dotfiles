@@ -37,11 +37,29 @@ Press `<leader>cX` to cancel every in-flight inline request in the buffer at onc
 
 Press `<leader>cmi`. One flat Telescope list of every provider/model pair, so finding what you want is one search — type `opus` or `qwen` rather than working through a provider step first. The current selection is marked `▶` and sits nearest the prompt.
 
-- **ollama** — contributes one row per endpoint, listed as `ollama cloud` (free, fast, always available) and `ollama local` (private, needs ollama running), because the endpoint decides which models you get. Both lists are fetched from the ollama API and cached for the session
+- **ollama** — contributes one row per endpoint, listed as `ollama cloud` and `ollama local`, because the endpoint decides which models you get. Both lists are fetched from the ollama API and cached for the session
 - **claude** — runs over ACP. The session runs in `dontAsk` mode, which denies mutating tools
-- **opencode** — for `ci` runs through the `opencode-llm` relay (a free-tier cloud model, no tools at all). For `cI` runs over ACP with repo-read permission but mutation denied
+- **opencode** — every model this machine can reach, asked of `opencode models` itself: the free tier (`opencode/…`) and the Go subscription (`opencode-go/…`). Free models are listed first, so the cheap option is the one under the cursor. For `ci` opencode runs through the `opencode-llm` relay (no tools at all); for `cI` over ACP with repo-read permission but mutation denied
+  - `auto` is a sentinel rather than a model: it lets `opencode-llm` walk its own free fallback list, so a dead model degrades instead of failing. When a live session needs a real model pinned, `auto` always resolves to a **free** one — never to a Go model you did not pick
+  - `ollama-cloud/…` models are reachable through opencode too, but they are left out here because the `ollama` provider already offers them; listing them under two providers would only raise the question of which to use
 
-The list opens immediately rather than waiting on ollama: its models come off the network, and blocking every switch on a curl would slow down switching to claude, which needs no network at all. Ollama's rows appear as they arrive. An endpoint that cannot be reached is left out with one warning naming the reason, and everything else still works.
+**Every row says what it draws on.** The labels are not decoration — nothing in these model names tells you whether picking one consumes a usage budget or nothing at all:
+
+| Label | Means | Where that comes from |
+|---|---|---|
+| `free` | Free tier, consumes nothing | opencode's `opencode/…` prefix, per `MODELS.md` |
+| `free · local` | Runs on this machine — no account, no quota | ollama with `endpoint = local` |
+| `free · cloud` | Free tier, but rate-limited: light GPU-time, 1 concurrent model | `MODELS.md`, "Ollama Cloud (Free)" |
+| `subscription · claude` | Counts against your Claude plan | claude-agent-acp authenticates with `CLAUDE_CODE_OAUTH_TOKEN`; there is no `ANTHROPIC_API_KEY` in this config |
+| `subscription · Go` | Counts against your OpenCode Go plan | `MODELS.md`, "Limits" — $12/5h, $30/wk, $60/mo rolling windows, and "Free models don't count" |
+
+Both subscriptions are labelled the same way deliberately. Go's allowance happens to be denominated in dollars where Claude's is not, but that is the unit the window is measured in rather than who is paying — both are plans you have already paid for, with rolling usage windows, and neither bills per token. (Go can overflow into Zen credits once its windows are spent, but that is opt-in from opencode's console, not what a request costs by default.)
+
+Anything drawing on a plan is highlighted rather than dimmed, so it registers without being read for. The labels are searchable too: type `free` for everything that consumes nothing, `subscription` for everything that does, or `Go` / `claude` for one plan in particular.
+
+The one place this lives is `providers.model_tier` in `providers.lua`, which carries the source for each claim in a comment — a "free" label is worth being able to check rather than trust.
+
+The list opens immediately rather than waiting on any of that: ollama's models come off the network and opencode's out of a subprocess, so blocking until they all arrive would slow down every switch — including switches to claude, which needs neither. Rows appear as each source answers, and both are cached for the session, so only the first switch pays. A source that cannot be reached is left out with one warning naming the reason, and everything else still works.
 
 `<CR>` on a row continues into that provider's other options — effort, mode and fast for claude, mode for opencode, think for ollama:
 
@@ -292,6 +310,8 @@ The panel is interactive:
 - `q` or `<Esc>` — close the panel
 
 Provider rows show the current provider and, for inline, a transport reach marker: `(tool-free)` or `(can-read-repo)`.
+
+Cycling opencode's Model row reaches both the free tier and the Go subscription, the same set `<leader>cmi`/`<leader>cmc` list — the panel asks `opencode models` when it opens, so it does not matter which surface you got there from.
 
 Changes apply immediately:
 - **Inline scope** — updates stored defaults and drains the connection pool so the next request uses the new provider/model
