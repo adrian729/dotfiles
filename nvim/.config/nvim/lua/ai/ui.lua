@@ -5,7 +5,11 @@ local api = vim.api
 
 local M = {}
 
+-- Shared with the inline list, so a request animates at the same tempo and in the same shape
+-- wherever it is being watched from.
 local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+M.SPINNER = SPINNER
+
 local ns = api.nvim_create_namespace("ai_ui")
 
 ---Width available for virtual text on a row, so a long prompt gets an ellipsis instead of
@@ -25,15 +29,19 @@ local function room_on(bufnr, row)
 	return math.max(20, width - vim.fn.strdisplaywidth(line) - 6)
 end
 
+---Truncate to a display width, marking that something was cut. By character rather than by
+---byte, so a multibyte glyph is never sliced in half.
 ---@param text string
 ---@param width number
 ---@return string
-local function ellipsise(text, width)
+function M.ellipsise(text, width)
 	if vim.fn.strdisplaywidth(text) <= width then
 		return text
 	end
 	return vim.fn.strcharpart(text, 0, math.max(1, width - 1)) .. "…"
 end
+
+local ellipsise = M.ellipsise
 
 ---Animated virtual text pinned to a moving row.
 ---

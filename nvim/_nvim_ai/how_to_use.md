@@ -33,6 +33,42 @@ Press `<leader>cx`. If your cursor is on the line where an inline request is in 
 
 Press `<leader>cX` to cancel every in-flight inline request in the buffer at once.
 
+**The inline list — everything in play at once:**
+
+Press `<leader>cL`. One row per inline edit that has not been settled: requests still running, and finished ones whose diff you have not accepted or rejected yet. `<leader>cx` and `g2`/`g3` are scoped to the buffer you are in, but a request runs against the buffer it was *started* in — so this is the view that shows the ones you have since moved away from.
+
+```
+┌ Inline — 2 thinking · 1 to review ─────────────────────────────────────────────────────┐
+│▶ ◆ review        0s  ollama · gpt-oss:120b  lua/ai/inline/parse.lua:1  make this a s…  │
+│  ⠋ thinking     12s  ollama · gpt-oss:120b  lua/ai/pick.lua:2          add a b key s…  │
+│  ⠋ thinking      4s  claude · sonnet        lua/ai/chat.lua:2          explain the r…  │
+└ <CR> jump · a/r accept/reject · x cancel · X cancel all · q close ──────────────────────┘
+```
+
+- `⠋ thinking` — still running, with how long for, and on ACP providers the tool it is using right now
+- `◆ review` — finished; the diff is sitting in the buffer waiting on you, with its hunk count
+- `◆ finished` — it landed while you were looking at the list. Says so for three seconds, then settles to `review`
+
+The list redraws itself while it is open, so a request finishing changes state in front of you rather than needing a reopen. The row keeps its place when that happens: entries are ordered by the request each came from rather than by state, so nothing moves under your cursor.
+
+| Key | Does |
+|---|---|
+| `j` / `k` | move (wraps around) |
+| `<CR>` | close the list and jump to the edit, cursor on its first line |
+| `a` or `g2` | accept the diff on this row |
+| `r` or `g3` | reject it, restoring the original lines |
+| `x` | cancel the request on this row |
+| `X` | cancel every request in the list, across every buffer |
+| `q` / `<Esc>` | close |
+
+`a`/`r` on a row that is still running — or `x` on one that has already finished — tells you which key you wanted instead of doing nothing. Accepting and rejecting work whether or not the target buffer is on screen.
+
+`range gone` where the location should be means the lines the edit was anchored to have since been deleted. For a running request that also means its answer will be dropped when it arrives, so it is worth cancelling.
+
+One thing this list cannot show: a reply that arrives while its buffer is on screen *nowhere* is dropped rather than queued, because the diff UI would otherwise take over whichever window you had moved to. You get a warning naming the file. Requests to a buffer that is merely not focused are fine — the list itself is a float and hides nothing.
+
+On a narrow terminal, columns are dropped rather than clipped, in order of how little is lost: the tool name or hunk count first, then the model, then the clock, then the word for the state. The marker, the location and the prompt are the last things standing.
+
 **Switching provider or model:**
 
 Press `<leader>cmi`. One flat Telescope list of every provider/model pair, so finding what you want is one search — type `opus` or `qwen` rather than working through a provider step first. The current selection is marked `▶` and sits nearest the prompt.

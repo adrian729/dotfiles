@@ -153,6 +153,8 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- <leader>cmc - the same for chat
 -- <leader>cx - cancel inline request under cursor; in a chat buffer stops the agent
 -- <leader>cX - cancel all inline requests in this buffer
+-- <leader>cL - inline list: every request in flight and every diff still waiting on you,
+--              across all buffers. Live; a/r settles, x cancels, <CR> jumps to it
 -- <leader>cj / <leader>ck - next / previous inline diff hunk
 -- g2 / g3 - accept / reject inline diff under cursor
 -- <leader>cc - toggle last chat (creates one if none)

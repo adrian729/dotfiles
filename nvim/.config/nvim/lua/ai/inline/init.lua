@@ -313,6 +313,17 @@ local function forget_request(req)
 	end
 end
 
+---Stop one request and forget everything it was holding: the transport's job, the spinner and
+---the anchor it would have applied its answer to.
+---@param req table
+local function cancel_request(req)
+	if req.handle then
+		pcall(req.handle.cancel)
+	end
+	forget_request(req)
+	drop_marks(req.bufnr, req.marks)
+end
+
 ---@param diff table
 ---@param keep_marks? boolean The reject path still needs them after this returns
 local function forget_diff(diff, keep_marks)
@@ -382,10 +393,7 @@ local function watch_buffer(bufnr)
 			-- A request whose buffer is gone has nowhere to land, and on_reply would discard it
 			-- anyway — so stop paying for it rather than letting the agent finish into a void.
 			for _, req in ipairs(vim.tbl_values(st.requests)) do
-				if req.handle then
-					pcall(req.handle.cancel)
-				end
-				forget_request(req)
+				cancel_request(req)
 			end
 			-- Neither the registry entry nor the augroup is reachable again once the buffer is
 			-- wiped, and both would otherwise accumulate for the rest of the session.
@@ -491,10 +499,17 @@ local function show_diff(req, result)
 	seq = seq + 1
 	local diff = {
 		id = seq,
+		-- The request this came out of, so M.list can keep the entry where it was when the
+		-- request it describes finishes: the row changes state in place rather than jumping to
+		-- the bottom of the list under a cursor that was reading it.
+		request_id = req.id,
 		bufnr = bufnr,
 		marks = marks,
 		original = original,
 		provider = req.provider,
+		model = req.model,
+		instruction = req.instruction,
+		finished = vim.uv.now(),
 	}
 
 	local helpers = require("codecompanion.helpers")
@@ -615,7 +630,15 @@ function M.submit(opts)
 		id = seq,
 		bufnr = bufnr,
 		provider = selection.provider,
+		model = tostring(selection.opts.model),
 		transport = transport,
+		deep = opts.deep or false,
+		-- What was asked, kept for the list and for the chat hand-off in on_reply, which was
+		-- already reading this field before anything set it.
+		instruction = opts.instruction,
+		-- Loop time rather than os.time(): the list counts seconds, and os.time() only moves
+		-- once one has fully elapsed, so a request would sit on "0s" for up to a second.
+		started = vim.uv.now(),
 		marks = anchor(bufnr, opts.range),
 	}
 
@@ -653,6 +676,9 @@ function M.submit(opts)
 			vim.notify("[ai] " .. msg, vim.log.levels.ERROR)
 		end,
 		on_tool = function(name)
+			-- Recorded as well as rendered: the virtual text is only visible where the edit is,
+			-- and M.list shows the same thing for buffers that are not on screen.
+			req.activity = name
 			if req.progress then
 				req.progress.set_label(("%s · %s"):format(selection.provider, name))
 			end
@@ -699,7 +725,7 @@ end
 function M.accept(bufnr, diff)
 	bufnr = bufnr or api.nvim_get_current_buf()
 	diff = diff or diff_under_cursor(bufnr)
-	if not diff then
+	if not diff or not diff.ui then
 		return vim.notify("[ai] no diff here", vim.log.levels.WARN)
 	end
 	require("codecompanion.diff.keymaps").accept_change.callback(diff.ui)
@@ -710,7 +736,7 @@ end
 function M.reject(bufnr, diff)
 	bufnr = bufnr or api.nvim_get_current_buf()
 	diff = diff or diff_under_cursor(bufnr)
-	if not diff then
+	if not diff or not diff.ui then
 		return vim.notify("[ai] no diff here", vim.log.levels.WARN)
 	end
 	require("codecompanion.diff.keymaps").reject_change.callback(diff.ui)
@@ -754,15 +780,26 @@ function M.cancel()
 		if ft == "codecompanion" then
 			return require("ai.chat").stop()
 		end
+		-- Requests run against the buffer they were started in, not the one on screen, so
+		-- "nothing here" and "nothing anywhere" are different answers and only one of them
+		-- means there is nothing to do.
+		local elsewhere = 0
+		for _, entry in ipairs(M.list()) do
+			if entry.kind == "request" and entry.bufnr ~= bufnr then
+				elsewhere = elsewhere + 1
+			end
+		end
+		if elsewhere > 0 then
+			return vim.notify(
+				("[ai] nothing in flight in this buffer — %d in others, <leader>cL lists them"):format(elsewhere),
+				vim.log.levels.INFO
+			)
+		end
 		return vim.notify("[ai] nothing in flight in this buffer", vim.log.levels.INFO)
 	end
 
 	for _, req in ipairs(targets) do
-		if req.handle then
-			pcall(req.handle.cancel)
-		end
-		forget_request(req)
-		drop_marks(bufnr, req.marks)
+		cancel_request(req)
 	end
 	vim.notify(("[ai] cancelled %d request(s)"):format(#targets))
 end
@@ -776,13 +813,81 @@ function M.cancel_all()
 		return vim.notify("[ai] nothing in flight in this buffer", vim.log.levels.INFO)
 	end
 	for _, req in ipairs(targets) do
-		if req.handle then
-			pcall(req.handle.cancel)
-		end
-		forget_request(req)
-		drop_marks(bufnr, req.marks)
+		cancel_request(req)
 	end
 	vim.notify(("[ai] cancelled %d request(s)"):format(#targets))
+end
+
+---Cancel one request, wherever it came from. What the list acts on; `M.cancel` and
+---`M.cancel_all` reach the same code by way of the cursor and the buffer.
+---@param req table An entry's `request` field, from M.list
+function M.cancel_request(req)
+	cancel_request(req)
+end
+
+---Everything inline has in play right now, across every buffer: requests still running, and
+---finished edits whose diff nobody has decided on yet.
+---
+---Ordered by the request each entry came out of rather than by buffer or state, so an entry
+---holds its place for as long as it exists — a list that reordered itself as requests finished
+---would move rows under the cursor of whoever was reading them.
+---@return { kind: "request"|"diff", order: number, bufnr: number, file: string, provider: string, model: string|nil, instruction: string|nil, activity: string|nil, deep: boolean|nil, since: number, hunks: number|nil, request: table|nil, diff: table|nil, resolve: fun(): number|nil, number|nil }[]
+function M.list()
+	local now = vim.uv.now()
+	local out = {}
+
+	for bufnr, st in pairs(buffers) do
+		if api.nvim_buf_is_valid(bufnr) then
+			local name = api.nvim_buf_get_name(bufnr)
+			local file = name ~= "" and vim.fn.fnamemodify(name, ":.") or "[no name]"
+
+			for _, req in pairs(st.requests) do
+				table.insert(out, {
+					kind = "request",
+					order = req.id,
+					bufnr = bufnr,
+					file = file,
+					provider = req.provider,
+					model = req.model,
+					instruction = req.instruction,
+					activity = req.activity,
+					deep = req.deep,
+					since = now - (req.started or now),
+					request = req,
+					-- A closure rather than a resolved pair: marks move as the buffer is edited,
+					-- and the caller acting on an entry wants where the range is now, not where it
+					-- was when the list was last drawn.
+					resolve = function()
+						return resolve(bufnr, req.marks)
+					end,
+				})
+			end
+
+			for _, diff in pairs(st.diffs) do
+				local hunks = diff.ui and diff.ui.diff and diff.ui.diff.hunks
+				table.insert(out, {
+					kind = "diff",
+					order = diff.request_id or diff.id,
+					bufnr = bufnr,
+					file = file,
+					provider = diff.provider,
+					model = diff.model,
+					instruction = diff.instruction,
+					since = now - (diff.finished or now),
+					hunks = hunks and #hunks or nil,
+					diff = diff,
+					resolve = function()
+						return resolve(bufnr, diff.marks)
+					end,
+				})
+			end
+		end
+	end
+
+	table.sort(out, function(a, b)
+		return a.order < b.order
+	end)
+	return out
 end
 
 ---Switch the inline backend and model. Shared with chat — see ai.pick.

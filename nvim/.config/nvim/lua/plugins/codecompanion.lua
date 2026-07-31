@@ -121,6 +121,13 @@ return {
 				desc = "AI: chat list",
 			},
 			{
+				"<leader>cL",
+				function()
+					require("ai.inline.list").toggle()
+				end,
+				desc = "AI: inline list (in flight + waiting for review)",
+			},
+			{
 				"<leader>cx",
 				function()
 					require("ai.inline").cancel()
