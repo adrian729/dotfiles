@@ -759,6 +759,63 @@ end
 -- Applying a reply
 --=============================================================================
 
+--=============================================================================
+-- Holding the cursor still
+--=============================================================================
+
+-- DiffUI scrolls to the first hunk when it renders (diff/ui.lua:603 → scroll_to_line, which is a
+-- `:LINE` plus `normal! zz` inside the window showing the buffer). A request runs for seconds and
+-- lands whenever it lands, so that is a cursor yanked away from whatever was being typed, and the
+-- view recentred under it. Both are put back.
+
+---Where the cursor is in every window on this buffer, and what those windows are looking at.
+---@param bufnr number
+---@return table[]
+local function hold_view(bufnr)
+	local held = {}
+	local total = api.nvim_buf_line_count(bufnr)
+	for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+		local view = api.nvim_win_call(win, vim.fn.winsaveview)
+		table.insert(held, {
+			win = win,
+			view = view,
+			-- An extmark as well as the saved line number: the diff writes its own rows in, so the
+			-- line the cursor was on is not necessarily the line it should be on afterwards. Left
+			-- gravity, so text inserted at the cursor's own row appears below it rather than
+			-- carrying it along.
+			mark = api.nvim_buf_set_extmark(bufnr, ANCHOR, math.min(view.lnum - 1, total - 1), 0, {
+				right_gravity = false,
+			}),
+		})
+	end
+	return held
+end
+
+---@param bufnr number
+---@param held table[]
+local function release_view(bufnr, held)
+	for _, h in ipairs(held) do
+		if api.nvim_buf_is_valid(bufnr) and api.nvim_win_is_valid(h.win) and api.nvim_win_get_buf(h.win) == bufnr then
+			local view = vim.deepcopy(h.view)
+			local m = api.nvim_buf_get_extmark_by_id(bufnr, ANCHOR, h.mark, {})
+			if m and #m > 0 then
+				-- The window is scrolled by however far the cursor's own line moved, so the line
+				-- stays where it was on screen rather than the view jumping to catch up with it.
+				local shifted = (m[1] + 1) - h.view.lnum
+				view.lnum = m[1] + 1
+				view.topline = math.max(h.view.topline + shifted, 1)
+			end
+			view.lnum = math.max(math.min(view.lnum, api.nvim_buf_line_count(bufnr)), 1)
+			api.nvim_win_call(h.win, function()
+				vim.fn.winrestview(view)
+			end)
+		end
+		if api.nvim_buf_is_valid(bufnr) then
+			pcall(api.nvim_buf_del_extmark, bufnr, ANCHOR, h.mark)
+		end
+	end
+end
+
 ---@param req table
 ---@param result ai.parse.Result
 local function show_diff(req, result)
@@ -868,6 +925,8 @@ local function show_diff(req, result)
 		finished = vim.uv.now(),
 	}
 
+	local held = hold_view(bufnr)
+
 	local helpers = require("codecompanion.helpers")
 	diff.ui = helpers.show_diff({
 		bufnr = bufnr,
@@ -898,6 +957,12 @@ local function show_diff(req, result)
 	buf_state(bufnr).diffs[diff.id] = diff
 	watch_buffer(bufnr)
 	bind_diff_keys(bufnr)
+
+	-- After DiffUI's own scroll, which it schedules from inside show_diff — so this one, queued
+	-- once show_diff has returned, is the one that runs last.
+	vim.schedule(function()
+		release_view(bufnr, held)
+	end)
 end
 
 ---@param req table

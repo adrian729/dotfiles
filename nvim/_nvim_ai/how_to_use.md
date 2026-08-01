@@ -28,6 +28,8 @@ While a request runs, the lines it was given are tinted, and a spinner line sits
 
 The mark follows the code: edit above it and the whole thing moves down with it. An insertion point — no selection — has no lines to tint, so its label reads `· insert` and marks the row it will insert at.
 
+You can freely add, delete or edit code **above** an in-flight request. The range is tracked by position in the text, not by line number, so it moves with your edits and the reply still lands on the lines you picked — verified for insertions above, deletions above, and insertion points. The one thing your later edits cannot reach is the prompt: it was built and sent when you submitted, so the model is working from the surroundings as they were then. If you change something above that alters what the edit should be, cancel and ask again.
+
 **One request per region:**
 
 Lines already busy cannot be given a second edit. Starting a request that overlaps one already in flight, or a diff you have not accepted or rejected yet, is refused and tells you which lines are taken, what is on them, and which key clears it — `<leader>cx` to cancel a running request, `g2`/`g3` to settle a diff. Adjacent ranges are fine, and so are the same line numbers in a different buffer.
@@ -45,6 +47,8 @@ The rest of the buffer is completely free to edit, including the lines immediate
 **Reviewing and applying edits:**
 
 When a reply arrives it is rendered as a diff — the original code shown as deletions, the new code as additions. Until you act on it, the buffer is **not** permanently changed.
+
+A reply landing never moves your cursor or scrolls your window, even when the diff is rendered in the buffer you are working in. Requests take seconds and land whenever they land, so keep typing — the tinted range and the inline list are how you find the edit when you are ready for it.
 
 - `g2` — accept the diff under your cursor (makes the change permanent)
 - `g3` — reject the diff under your cursor (restores the original)
