@@ -127,8 +127,9 @@ return {
 				end,
 				desc = "AI: inline list (in flight + waiting for review)",
 			},
-			-- g2/g3 settle the diff under the cursor; these are their bulk form, scoped to the
-			-- buffer the same way <leader>cX is. Across buffers is the list's A/R.
+			-- The buffer-scoped mirror of the list's keys: A accepts everything here, R asks again
+			-- about what the cursor is on. There is no reject-all, because <leader>cX already
+			-- rejects everything and cancels what is running with it.
 			{
 				"<leader>cA",
 				function()
@@ -139,9 +140,9 @@ return {
 			{
 				"<leader>cR",
 				function()
-					require("ai.inline").reject_all()
+					require("ai.inline").ask_again_here()
 				end,
-				desc = "AI: reject all inline diffs in this buffer",
+				desc = "AI: ask again about the inline edit under the cursor",
 			},
 			{
 				"<leader>cx",

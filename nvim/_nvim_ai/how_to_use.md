@@ -11,7 +11,7 @@ Inline editing modifies code directly in your buffer. You pick *what* to change 
 
 `<leader>cI` only works with ACP providers (claude, opencode). On ollama it shows a message telling you to switch providers — ollama has no tool access outside of HTTP, so it cannot read the repo.
 
-With a visual selection, the reply replaces exactly that range. Without a selection, the reply is inserted at your cursor. Up to 40 lines above and below the selection are included in the prompt as context. LSP diagnostics in the range are included automatically. The floating prompt and the progress spinner both show the provider and model.
+With a visual selection, the reply replaces exactly that range. With no selection, the line your cursor is on is used as if you had selected it — so the reply replaces that line. Up to 40 lines above and below are included in the prompt as context. LSP diagnostics in the range are included automatically. The floating prompt and the progress spinner both show the provider and model.
 
 You can have several inline requests in flight in the same buffer at once. Each one marks its own lines and gets an independent diff when it lands.
 
@@ -26,7 +26,7 @@ While a request runs, the lines it was given are tinted, and a spinner line sits
     end
 ```
 
-The mark follows the code: edit above it and the whole thing moves down with it. An insertion point — no selection — has no lines to tint, so its label reads `· insert` and marks the row it will insert at.
+The mark follows the code: edit above it and the whole thing moves down with it. With no visual selection the range is the one line you were on, marked and protected exactly like any other.
 
 You can freely add, delete or edit code **above** an in-flight request. The range is tracked by position in the text, not by line number, so it moves with your edits and the reply still lands on the lines you picked — verified for insertions above, deletions above, and insertion points. The one thing your later edits cannot reach is the prompt: it was built and sent when you submitted, so the model is working from the surroundings as they were then. If you change something above that alters what the edit should be, cancel and ask again.
 
@@ -42,7 +42,9 @@ While a request is running you cannot change the lines it was given. Typing on t
 
 This is not tidiness — the model was given those exact lines and its answer is applied back over them, so an edit of yours underneath would be thrown away silently the moment you accepted the diff. Cancel the request with `<leader>cx` if you would rather make the change yourself.
 
-The rest of the buffer is completely free to edit, including the lines immediately above and below the range. Insertion points are not protected either: there are no lines to preserve, and the anchor moves along with whatever you type around it.
+The rest of the buffer is completely free to edit, including the lines immediately above and below the range.
+
+One case behaves differently on purpose: a single change that spans the range *and* lines outside it — deleting a whole function that contains it, say — is left alone, and the request is cancelled instead. Only the range's own former text is known, so putting that back would mean guessing at the rest of your change.
 
 **Reviewing and applying edits:**
 
@@ -52,38 +54,71 @@ A reply landing never moves your cursor or scrolls your window, even when the di
 
 - `g2` — accept the diff under your cursor (makes the change permanent)
 - `g3` — reject the diff under your cursor (restores the original)
-- `<leader>cA` / `<leader>cR` — accept / reject **every** diff in this buffer
+- `<leader>cA` — accept **every** diff in this buffer
+- `<leader>cR` — ask again about the edit under the cursor
 - `<leader>cj` / `<leader>ck` — move to the next/previous hunk in the diff under your cursor
 
 When your cursor is outside any diff but only one diff is pending, `g2`/`g3` act on that one.
 
-`<leader>cA`/`<leader>cR` only touch diffs — anything still running is left running, and the message tells you how many were settled. For the whole list across every buffer, `A`/`R` in the inline list do the same thing.
+`<leader>cA` only touches diffs — anything still running is left running, and the message tells you how many were settled. For every buffer at once, `A` in the inline list does the same thing.
+
+There is no reject key. `x` does it: on a diff it rejects, on a reply it dismisses, on a request still running it cancels — one key for "get rid of this", whatever state it is in. `r` is free for the thing that had no key, asking again.
 
 If you edited the lines of a diff yourself before rejecting it, your version is kept and you get a message saying so, rather than having your work quietly replaced by the original.
 
 If you close the buffer or the last window showing it while a diff is pending, the diff is rejected automatically — your buffer is not left in a half-applied state.
 
+**When a reply cannot be applied:**
+
+Not every reply becomes a diff. The model may explain rather than edit, decline outright, or leak a failed tool attempt; the request itself may fail (dead model, nothing on `PATH`, timeout); or it may answer while its buffer is on screen nowhere, leaving no window to render a diff in.
+
+None of these open anything over what you are doing. The reply is **kept** and waits for you, exactly like a pending diff:
+
+- the range stays marked, its label reading `answered` or `failed`, with `◆` or `✖` in the signcolumn — so it is visible from anywhere in that file, even scrolled past the label
+- a count appears in the statusline, which is how you know when the file is not on screen at all
+- a row appears in the inline list
+
+Nothing is lost by looking away. The old behaviour — a float that grabbed your cursor the moment a reply landed — was also the *only* copy: dismissing it destroyed the text and the chat hand-off with it.
+
+From the list, on one of those rows:
+
+| Key | Does |
+|---|---|
+| `<CR>` | read the reply (this is the one float that takes focus, because you asked for it) |
+| `a` | open a chat pre-loaded with the exchange — your instruction, the selection, the reply |
+| `r` | **ask again**, with your original instruction pre-filled so you can reword it first |
+| `x` | dismiss it |
+
+`r` is the one worth knowing, and it works on **any** row, not just these: on a diff that came back wrong it rejects it first, on a request still running it cancels it, then asks again either way. A wrong answer, a refusal and a failure are all reasons to switch model, so re-asking goes out with whatever provider and model are selected *now*. Switch with `<leader>cmi` first, then `r`.
+
+`A` and `<leader>cA` leave these rows alone and tell you how many they left — accepting is about *edits*, and a reply is not one. `X` and `<leader>cX` do take them: that is the "done with all of it" key, and the message names how many unread replies went with it. `<leader>cx` with the cursor on one dismisses just that one.
+
+Asking again over the same lines — `<leader>ci` there, or `r`/`<leader>cR` — replaces the waiting reply, since you have superseded it.
+
 **Discarding an edit:**
 
 Press `<leader>cx`. If the edit under your cursor is still running it is cancelled; if it has already answered, it is rejected. One key for "make this go away", whichever half of its life the edit is in — which state it is in is exactly the thing that changes on its own while you are not looking. In a chat buffer it stops the running agent instead.
 
-Press `<leader>cX` to clear the whole buffer out: everything still running is cancelled, everything that has answered is rejected. The message says how many of each.
+Press `<leader>cX` to clear the whole buffer out: everything still running is cancelled, every diff is rejected, and every unread reply is dismissed. The message says how many of each.
 
 **The inline list — everything in play at once:**
 
 Press `<leader>cL`. One row per inline edit that has not been settled: requests still running, and finished ones whose diff you have not accepted or rejected yet. The buffer-scoped keys (`g2`/`g3`, `<leader>cx`/`cX`/`cA`/`cR`) only reach the buffer you are in, but a request runs against the buffer it was *started* in — so this is the view that shows the ones you have since moved away from, and the only place that settles them all at once.
 
 ```
-┌ Inline — 2 thinking · 1 to review ─────────────────────────────────────────────────────┐
+┌ Inline — 2 thinking · 1 to review · 1 to read ──────────────────────────────────────────┐
 │▶ ◆ review        0s  ollama · gpt-oss:120b  lua/ai/inline/parse.lua:1  make this a s…  │
 │  ⠋ thinking     12s  ollama · gpt-oss:120b  lua/ai/pick.lua:2          add a b key s…  │
+│  ◆ answered     31s  ollama · gpt-oss:120b  lua/ai/status.lua:88       why is this s…  │
 │  ⠋ thinking      4s  claude · sonnet        lua/ai/chat.lua:2          explain the r…  │
-└ <CR> jump · a/r accept/reject · A/R all · x discard · X discard all · q close ───────────┘
+└ <CR> jump/read · a accept · r ask again · x discard · A accept all · X discard all · q close ┘
 ```
 
 - `⠋ thinking` — still running, with how long for, and on ACP providers the tool it is using right now
 - `◆ review` — finished; the diff is sitting in the buffer waiting on you, with its hunk count
 - `◆ finished` — it landed while you were looking at the list. Says so for three seconds, then settles to `review`
+- `◆ answered` — replied with something that is not an edit. `<CR>` reads it, `e` asks again
+- `✖ failed` — the request died. `e` asks again
 
 The list redraws itself while it is open, so a request finishing changes state in front of you rather than needing a reopen. The row keeps its place when that happens: entries are ordered by the request each came from rather than by state, so nothing moves under your cursor.
 
@@ -91,11 +126,11 @@ The list redraws itself while it is open, so a request finishing changes state i
 |---|---|
 | `j` / `k` | move (wraps around) |
 | `<CR>` | close the list and jump to the edit, cursor on its first line |
-| `a` or `g2` | accept the diff on this row |
-| `r` or `g3` | reject it, restoring the original lines |
-| `A` / `R` | accept / reject **every** finished edit in the list, across every buffer |
-| `x` | discard this row: cancel it if running, reject it if finished |
-| `X` | discard the whole list: cancel everything running, reject everything finished |
+| `a` or `g2` | accept the diff on this row — or, on an `answered` row, open it in a chat |
+| `r` | ask again: get rid of what is on this row and re-send, instruction pre-filled |
+| `x` or `g3` | discard this row: cancel it if running, reject or dismiss it if not |
+| `A` | accept **every** diff in the list, across every buffer |
+| `X` | empty the list: cancel everything running, reject every diff, dismiss every unread reply |
 | `q` / `<Esc>` | close |
 
 Uppercase is "all of them" throughout. `A`/`R` leave anything still running alone and report what they settled — naming the files, since they reach buffers that are not on screen. `X` is the one that empties the list outright.
@@ -104,7 +139,19 @@ Uppercase is "all of them" throughout. `A`/`R` leave anything still running alon
 
 `range gone` where the location should be means the lines the edit was anchored to have since been deleted. You will rarely see it on a running request now that deleting its lines puts them back; on a pending diff it means the answer has nowhere left to go, so reject it.
 
-One thing this list cannot show: a reply that arrives while its buffer is on screen *nowhere* is dropped rather than queued, because the diff UI would otherwise take over whichever window you had moved to. You get a warning naming the file. Requests to a buffer that is merely not focused are fine — the list itself is a float and hides nothing.
+A reply that arrives while its buffer is on screen *nowhere* still cannot be applied — the diff UI would take over whichever window you had moved to — but it is no longer thrown away. It becomes a `failed` row with the range still anchored, so bringing the buffer back into view and pressing `e` asks the same thing again. Requests to a buffer that is merely not focused are fine.
+
+**The statusline:**
+
+A segment appears in your statusline whenever inline has anything in play, and is empty otherwise:
+
+```
+lua/ai/retry.lua        AI 2↻ 1◆        12,4        45%
+```
+
+`↻` still running · `◆` answered, or an edit waiting on you · `✖` failed. This is the only signal that reaches you when the file in question is not on screen at all — the marks are in the buffer and the list is behind a key, and a notify scrolls away.
+
+It is injected into whatever nvim already puts in your statusline rather than replacing it, so the built-in parts — diagnostics count, the busy indicator, the ruler — are untouched.
 
 On a narrow terminal, columns are dropped rather than clipped, in order of how little is lost: the tool name or hunk count first, then the model, then the clock, then the word for the state. The marker, the location and the prompt are the last things standing.
 
@@ -162,7 +209,7 @@ Defaults: ollama cloud with `gpt-oss:120b` — measured ~4s on a typical refacto
 
 **When the model declines:**
 
-If the model returns an explanation or says it cannot do the edit, a float opens with the response. Press `<CR>` in that float to open a chat buffer pre-loaded with the exchange — your instruction, the selection, and the model's reply — so you can continue the conversation there.
+If the model returns an explanation or says it cannot do the edit, nothing opens over your work. The reply is kept and waits for you — see **When a reply cannot be applied** above.
 
 ---
 

@@ -135,6 +135,11 @@ function M.progress(bufnr, row_fn, label)
 				},
 			},
 			virt_lines_above = true,
+			-- On the first row only, not one per line: the sign is there so scrolling past the
+			-- label still leaves something visible, and a column of identical signs down the
+			-- side of a selection says nothing extra.
+			sign_text = "↻",
+			sign_hl_group = "AiListStarting",
 		})
 
 		if span > 0 then
@@ -188,6 +193,63 @@ function M.progress(bufnr, row_fn, label)
 	end
 
 	return handle
+end
+
+---A standing marker on a range: something arrived here and is waiting on the user.
+---
+---Placed once rather than redrawn, because extmarks already follow the text — a reply can sit
+---unanswered for as long as it takes, and a timer per waiting reply would cost something for
+---nothing. The sign is what carries it when the label has been scrolled past, and is the only part
+---visible from elsewhere in the file.
+---@param bufnr number
+---@param s0 number 0-indexed start row
+---@param e0 number Exclusive end row
+---@param label string
+---@param opts { hl: string, sign: string, sign_hl: string }
+---@return { stop: fun() }
+function M.pinned(bufnr, s0, e0, label, opts)
+	M.ensure_highlights()
+	local ids = {}
+
+	local function place(row, o)
+		local ok, id = pcall(api.nvim_buf_set_extmark, bufnr, ns, row, 0, o)
+		if ok then
+			table.insert(ids, id)
+		end
+	end
+
+	if api.nvim_buf_is_valid(bufnr) then
+		local rows = api.nvim_buf_line_count(bufnr)
+		local row = math.max(0, math.min(s0, rows - 1))
+		local indent = (api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""):match("^%s*")
+		local head = ("%s %s "):format(indent, opts.sign)
+		local room = width_of(bufnr) - vim.fn.strdisplaywidth(head) - 2
+
+		place(row, {
+			virt_lines = { { { head .. ellipsise(label, math.max(20, room)), opts.hl } } },
+			virt_lines_above = true,
+			sign_text = opts.sign,
+			sign_hl_group = opts.sign_hl,
+		})
+
+		local last = math.max(row, math.min(e0 - 1, rows - 1))
+		if last > row or e0 > s0 then
+			local text = api.nvim_buf_get_lines(bufnr, last, last + 1, false)[1] or ""
+			place(row, { end_row = last, end_col = #text, hl_group = "AiInlineRange", hl_eol = true })
+		end
+	end
+
+	return {
+		stop = function()
+			if not api.nvim_buf_is_valid(bufnr) then
+				return
+			end
+			for _, id in ipairs(ids) do
+				pcall(api.nvim_buf_del_extmark, bufnr, ns, id)
+			end
+			ids = {}
+		end,
+	}
 end
 
 ---A float showing a reply that must not be inserted — an answer, a refusal, or a failed tool

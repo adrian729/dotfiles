@@ -154,10 +154,13 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- <leader>cx - discard the inline edit under the cursor: cancels it if still running, rejects it
 --              if it has answered; in a chat buffer stops the agent
 -- <leader>cX - discard everything in this buffer: cancel what is running, reject what answered
--- <leader>cA / <leader>cR - accept / reject every inline diff in this buffer
--- <leader>cL - inline list: every request in flight and every diff still waiting on you,
---              across all buffers. Live; a/r settles, A/R settles all, x/X discards,
---              <CR> jumps to it
+-- <leader>cA - accept every inline diff in this buffer
+-- <leader>cR - ask again about the inline edit under the cursor (rejects/cancels it first)
+-- <leader>cL - inline list: every request in flight, every diff still waiting on you, and every
+--              reply that could not be applied, across all buffers. Live; a accepts, r asks again
+--              with the instruction pre-filled, x discards (cancel/reject/dismiss), A/X in bulk,
+--              <CR> jumps or reads
+--              (the statusline shows the same counts: ↻ running, ◆ waiting, ✖ failed)
 -- <leader>cj / <leader>ck - next / previous inline diff hunk
 -- g2 / g3 - accept / reject inline diff under cursor
 -- <leader>cc - toggle last chat (creates one if none)

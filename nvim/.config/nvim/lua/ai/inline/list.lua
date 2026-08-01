@@ -50,6 +50,10 @@ local STATE = {
 	thinking = { label = "thinking", hl = "AiListStarting" },
 	finished = { marker = "◆", label = "finished", hl = "AiListCurrent" },
 	review = { marker = "◆", label = "review", hl = "AiListReady" },
+	-- A reply that could not be applied: prose, or a refusal. Nothing is pending in the buffer, so
+	-- there is nothing to accept — it is read, taken into a chat, re-asked or dismissed.
+	prose = { marker = "◆", label = "answered", hl = "AiListReady" },
+	failed = { marker = "✖", label = "failed", hl = "AiListDead" },
 }
 
 local STATE_WIDTH = 0
@@ -60,10 +64,10 @@ end
 -- Widest first: the window is at least as wide as whichever of these fits, so the footer is
 -- never clipped — nvim truncates a border footer to the window silently.
 local FOOTERS = {
-	" <CR> jump · a/r accept/reject · A/R all · x discard · X discard all · q close ",
-	" <CR> jump · a/r · A/R all · x discard · X all · q close ",
-	" a/r · A/R · x · X · q ",
-	" a/r · x · q ",
+	" <CR> jump/read · a accept · r ask again · x discard · A accept all · X discard all · q close ",
+	" <CR> jump · a accept · r again · x discard · A/X all · q close ",
+	" a · r · x · A · X · q ",
+	" a · r · x · q ",
 }
 
 local view = {
@@ -132,6 +136,10 @@ local function state_of(entry, now)
 	if entry.kind == "request" then
 		return STATE.thinking, ui.SPINNER[view.frame]
 	end
+	if entry.kind ~= "diff" then
+		local state = STATE[entry.kind]
+		return state, state.marker
+	end
 	local flashed = view.flashed[entry.order]
 	if flashed and now - flashed < FLASH_MS then
 		return STATE.finished, STATE.finished.marker
@@ -159,6 +167,9 @@ end
 local function extra_of(entry)
 	if entry.kind == "request" then
 		return entry.activity and ("· " .. entry.activity) or ""
+	end
+	if entry.kind == "prose" or entry.kind == "failed" then
+		return "· <CR> read"
 	end
 	if entry.hunks then
 		return ("· %d hunk%s"):format(entry.hunks, entry.hunks == 1 and "" or "s")
@@ -296,7 +307,7 @@ local function lines_for(entries, now, plan)
 	if #entries == 0 then
 		local text, highlights = render({
 			{ "  " },
-			{ ellipsise("nothing in flight, nothing waiting to be reviewed", math.max(view.width - 3, 1)), "AiListDim" },
+			{ ellipsise("nothing in flight, nothing waiting on you", math.max(view.width - 3, 1)), "AiListDim" },
 		})
 		return { text }, { highlights }
 	end
@@ -346,27 +357,30 @@ end
 ---@param width number
 ---@return string
 local function title_for(entries, width)
-	local thinking, review = 0, 0
+	local thinking, review, unread = 0, 0, 0
 	for _, entry in ipairs(entries) do
 		if entry.kind == "request" then
 			thinking = thinking + 1
-		else
+		elseif entry.kind == "diff" then
 			review = review + 1
+		else
+			unread = unread + 1
 		end
 	end
 
-	local function join(sep, thinking_label, review_label)
+	---@param sep string
+	---@param labels string[] One per count, in the order thinking, review, unread
+	local function join(sep, labels)
 		local bits = {}
-		if thinking > 0 then
-			table.insert(bits, ("%d%s"):format(thinking, thinking_label))
-		end
-		if review > 0 then
-			table.insert(bits, ("%d%s"):format(review, review_label))
+		for i, n in ipairs({ thinking, review, unread }) do
+			if n > 0 then
+				table.insert(bits, ("%d%s"):format(n, labels[i]))
+			end
 		end
 		return table.concat(bits, sep)
 	end
 
-	if thinking + review == 0 then
+	if thinking + review + unread == 0 then
 		for _, candidate in ipairs({ " Inline — all settled ", " all settled ", "" }) do
 			if vim.fn.strdisplaywidth(candidate) <= width then
 				return candidate
@@ -375,9 +389,9 @@ local function title_for(entries, width)
 	end
 
 	local candidates = {
-		(" Inline — %s "):format(join(" · ", " thinking", " to review")),
-		(" %s "):format(join(" · ", " thinking", " review")),
-		(" %s "):format(join(" · ", "↻", "◆")),
+		(" Inline — %s "):format(join(" · ", { " thinking", " to review", " to read" })),
+		(" %s "):format(join(" · ", { " thinking", " review", " to read" })),
+		(" %s "):format(join(" · ", { "↻", "◆", "✉" })),
 		"",
 	}
 	for _, candidate in ipairs(candidates) do
@@ -509,6 +523,21 @@ local function settle(action)
 	if not entry then
 		return
 	end
+	if entry.kind == "prose" or entry.kind == "failed" then
+		if action == "accept" and entry.kind == "prose" then
+			-- The nearest thing to accepting a reply that is not code: take it somewhere it can be
+			-- talked about.
+			require("ai.inline").to_chat(entry.waiting)
+			vim.notify(("[ai] opened %s in a chat"):format(entry.file))
+			return draw()
+		end
+		if action == "reject" then
+			require("ai.inline").dismiss(entry.waiting)
+			vim.notify(("[ai] dismissed %s"):format(entry.file))
+			return draw()
+		end
+		return vim.notify("[ai] nothing to accept there — <CR> reads it, r asks again", vim.log.levels.WARN)
+	end
 	if entry.kind ~= "diff" then
 		return vim.notify("[ai] that one is still running — x cancels it", vim.log.levels.WARN)
 	end
@@ -537,7 +566,7 @@ local function discard_selected()
 	if not entry then
 		return
 	end
-	if entry.kind == "diff" then
+	if entry.kind == "diff" or entry.kind == "prose" or entry.kind == "failed" then
 		return settle("reject")
 	end
 	if not still_listed(entry) then
@@ -559,9 +588,14 @@ end
 ---@param action "accept"|"reject"
 local function settle_every(action)
 	local inline = require("ai.inline")
-	local settled, files, running = 0, {}, 0
+	local settled, files, running, unread = 0, {}, 0, 0
 	for _, entry in ipairs(inline.list()) do
-		if entry.kind ~= "diff" then
+		if entry.kind == "prose" or entry.kind == "failed" then
+			-- Left alone on purpose. These are the only entries holding text that exists nowhere
+			-- else, so a key meaning "settle the diffs" must not be the thing that throws away an
+			-- explanation nobody has read.
+			unread = unread + 1
+		elseif entry.kind ~= "diff" then
 			running = running + 1
 		elseif entry.diff.ui and not entry.diff.ui.resolved then
 			if action == "accept" then
@@ -576,10 +610,12 @@ local function settle_every(action)
 		end
 	end
 
+	local left = unread > 0 and (", %d repl%s still to read"):format(unread, unread == 1 and "y" or "ies") or ""
+
 	if settled == 0 then
 		return vim.notify(
-			running > 0 and ("[ai] nothing to settle yet — %d still running, x or X cancels"):format(running)
-				or "[ai] nothing waiting to be settled",
+			running > 0 and ("[ai] nothing to settle yet — %d still running, x or X cancels%s"):format(running, left)
+				or ("[ai] no diffs waiting to be settled%s"):format(left ~= "" and (" —" .. left:sub(2)) or ""),
 			vim.log.levels.INFO
 		)
 	end
@@ -588,19 +624,28 @@ local function settle_every(action)
 	if #files > 3 then
 		where = ("%s and %d more"):format(where, #files - 3)
 	end
-	vim.notify(("[ai] %s %d diff(s) in %s"):format(action == "accept" and "accepted" or "rejected", settled, where))
+	vim.notify(
+		("[ai] %s %d diff(s) in %s%s"):format(action == "accept" and "accepted" or "rejected", settled, where, left)
+	)
 	draw()
 end
 
----Clear the list out entirely: cancel what is running, reject what has answered. The counterpart
----to A, which keeps what has answered instead.
+---Clear the list out entirely: cancel what is running, reject what has answered, dismiss what was
+---never read. The counterpart to A, which keeps the answers instead.
+---
+---Unread replies go too. This is the "I am done with all of it" key, and one that left rows behind
+---would need a second key to finish the job — the count in the message is what says a reply was
+---among them.
 local function discard_every()
 	local inline = require("ai.inline")
-	local cancelled, rejected = 0, 0
+	local cancelled, rejected, dismissed = 0, 0, 0
 	for _, entry in ipairs(inline.list()) do
 		if entry.kind == "request" then
 			inline.cancel_request(entry.request)
 			cancelled = cancelled + 1
+		elseif entry.kind == "prose" or entry.kind == "failed" then
+			inline.dismiss(entry.waiting)
+			dismissed = dismissed + 1
 		elseif entry.diff.ui and not entry.diff.ui.resolved then
 			inline.reject(entry.bufnr, entry.diff)
 			rejected = rejected + 1
@@ -614,6 +659,9 @@ local function discard_every()
 	if rejected > 0 then
 		table.insert(said, ("rejected %d diff(s)"):format(rejected))
 	end
+	if dismissed > 0 then
+		table.insert(said, ("dismissed %d unread repl%s"):format(dismissed, dismissed == 1 and "y" or "ies"))
+	end
 	if #said == 0 then
 		return vim.notify("[ai] nothing in play", vim.log.levels.INFO)
 	end
@@ -621,12 +669,33 @@ local function discard_every()
 	draw()
 end
 
+---Get rid of what is on this row and ask the same thing again, with the instruction pre-filled.
+---
+---Works on every kind of row, which is what makes it worth a key rather than a special case: a diff
+---is rejected first, a running request cancelled, a reply dismissed. The list closes because the
+---prompt float replaces it, and whatever happens next is reported there.
+local function retry()
+	local entry = selected()
+	if not entry then
+		return
+	end
+	M.close()
+	require("ai.inline").ask_again_prompt(entry)
+end
+
 ---Leave the list and go to the edit itself, which is where a diff is read and where g2/g3 and
----the hunk motions already live.
+---the hunk motions already live. A reply that came to nothing has nothing to jump *to*, so it
+---opens the reply instead — which is the one place a float taking focus is right, since it was
+---asked for.
 local function jump()
 	local entry = selected()
 	if not entry then
 		return
+	end
+	if entry.kind == "prose" or entry.kind == "failed" then
+		local waiting = entry.waiting
+		M.close()
+		return require("ai.inline").read(waiting)
 	end
 	local bufnr, s0 = entry.bufnr, entry.resolve()
 	M.close()
@@ -688,7 +757,7 @@ end
 local function open()
 	local entries = require("ai.inline").list()
 	if #entries == 0 then
-		return vim.notify("[ai] nothing in flight, nothing waiting to be reviewed", vim.log.levels.INFO)
+		return vim.notify("[ai] nothing in flight, nothing waiting on you", vim.log.levels.INFO)
 	end
 
 	ui.ensure_highlights()
@@ -751,23 +820,32 @@ local function open()
 	on({ "k", "<Up>" }, function()
 		move(-1)
 	end)
-	-- g2/g3 as well as a/r: they are what settles a diff in the buffer itself, so the muscle
-	-- memory carries over rather than being contradicted here.
+	-- Three verbs, one each: keep it, get rid of it, go again.
+	--
+	-- There is no reject key, because there was nothing for it to do that x did not already do —
+	-- on a diff both rejected, on a reply both dismissed, and on a running request r could only
+	-- point at x. So x absorbed it, and r went to the thing that had no key: asking again.
+	--
+	-- g2/g3 come along as aliases because they are what settles a diff in the buffer itself, and
+	-- g3 lands on discard, which is what it means there.
 	on({ "a", "g2" }, function()
 		settle("accept")
 	end)
-	on({ "r", "g3" }, function()
-		settle("reject")
-	end)
+	on({ "r" }, retry)
+	on({ "x", "g3" }, discard_selected)
 	-- Uppercase is "all of them", the same way X is to x.
 	on({ "A" }, function()
 		settle_every("accept")
 	end)
-	on({ "R" }, function()
-		settle_every("reject")
-	end)
-	on({ "x" }, discard_selected)
 	on({ "X" }, discard_every)
+	on({ "R" }, function()
+		-- Bound to say so rather than left silent: a key that does nothing reads as a dropped
+		-- keypress, and this one used to mean something.
+		vim.notify(
+			"[ai] there is no ask-again-for-everything — r asks again one row at a time, since each carries its own prompt",
+			vim.log.levels.INFO
+		)
+	end)
 	on({ "<CR>" }, jump)
 	on({ "q", "<Esc>" }, function()
 		M.close()
