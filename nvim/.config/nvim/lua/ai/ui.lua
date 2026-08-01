@@ -91,15 +91,21 @@ local LEVEL_HL = {
 ---Used instead of `vim.notify` throughout, which is the same echo without the fitting.
 ---@param msg string
 ---@param level? number A `vim.log.levels` value; INFO and below go unhighlighted
-function M.say(msg, level)
+---@param opts? { history?: boolean } `history = false` shows it without recording it, for a repeat
+---   of something already in `:messages`
+function M.say(msg, level, opts)
 	local hl = LEVEL_HL[level]
+	local record = not (opts ~= nil and opts.history == false)
 	-- A newline overflows the command line as surely as length does, and every one of these
 	-- messages is a single sentence anyway.
 	local flat = msg:gsub("%s*\n%s*", " · ")
 	local fitted = ellipsise(flat, math.max(1, vim.v.echospace))
 
 	if fitted == flat then
-		return api.nvim_echo({ { flat, hl } }, true, {})
+		return api.nvim_echo({ { flat, hl } }, record, {})
+	end
+	if not record then
+		return api.nvim_echo({ { fitted, hl } }, false, {})
 	end
 
 	local saved = vim.o.cmdheight
@@ -266,7 +272,7 @@ end
 ---@param s0 number 0-indexed start row
 ---@param e0 number Exclusive end row
 ---@param label string
----@param opts { hl: string, sign: string, sign_hl: string }
+---@param opts { hl: string, sign: string, sign_hl: string, range_hl?: string }
 ---@return { stop: fun() }
 function M.pinned(bufnr, s0, e0, label, opts)
 	M.ensure_highlights()
@@ -296,7 +302,7 @@ function M.pinned(bufnr, s0, e0, label, opts)
 		local last = math.max(row, math.min(e0 - 1, rows - 1))
 		if last > row or e0 > s0 then
 			local text = api.nvim_buf_get_lines(bufnr, last, last + 1, false)[1] or ""
-			place(row, { end_row = last, end_col = #text, hl_group = "AiInlineRange", hl_eol = true })
+			place(row, { end_row = last, end_col = #text, hl_group = opts.range_hl or "AiInlineRange", hl_eol = true })
 		end
 	end
 
@@ -422,6 +428,30 @@ end
 
 local hl_ready = false
 
+---Mix a palette colour into the editor's own background.
+---
+---Catppuccin builds its diff backgrounds this way — its DiffDelete is the palette red at 18% over
+---`base`, exactly — so a wash at that depth sits with the theme instead of fighting it. Derived
+---rather than written out as a hex so another flavour, or a light theme, gets a wash of the right
+---depth for *its* background rather than one tuned against Mocha's.
+---@param colour string `#rrggbb` to mix in
+---@param alpha number 0..1, how much of it
+---@param over string `#rrggbb` to mix into when the theme leaves Normal's background unset
+---@return string
+local function wash(colour, alpha, over)
+	local normal = api.nvim_get_hl(0, { name = "Normal", link = false })
+	local bg = normal.bg ~= nil and ("#%06x"):format(normal.bg) or over
+	local channel = function(hex, at)
+		return tonumber(hex:sub(at, at + 1), 16) or 0
+	end
+	local out = {}
+	for _, at in ipairs({ 2, 4, 6 }) do
+		local from = channel(bg, at)
+		table.insert(out, math.floor(from + (channel(colour, at) - from) * alpha + 0.5))
+	end
+	return ("#%02x%02x%02x"):format(out[1], out[2], out[3])
+end
+
 ---Define every `Ai*` highlight group. Latches, so it is cheap to call from anywhere.
 ---
 ---Call it from a scheduled context at startup: the fallback branch below is permanent once
@@ -442,7 +472,9 @@ function M.ensure_highlights()
 	else
 		-- Teal where it shows — a fallback that screams rather than looking plausible
 		p = {
+			base = "#1e1e2e", -- only ever mixed into, so this one is honest rather than loud
 			mauve = "#94e2d5",
+			peach = "#94e2d5",
 			pink = "#94e2d5",
 			blue = "#c6a0f6", -- mauve
 			key = "#94e2d5",
@@ -478,10 +510,20 @@ function M.ensure_highlights()
 	set("AiFooterLabel", { fg = p.subtext0, bg = bg })
 	set("AiFooterDim", { fg = p.overlay0, bg = bg })
 
-	-- The lines an inline request is running against. A background rather than a foreground: the
-	-- code underneath keeps its own syntax colours, which is the point — it is being marked, not
-	-- rewritten yet.
-	set("AiInlineRange", { bg = p.surface0 })
+	-- The lines an inline request is running against, and the lines whose reply is waiting on you. A
+	-- background rather than a foreground: the code underneath keeps its own syntax colours, which is
+	-- the point — it is being marked, not rewritten yet.
+	--
+	-- Which of the two hues means which is a preference; that it is *these* two is measured. They are
+	-- ΔE 15 apart in Lab, further than either is from anything else that paints a background in the
+	-- same buffer moments later: every neutral grey is taken (surface0 is ColorColumn, surface1 is
+	-- Visual), green is DiffAdd, blue is DiffChange and DiffText, blue-teal is Search. Peach collides
+	-- with none of them, and mauve's nearest neighbour is DiffDelete at ΔE 8.1 — teal, the other
+	-- candidate, was ΔE 5.9 from DiffAdd, which a pending diff paints over these very lines. Yellow
+	-- would have matched the ↻ but lands on Visual over this base, so a marked range would read as a
+	-- selection.
+	set("AiInlineRange", { bg = wash(p.mauve, 0.18, p.base) })
+	set("AiInlineWaiting", { bg = wash(p.peach, 0.18, p.base) })
 
 	-- Chat list and the provider/model picker
 	set("AiListReady", { fg = p.green, bg = "NONE" })

@@ -17,7 +17,7 @@ You can have several inline requests in flight in the same buffer at once. Each 
 
 **Seeing which lines a request is working on:**
 
-While a request runs, the lines it was given are tinted, and a spinner line sits directly above them showing the provider, model, your instruction, and how many lines are in play:
+While a request runs, the lines it was given get a cool mauve tint, and a spinner line sits directly above them showing the provider, model, your instruction, and how many lines are in play:
 
 ```
     ⠋ ollama · gpt-oss:120b · return 2 instead · 3 lines
@@ -38,7 +38,11 @@ The reason is that both requests build their prompt from the same lines, so whic
 
 **Lines in flight are protected:**
 
-While a request is running you cannot change the lines it was given. Typing on them, deleting them or pasting over them is undone immediately, with a message naming the request holding them; entering insert mode on one of those lines is refused before you type anything. `u` undoes your edit and the revert together, as one step.
+While a request is running you cannot change the lines it was given. Typing on them, deleting them or pasting over them is reverted immediately, and pressing `i`, `a`, `cw` or anything else that would start typing there drops you straight back into normal mode. Anything that does slip through is caught by the same revert.
+
+`u`, `U`, `<C-r>`, `g-` and `g+` are held off entirely for as long as any lines in the buffer are held — not just on those lines. Undo walks back through changes made before the request existed, and one step of that can take the whole run of lines with it, which used to cancel the request outright. `<leader>cx` is the way out if the undo matters more than the answer. (`:undo` and `:earlier` are not keys and are not covered — they still cancel, and say so.) `u` undoes your edit and the revert together, as one step.
+
+Every one of those says why on the command line — `put those lines back — <leader>cx cancels the inline request holding them` when an edit was undone, `those lines are held by an inline request — <leader>cx cancels it` when insert mode was refused. Repeated attempts keep saying it, so a second try is never answered with silence; only `:messages` is spared the duplicates.
 
 This is not tidiness — the model was given those exact lines and its answer is applied back over them, so an edit of yours underneath would be thrown away silently the moment you accepted the diff. Cancel the request with `<leader>cx` if you would rather make the change yourself.
 
@@ -60,6 +64,8 @@ A reply landing never moves your cursor or scrolls your window, even when the di
 
 When your cursor is outside any diff but only one diff is pending, `g2`/`g3` act on that one.
 
+`<leader>cL` opens the list whether or not anything is in it — an empty list says `nothing in flight, nothing waiting on you` and is titled `all settled`, rather than answering with a message you might not be looking at.
+
 `<leader>cA` only touches diffs — anything still running is left running, and the message tells you how many were settled. For every buffer at once, `A` in the inline list does the same thing.
 
 There is no reject key. `x` does it: on a diff it rejects, on a reply it dismisses, on a request still running it cancels — one key for "get rid of this", whatever state it is in. `r` is free for the thing that had no key, asking again.
@@ -74,7 +80,7 @@ Not every reply becomes a diff. The model may explain rather than edit, decline 
 
 None of these open anything over what you are doing. The reply is **kept** and waits for you, exactly like a pending diff:
 
-- the range stays marked, its label reading `answered` or `failed`, with `◆` or `✖` in the signcolumn — so it is visible from anywhere in that file, even scrolled past the label
+- the range stays marked, its label reading `answered` or `failed`, with `◆` or `✖` in the signcolumn — so it is visible from anywhere in that file, even scrolled past the label. The tint turns warm as it does, so a range with a reply waiting on it reads differently at a glance from one still being worked on
 - a count appears in the statusline, which is how you know when the file is not on screen at all
 - a row appears in the inline list
 

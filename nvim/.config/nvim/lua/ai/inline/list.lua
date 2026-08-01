@@ -756,14 +756,15 @@ end
 
 local function open()
 	local entries = require("ai.inline").list()
-	if #entries == 0 then
-		return ui.say("[ai] nothing in flight, nothing waiting on you", vim.log.levels.INFO)
-	end
 
+	-- Opens even with nothing to show, saying so in the window. It used to answer with a message on
+	-- the command line, which reads as "the key did nothing" to anyone not watching that line — and
+	-- the window is where the answer was expected. The empty state is written for anyway: settling
+	-- the last row from in here leaves the list standing and says the same thing.
 	ui.ensure_highlights()
 	M.close() -- reopening rather than stacking, if one is somehow still up
 
-	view.index, view.order, view.frame = 1, entries[1].order, 1
+	view.index, view.order, view.frame = 1, entries[1] and entries[1].order or nil, 1
 	view.kinds, view.flashed = {}, {}
 	-- Anything already finished when the list opened is not news, so it says "review" from the
 	-- start rather than flashing at someone who has only just looked.

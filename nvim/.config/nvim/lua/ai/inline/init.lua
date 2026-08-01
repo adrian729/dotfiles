@@ -424,6 +424,10 @@ local function bind_diff_keys(bufnr)
 	end, "AI: previous hunk in the diff under the cursor")
 end
 
+-- Defined further down, where `guarded` is in scope, but called from the registry bookkeeping above
+-- it: the lock comes off as soon as the last request in a buffer lets go of its lines.
+local unlock_undo
+
 local function unbind_diff_keys(bufnr)
 	for _, lhs in ipairs({ "g2", "g3", "<leader>cj", "<leader>ck" }) do
 		pcall(vim.keymap.del, "n", lhs, { buffer = bufnr })
@@ -440,6 +444,7 @@ local function forget_request(req)
 	if req.progress then
 		req.progress.stop()
 	end
+	unlock_undo(req.bufnr)
 end
 
 ---Stop one request and forget everything it was holding: the transport's job, the spinner and
@@ -525,21 +530,105 @@ local function guard_at(bufnr, row)
 	end
 end
 
+---Say something about a guarded range, late enough to be read.
+---
+---From a timer, not from the caller and not from `vim.schedule`: these messages all come out around
+---a mode change, and the redraw that ends one wipes the command line. Scheduled callbacks run
+---*before* that redraw — measured, along with the consequence: the warning was reaching `:messages`
+---and never the screen, which is exactly as good as saying nothing. A timer runs after it.
+---@param msg string
+---@param opts? { history?: boolean }
+local function announce(msg, opts)
+	vim.defer_fn(function()
+		ui.say(msg, vim.log.levels.WARN, opts)
+	end, 10)
+end
+
+-- What the user tried, and what to say about it. The instruction is not named in any of them: it
+-- would be the first thing cut when the message is fitted to the command line, and the range's own
+-- label is directly above the lines in question — the key to press is what is nowhere else.
+local HELD = {
+	refused = "[ai] those lines are held by an inline request — <leader>cx cancels it",
+	reverted = "[ai] put those lines back — <leader>cx cancels the inline request holding them",
+	undo = "[ai] undo is held off while an inline request runs here — <leader>cx cancels it",
+}
+
 ---@param req table
-local function say_protected(req)
-	-- Rate-limited per request: the backstop below can fire once per keystroke, and a stream of
-	-- identical warnings would bury everything else in the message history.
+---@param why? "refused"|"reverted"|"undo" Defaults to refused, the do-nothing-yet case
+local function say_protected(req, why)
+	-- Always shown, recorded at most once every 2s. The backstop can fire once per keystroke and a
+	-- stream of identical entries would bury the history, but suppressing the *echo* means a second
+	-- attempt says nothing at all — and each attempt has wiped the command line on its way in.
 	local now = vim.uv.now()
-	if req.warned and now - req.warned < 2000 then
+	local record = req.warned == nil or now - req.warned >= 2000
+	if record then
+		req.warned = now
+	end
+	announce(HELD[why or "refused"], { history = record })
+end
+
+-- Undo and redo, and the two ways of walking the tree by hand.
+local UNDO_KEYS = { "u", "U", "<C-r>", "g-", "g+" }
+
+-- Compared as keycodes, not as strings: nvim_buf_get_keymap reports `<C-R>`, so a mapping already on
+-- redo would not match the `<C-r>` written above and would be replaced without being handed back.
+local UNDO_CODES = {}
+for _, lhs in ipairs(UNDO_KEYS) do
+	UNDO_CODES[vim.keycode(lhs)] = true
+end
+
+---Hold undo off while a request is working on lines in this buffer.
+---
+---Undo is the one edit the guard cannot answer well. Reverting a change *to* the held lines is fine
+---— their former text is known — but undo walks back through changes that were made before the
+---request existed, and a single step of that can take the whole run of lines with it. That is the
+---case the guard has to cancel the request for, since it knows what the lines said but not where
+---they would now belong. Measured: two `u` presses with a request in flight cancelled it.
+---
+---So the keys are refused for as long as lines are held, which is seconds, and `<leader>cx` is the
+---way out. Any buffer-local mapping already on those keys is put back afterwards, so a plugin that
+---owns `u` in this buffer does not silently lose it. `:undo` and `:earlier` are not keys and are not
+---covered — the guard remains the backstop there, cancelling as it did before.
+---@param bufnr number
+local function lock_undo(bufnr)
+	local st = buf_state(bufnr)
+	if st.undo_lock then
 		return
 	end
-	req.warned = now
-	ui.say(
-		("[ai] those lines are waiting on an inline request (%s) — <leader>cx cancels it"):format(
-			ui.ellipsise(req.instruction or "?", 50)
-		),
-		vim.log.levels.WARN
-	)
+	st.undo_lock = {}
+	for _, map in ipairs(api.nvim_buf_get_keymap(bufnr, "n")) do
+		if UNDO_CODES[vim.keycode(map.lhs)] then
+			table.insert(st.undo_lock, map)
+		end
+	end
+	for _, lhs in ipairs(UNDO_KEYS) do
+		vim.keymap.set("n", lhs, function()
+			local req = guarded(bufnr)[1]
+			if not req then
+				return unlock_undo(bufnr)
+			end
+			say_protected(req, "undo")
+		end, { buffer = bufnr, desc = "ai: held off while an inline request runs" })
+	end
+end
+
+---@param bufnr number
+function unlock_undo(bufnr)
+	local st = buffers[bufnr]
+	if not st or not st.undo_lock or #guarded(bufnr) > 0 then
+		return
+	end
+	local restore = st.undo_lock
+	st.undo_lock = nil
+	if not api.nvim_buf_is_valid(bufnr) then
+		return
+	end
+	for _, lhs in ipairs(UNDO_KEYS) do
+		pcall(vim.keymap.del, "n", lhs, { buffer = bufnr })
+	end
+	for _, map in ipairs(restore) do
+		pcall(vim.fn.mapset, map)
+	end
 end
 
 ---Put a protected range back the way its request left it, at the row the guard has been tracking.
@@ -563,7 +652,7 @@ local function restore_guard(bufnr, req)
 	drop_marks(bufnr, req.marks)
 	req.marks = anchor(bufnr, { s0 = at, e0 = at + #req.guard })
 
-	say_protected(req)
+	say_protected(req, "reverted")
 	if vim.fn.mode():find("^i") then
 		vim.cmd("stopinsert")
 	end
@@ -634,11 +723,12 @@ local function enforce_guards(bufnr)
 		if req.swept then
 			req.swept = false
 			cancel_request(req)
-			ui.say(
-				("[ai] a change spanned the lines an inline request was working on (%s) — cancelled it"):format(
-					ui.ellipsise(req.instruction or "?", 40)
-				),
-				vim.log.levels.WARN
+			-- Named here, unlike the messages above: the request is gone and its label with it, so
+			-- this is the last place its instruction appears at all.
+			announce(
+				("[ai] your change spanned an inline request's lines — cancelled it (%s)"):format(
+					ui.ellipsise(req.instruction or "?", 20)
+				)
 			)
 		elseif req.violated then
 			req.violated = false
@@ -784,7 +874,12 @@ local function watch_buffer(bufnr)
 		callback = function()
 			local req = guard_at(bufnr, api.nvim_win_get_cursor(0)[1] - 1)
 			if req then
-				vim.cmd("stopinsert")
+				-- Scheduled, because `stopinsert` called from inside InsertEnter does nothing at all:
+				-- measured, mode was still "i" 250ms later. This was the whole refusal, so insert mode
+				-- was in fact being entered on held lines and only the backstop was stopping the typing.
+				vim.schedule(function()
+					vim.cmd("stopinsert")
+				end)
 				say_protected(req)
 			end
 		end,
@@ -929,6 +1024,7 @@ local function wait_on_user(req, kind, opts)
 			hl = "DiagnosticVirtualTextHint",
 			sign = look.sign,
 			sign_hl = look.hl,
+			range_hl = "AiInlineWaiting",
 		})
 	end
 
@@ -1264,6 +1360,7 @@ function M.submit(opts)
 	watch_buffer(bufnr)
 	if req.guard then
 		watch_text(bufnr)
+		lock_undo(bufnr)
 	end
 
 	req.handle = require(module).send({
