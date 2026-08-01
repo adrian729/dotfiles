@@ -325,6 +325,38 @@ The one case left to you is a genuine conflict: if the buffer has **unsaved chan
 
 Picking a winner automatically would throw away one side silently, so it asks instead. This still matters even though the agent asks before editing: you approve the edit, and the reload has to land in a buffer you may meanwhile have typed into.
 
+**Editing a message you already sent:**
+
+Edit anything above the prompt you are typing, ask your next question, and the answer comes from the conversation as you have just rewritten it. Nothing to confirm, nothing to choose — the chat carries on being the same chat, under the same name.
+
+That is a change: editing the transcript used to be a trap, where the text changed on screen and nothing else did. An ACP agent (claude, opencode) keeps its own copy of the conversation and is only ever sent your *new* message, so a reworded question above reached nobody; ollama is sent a message table that nothing re-reads from the buffer, with the same result.
+
+You will see one line when it happens:
+
+```
+[ai] asking with your edited conversation
+```
+
+Editing on its own does nothing at all — no message, no work, no interruption. It is asking a question with the edit in place that makes it count, which is also when you can rewrite as much as you like while thinking.
+
+What is kept:
+
+- **The title.** Whatever the chat was called stays, and stays through the turns after it, so the chat does not silently rename itself out from under you
+- **Provider, model, effort, mode** — everything you had set
+- **The buffer**, exactly as you edited it. Nothing is rewritten on screen
+
+Under the hood the agent gets a new session carrying the edited conversation, because there is no way to change the copy it already holds. Reviving a chat after a restart looks like the same trick but runs the other way round: `session/load` asks the agent to replay *its* memory to us, and ACP has no method for pushing ours back. Two consequences worth knowing:
+
+- The agent's past replies reach it as quoted text rather than as its own turns, and tool calls in the transcript are prose by then — so a file it read before, it reads again. Which also means you can edit its replies and it will take them as what it said
+- The pre-edit conversation stays in the agent's own session store, so it turns up in `<leader>cl` among the resumable sessions under its own auto-title. That makes it a way back if you edited something you wanted, and `<C-x>` there removes it. It is not deleted for you: a `session/delete` sent from the process that still has the session open is written straight back by that same process (measured), so making it stick would mean respawning the agent mid-chat
+
+For ollama there is no session to replace. The edited conversation simply goes out as the message list with its roles intact, which is lossless.
+
+Two smaller fixes come with this:
+
+- Editing history used to corrupt the *next* message rather than merely being ignored. The line your new prompt is parsed from was fixed when the last reply landed, so deleting two lines of history above it meant your question was skipped entirely, and adding four meant your previous question was sent again with the new one glued onto it. That boundary is now re-read from the buffer on every send
+- Sending with nothing typed says `[ai] nothing to send — type your question under the last header` instead of submitting an empty message, which the API rejects with a 400 in a red box
+
 **Inside the chat buffer:**
 
 The chat buffer has its own set of keymaps and features. Send a message with `<CR>` or `<C-s>` in normal mode (or `<C-c>` in insert mode). Stop a running request with `q`.

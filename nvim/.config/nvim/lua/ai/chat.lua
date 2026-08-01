@@ -396,6 +396,13 @@ local function post_create(chat, override)
 	chat._ai_model = model
 	chat._ai_opts = vim.deepcopy(opts) -- capture effort, mode, fast, etc.
 
+	-- The end of a turn is when the transcript in the buffer becomes the record again, so it is
+	-- also when ai.chat_edit stops treating anything above the prompt as an edit. on_ready covers
+	-- the end of a restore too — acp/render.lua's restore_session finishes by calling it.
+	chat:add_callback("on_ready", function(c)
+		require("ai.chat_edit").rebase(c)
+	end)
+
 	-- Winbar header — stays pinned at the top of every window showing this chat.
 	-- BufFilePost fires when CodeCompanion auto-titles the chat (set_title → nvim_buf_set_name),
 	-- so the title field updates within a second of the first response landing.
@@ -506,6 +513,7 @@ local function post_create(chat, override)
 				vim.wo[win].winbar = nil
 				vim.wo[win].statusline = nil
 			end
+			require("ai.chat_edit").forget(args.buf)
 			pcall(api.nvim_del_augroup_by_id, augroup)
 		end,
 	})

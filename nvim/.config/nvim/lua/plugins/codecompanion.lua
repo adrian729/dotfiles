@@ -164,7 +164,20 @@ return {
 
 			require("codecompanion").setup({
 				interactions = {
-					chat = { adapter = "claude_code" },
+					chat = {
+						adapter = "claude_code",
+						keymaps = {
+							-- Only the callback is replaced; the keys, index and description are
+							-- deep-merged in from the plugin's own definition. ai.chat_edit corrects
+							-- the line the prompt is parsed from and offers a fresh session when the
+							-- conversation above has been edited, then submits as usual.
+							send = {
+								callback = function(chat)
+									require("ai.chat_edit").send(chat)
+								end,
+							},
+						},
+					},
 					-- The built-in inline is superseded by ai/inline, but :CodeCompanion and
 					-- :CodeCompanionCmd survive and would otherwise inherit the plugin's own
 					-- default, which this machine has no credentials for.

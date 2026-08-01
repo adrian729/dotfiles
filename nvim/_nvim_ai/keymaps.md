@@ -24,7 +24,7 @@
 
 | Key | Action |
 |---|---|
-| `<CR>` / `<C-s>` | Send message |
+| `<CR>` / `<C-s>` | Send message — carries any edits you made to the conversation above |
 | `<C-c>` | Close chat buffer |
 | `q` | Stop current request |
 | `?` | Open chat buffer action palette |
