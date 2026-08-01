@@ -539,84 +539,26 @@ local HELP = {
 	{ key = "<C-c>", desc = "close the list" },
 }
 
-local KEY_COLUMN = 13
-
-local help_win, help_buf
+local help = nil
 
 local function help_is_open()
-	return help_win ~= nil and api.nvim_win_is_valid(help_win)
+	return help ~= nil and help.is_open()
 end
 
 local function close_help()
-	if help_win and api.nvim_win_is_valid(help_win) then
-		pcall(api.nvim_win_close, help_win, true)
+	if help then
+		help.close()
 	end
-	if help_buf and api.nvim_buf_is_valid(help_buf) then
-		pcall(api.nvim_buf_delete, help_buf, { force = true })
-	end
-	help_win, help_buf = nil, nil
+	help = nil
 end
 
-local pad = ui.pad
-
----Toggle the help overlay over an open picker.
----
----The float is deliberately unfocusable: Telescope closes a picker when its prompt buffer
----is left, so focusing this window would dismiss the very list it documents. Keys keep
----going to the prompt, and `?` toggles it back off.
+---Toggle the help overlay over an open picker. The window itself is `ui.help`, shared with the
+---inline list — the only thing that differs is the rows and the title.
 local function toggle_help()
 	if help_is_open() then
 		return close_help()
 	end
-
-	local ns = api.nvim_create_namespace("AiChatListHelp")
-	local lines, all_highlights, width = {}, {}, 0
-	for _, row in ipairs(HELP) do
-		local text, highlights
-		if row.header then
-			text, highlights = render({ { "  " }, { row.header, "AiListHeader" } })
-		elseif row.key then
-			text, highlights = render({
-				{ "  " },
-				{ pad(row.key, KEY_COLUMN), row.key_hl or "AiListKey" },
-				{ row.desc, "AiListDim" },
-			})
-		else
-			text, highlights = "", {}
-		end
-		table.insert(lines, text)
-		table.insert(all_highlights, highlights)
-		width = math.max(width, vim.fn.strdisplaywidth(text))
-	end
-
-	help_buf = api.nvim_create_buf(false, true)
-	api.nvim_buf_set_lines(help_buf, 0, -1, false, lines)
-	for lnum, highlights in ipairs(all_highlights) do
-		for _, hl in ipairs(highlights) do
-			pcall(api.nvim_buf_set_extmark, help_buf, ns, lnum - 1, hl[1][1], {
-				end_col = hl[1][2],
-				hl_group = hl[2],
-			})
-		end
-	end
-	vim.bo[help_buf].modifiable = false
-
-	width = math.min(width + 2, vim.o.columns - 4)
-	local height = math.min(#lines, vim.o.lines - 4)
-	help_win = api.nvim_open_win(help_buf, false, {
-		relative = "editor",
-		width = width,
-		height = height,
-		row = math.max(math.floor((vim.o.lines - height) / 2) - 1, 0),
-		col = math.max(math.floor((vim.o.columns - width) / 2), 0),
-		style = "minimal",
-		border = "rounded",
-		title = " Chat list ",
-		title_pos = "center",
-		focusable = false,
-		noautocmd = true,
-		zindex = 300, -- above Telescope's own windows
-	})
+	help = ui.help(HELP, { title = " Chat list " })
 end
 
 local PROMPT_TITLE = "Chats & Sessions"

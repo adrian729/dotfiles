@@ -419,6 +419,92 @@ function M.pad(text, width)
 end
 
 --=============================================================================
+-- Help overlay
+--=============================================================================
+
+---A float listing what a surface's keys do, and what its markers mean.
+---
+---Shared, because both lists need one for the same reason: a border can hold a handful of keys and
+---nvim clips whatever is too long for the window without saying so, so the complete answer cannot
+---live down there. The borders advertise `?` and this says the rest.
+---
+---Unfocusable by default. Telescope closes a picker the moment its prompt buffer is left, so the
+---chat list cannot afford to focus this; the inline list can, but there is nothing to do in here
+---anyway and keys are better left going to the list underneath.
+---@param rows { header?: string, key?: string, key_hl?: string, desc?: string }[] An empty entry
+---   leaves a blank line
+---@param opts { title: string, key_column?: number, zindex?: number }
+---@return { close: fun(), is_open: fun(): boolean }
+function M.help(rows, opts)
+	M.ensure_highlights()
+	local key_column = opts.key_column or 13
+	local ns = api.nvim_create_namespace("ai_help")
+
+	local lines, all_highlights, width = {}, {}, 0
+	for _, row in ipairs(rows) do
+		local text, highlights
+		if row.header then
+			text, highlights = M.render({ { "  " }, { row.header, "AiListHeader" } })
+		elseif row.key then
+			text, highlights = M.render({
+				{ "  " },
+				{ M.pad(row.key, key_column), row.key_hl or "AiListKey" },
+				{ row.desc, "AiListDim" },
+			})
+		else
+			text, highlights = "", {}
+		end
+		table.insert(lines, text)
+		table.insert(all_highlights, highlights)
+		width = math.max(width, vim.fn.strdisplaywidth(text))
+	end
+
+	local buf = api.nvim_create_buf(false, true)
+	api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	for lnum, highlights in ipairs(all_highlights) do
+		for _, hl in ipairs(highlights) do
+			pcall(api.nvim_buf_set_extmark, buf, ns, lnum - 1, hl[1][1], {
+				end_col = hl[1][2],
+				hl_group = hl[2],
+			})
+		end
+	end
+	vim.bo[buf].modifiable = false
+
+	width = math.min(width + 2, vim.o.columns - 4)
+	local height = math.min(#lines, vim.o.lines - 4)
+	local win = api.nvim_open_win(buf, false, {
+		relative = "editor",
+		width = width,
+		height = height,
+		row = math.max(math.floor((vim.o.lines - height) / 2) - 1, 0),
+		col = math.max(math.floor((vim.o.columns - width) / 2), 0),
+		style = "minimal",
+		border = "rounded",
+		title = opts.title,
+		title_pos = "center",
+		focusable = false,
+		noautocmd = true,
+		zindex = opts.zindex or 300,
+	})
+
+	local handle = {}
+	function handle.is_open()
+		return win ~= nil and api.nvim_win_is_valid(win)
+	end
+	function handle.close()
+		if win and api.nvim_win_is_valid(win) then
+			pcall(api.nvim_win_close, win, true)
+		end
+		if api.nvim_buf_is_valid(buf) then
+			pcall(api.nvim_buf_delete, buf, { force = true })
+		end
+		win = nil
+	end
+	return handle
+end
+
+--=============================================================================
 -- Highlights — Catppuccin Mocha palette
 --=============================================================================
 

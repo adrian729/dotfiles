@@ -117,14 +117,16 @@ Press `<leader>cL`. One row per inline edit that has not been settled: requests 
 │  ⠋ thinking     12s  ollama · gpt-oss:120b  lua/ai/pick.lua:2          add a b key s…  │
 │  ◆ answered     31s  ollama · gpt-oss:120b  lua/ai/status.lua:88       why is this s…  │
 │  ⠋ thinking      4s  claude · sonnet        lua/ai/chat.lua:2          explain the r…  │
-└ <CR> jump/read · a accept · r ask again · x discard · A accept all · X discard all · q close ┘
+└──────────────── a accept · r again · x discard · ? keys ────────────────────────────────┘
 ```
 
 - `⠋ thinking` — still running, with how long for, and on ACP providers the tool it is using right now
 - `◆ review` — finished; the diff is sitting in the buffer waiting on you, with its hunk count
 - `◆ finished` — it landed while you were looking at the list. Says so for three seconds, then settles to `review`
-- `◆ answered` — replied with something that is not an edit. `<CR>` reads it, `e` asks again
-- `✖ failed` — the request died. `e` asks again
+- `◆ answered` — replied with something that is not an edit. `<CR>` reads it, `r` asks again
+- `✖ failed` — the request died. `r` asks again
+
+The border carries the three keys you reach for and points at `?` for the rest, which opens the same kind of overlay the chat list has — every key, plus what each marker means. It is not on the border because a border is clipped to the window without warning, and because spelling out all six keys made the window 96 columns wide before its own rows had any say.
 
 The list redraws itself while it is open, so a request finishing changes state in front of you rather than needing a reopen. The row keeps its place when that happens: entries are ordered by the request each came from rather than by state, so nothing moves under your cursor.
 
@@ -137,6 +139,7 @@ The list redraws itself while it is open, so a request finishing changes state i
 | `x` or `g3` | discard this row: cancel it if running, reject or dismiss it if not |
 | `A` | accept **every** diff in the list, across every buffer |
 | `X` | empty the list: cancel everything running, reject every diff, dismiss every unread reply |
+| `?` | the full set of keys and what the markers mean, over the list rather than on its border |
 | `q` / `<Esc>` | close |
 
 Uppercase is "all of them" throughout. `A`/`R` leave anything still running alone and report what they settled — naming the files, since they reach buffers that are not on screen. `X` is the one that empties the list outright.

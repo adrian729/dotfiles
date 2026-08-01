@@ -63,12 +63,55 @@ end
 
 -- Widest first: the window is at least as wide as whichever of these fits, so the footer is
 -- never clipped — nvim truncates a border footer to the window silently.
+--
+-- Which is also why the full set of keys is not down here any more. Spelling out all six cost 94
+-- cells, and since the window is sized to fit its footer, that made every list at least 96 wide —
+-- wider than the rows themselves need (67 to 87 for a typical one). The border now carries the
+-- three verbs and points at `?` for the rest, the way the chat list does.
 local FOOTERS = {
-	" <CR> jump/read · a accept · r ask again · x discard · A accept all · X discard all · q close ",
-	" <CR> jump · a accept · r again · x discard · A/X all · q close ",
-	" a · r · x · A · X · q ",
-	" a · r · x · q ",
+	" a accept · r again · x discard · ? keys ",
+	" a · r · x · ? keys ",
+	" ? keys ",
 }
+
+-- Everything the list can do, and what the markers in it mean. Not on the border, because the
+-- border is clipped to the window without warning and this has to be complete.
+local HELP = {
+	{ header = "This row" },
+	{ key = "<CR>", desc = "go to the edit, or read a reply that came to nothing" },
+	{ key = "a", desc = "accept — a diff is applied, a reply goes into a chat" },
+	{ key = "r", desc = "ask again, with your instruction pre-filled to reword" },
+	{ key = "x", desc = "get rid of it: reject, cancel or dismiss, whichever it is" },
+	{},
+	{ header = "Everything" },
+	{ key = "A", desc = "accept every diff — replies waiting on you are left alone" },
+	{ key = "X", desc = "done with all of it: cancel, reject and dismiss" },
+	{},
+	{ header = "Markers" },
+	{ key = "↻", key_hl = "AiListStarting", desc = "still running" },
+	{ key = "◆", key_hl = "AiListReady", desc = "an edit to review, or a reply to read" },
+	{ key = "✖", key_hl = "AiListDead", desc = "failed — r asks again, x drops it" },
+	{},
+	{ header = "Navigate" },
+	{ key = "j k", desc = "move the selection (arrows work too)" },
+	{ key = "? <Esc> q", desc = "close this help, keeping the list" },
+	{ key = "q <Esc>", desc = "close the list, once this help is down" },
+}
+
+-- The help overlay, when it is up. Separate from `view` because it outlives a redraw and is torn
+-- down with the list rather than with a frame.
+local help = nil
+
+local function help_is_open()
+	return help ~= nil and help.is_open()
+end
+
+local function close_help()
+	if help then
+		help.close()
+	end
+	help = nil
+end
 
 local view = {
 	win = nil,
@@ -747,6 +790,8 @@ function M.close()
 	view.win, view.buf = nil, nil
 	view.entries = {}
 	view.height, view.title = nil, nil
+	-- A plain float of its own, so nothing else would take it down with the list it documents.
+	close_help()
 end
 
 ---@return boolean
@@ -848,7 +893,19 @@ local function open()
 		)
 	end)
 	on({ "<CR>" }, jump)
+	on({ "?" }, function()
+		if help_is_open() then
+			return close_help()
+		end
+		help = ui.help(HELP, { title = " Inline list ", key_column = 11 })
+	end)
+	-- <Esc> and q are what a hand reaches for to dismiss a popup, and both otherwise close the
+	-- list — which would take the list away along with the help it was explaining. While the
+	-- overlay is up they dismiss it and stop there.
 	on({ "q", "<Esc>" }, function()
+		if help_is_open() then
+			return close_help()
+		end
 		M.close()
 	end)
 
