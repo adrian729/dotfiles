@@ -8,6 +8,7 @@
 local M = {}
 
 local api = vim.api
+local ui = require("ai.ui")
 
 local last_chat_buf = nil
 local spinner_group
@@ -21,7 +22,7 @@ local pending = {}
 
 -- Winbar and footer colours come from ai.ui, which owns the palette for every ai surface.
 local function ensure_winbar_highlights()
-	require("ai.ui").ensure_highlights()
+	ui.ensure_highlights()
 end
 
 --=============================================================================
@@ -119,7 +120,6 @@ local function ensure_spinner_group()
 				return
 			end
 
-			local ui = require("ai.ui")
 			local spinner = ui.progress(bufnr, function()
 				return api.nvim_buf_line_count(bufnr) - 1
 			end, "thinking…")
@@ -577,7 +577,7 @@ function M.toggle()
 		-- reaches the work you left, and `<leader>cn` is what asks for a fresh one.
 		local entry = pending[#pending]
 		if entry then
-			vim.notify(("[ai] reopening %s…"):format(entry.title or "your last chat"), vim.log.levels.INFO)
+			ui.say(("[ai] reopening %s…"):format(entry.title or "your last chat"), vim.log.levels.INFO)
 			local revived = M.restore_session(entry)
 			if revived then
 				return
@@ -609,7 +609,7 @@ function M.new(opts)
 	local Chat = require("codecompanion.interactions.chat")
 	local adapter = resolve_chat_adapter()
 	if not adapter then
-		return vim.notify("[ai] could not resolve adapter for chat", vim.log.levels.ERROR)
+		return ui.say("[ai] could not resolve adapter for chat", vim.log.levels.ERROR)
 	end
 
 	local chat = Chat.new(vim.tbl_extend("keep", { adapter = adapter, buffer_context = current_buffer_context() }, opts))
@@ -639,9 +639,9 @@ function M.close_all()
 		end
 	end
 	if closed > 0 then
-		vim.notify(("[ai] closed %d chat(s)"):format(closed), vim.log.levels.INFO)
+		ui.say(("[ai] closed %d chat(s)"):format(closed), vim.log.levels.INFO)
 	else
-		vim.notify("[ai] no chats to close", vim.log.levels.INFO)
+		ui.say("[ai] no chats to close", vim.log.levels.INFO)
 	end
 end
 
@@ -650,7 +650,7 @@ end
 function M.stop()
 	local chat = require("codecompanion.interactions.chat").last_chat()
 	if not chat or not api.nvim_buf_is_valid(chat.bufnr) then
-		return vim.notify("[ai] no chat to stop", vim.log.levels.INFO)
+		return ui.say("[ai] no chat to stop", vim.log.levels.INFO)
 	end
 	if chat.current_request or chat.tool_orchestrator then
 		-- CodeCompanion's stop does not reliably fire RequestFinished, which is what
@@ -662,9 +662,9 @@ function M.stop()
 			pcall(api.nvim_buf_del_var, chat.bufnr, "ai_chat_spinner")
 		end
 		chat:stop()
-		vim.notify("[ai] stopped", vim.log.levels.INFO)
+		ui.say("[ai] stopped", vim.log.levels.INFO)
 	else
-		vim.notify("[ai] nothing in flight", vim.log.levels.INFO)
+		ui.say("[ai] nothing in flight", vim.log.levels.INFO)
 	end
 end
 
@@ -689,7 +689,7 @@ function M.rename(chat)
 		chat = newest_chat()
 	end
 	if not chat or not api.nvim_buf_is_valid(chat.bufnr) then
-		return vim.notify("[ai] no chat to rename", vim.log.levels.INFO)
+		return ui.say("[ai] no chat to rename", vim.log.levels.INFO)
 	end
 
 	local current = chat.title or ""
@@ -712,7 +712,7 @@ function M.open_with_context(opts)
 	local Chat = require("codecompanion.interactions.chat")
 	local adapter = resolve_chat_adapter()
 	if not adapter then
-		return vim.notify("[ai] could not resolve adapter for chat", vim.log.levels.ERROR)
+		return ui.say("[ai] could not resolve adapter for chat", vim.log.levels.ERROR)
 	end
 
 	local chat_opts = vim.tbl_extend("keep", { adapter = adapter, buffer_context = current_buffer_context() }, opts)
@@ -940,7 +940,7 @@ end
 ---@return boolean deleted
 function M.delete_session(sid, conn)
 	if not can_delete_sessions(conn) then
-		vim.notify("[ai] this agent cannot delete sessions", vim.log.levels.WARN)
+		ui.say("[ai] this agent cannot delete sessions", vim.log.levels.WARN)
 		return false
 	end
 
@@ -955,7 +955,7 @@ function M.delete_session(sid, conn)
 	-- still holding that session writes it straight back, and the RPC reports success
 	-- regardless (measured — hence the connection rules on connection_for_cleanup).
 	if session_is_listed(conn, sid) then
-		vim.notify(
+		ui.say(
 			answered and ("[ai] session %s survived being deleted — something still has it open"):format(sid:sub(1, 8))
 				or ("[ai] the agent would not delete session %s"):format(sid:sub(1, 8)),
 			vim.log.levels.ERROR
@@ -1012,7 +1012,7 @@ end
 function M.delete(chat)
 	chat = chat or require("codecompanion.interactions.chat").buf_get_chat(api.nvim_get_current_buf()) or newest_chat()
 	if not chat or not api.nvim_buf_is_valid(chat.bufnr) then
-		return vim.notify("[ai] no chat to delete", vim.log.levels.INFO)
+		return ui.say("[ai] no chat to delete", vim.log.levels.INFO)
 	end
 
 	local title = chat.title or "this chat"
@@ -1028,7 +1028,7 @@ function M.delete(chat)
 	local question = stored
 			and ("Delete %s and its saved transcript? This cannot be undone."):format(title)
 		or ("Close %s? It has no saved transcript."):format(title)
-	if vim.fn.confirm(question, "&Delete\n&Cancel", 2) ~= 1 then
+	if not ui.confirm(question) then
 		return
 	end
 
@@ -1047,7 +1047,7 @@ function M.delete(chat)
 	require("ai.chat_list").clear_cache()
 
 	if not sid then
-		return vim.notify(("[ai] closed %s"):format(title), vim.log.levels.INFO)
+		return ui.say(("[ai] closed %s"):format(title), vim.log.levels.INFO)
 	end
 
 	-- The agent flushes the transcript as its process winds down, so let the close land
@@ -1056,7 +1056,7 @@ function M.delete(chat)
 
 	local cleanup_conn, spawned = connection_for_cleanup(provider, sid)
 	if not cleanup_conn then
-		return vim.notify(
+		return ui.say(
 			("[ai] closed %s, but no agent was available to delete its session"):format(title),
 			vim.log.levels.WARN
 		)
@@ -1068,11 +1068,11 @@ function M.delete(chat)
 	end
 
 	if deleted then
-		vim.notify(("[ai] deleted %s"):format(title), vim.log.levels.INFO)
+		ui.say(("[ai] deleted %s"):format(title), vim.log.levels.INFO)
 	else
 		-- The chat is gone but the agent still holds the session, so it will show up
 		-- under <leader>cl as resumable. Say so rather than implying a clean delete.
-		vim.notify(("[ai] closed %s, but the agent kept its session"):format(title), vim.log.levels.WARN)
+		ui.say(("[ai] closed %s, but the agent kept its session"):format(title), vim.log.levels.WARN)
 	end
 end
 
@@ -1113,7 +1113,7 @@ function M.restore_session(entry, opts)
 	local sel = require("ai.providers").current("chat")
 	local provider = entry.provider or (sel and sel.provider)
 	if provider == "ollama" then
-		return vim.notify("[ai] ollama chats have no ACP session to resume", vim.log.levels.WARN)
+		return ui.say("[ai] ollama chats have no ACP session to resume", vim.log.levels.WARN)
 	end
 
 	consume_pending(entry)
@@ -1126,7 +1126,7 @@ function M.restore_session(entry, opts)
 
 	local adapter = resolve_chat_adapter_for(provider, entry.model, saved_opts)
 	if not adapter then
-		return vim.notify(("[ai] could not resolve adapter for %s"):format(tostring(provider)), vim.log.levels.ERROR)
+		return ui.say(("[ai] could not resolve adapter for %s"):format(tostring(provider)), vim.log.levels.ERROR)
 	end
 
 	-- `hidden` matters for more than tidiness: these restores land on timers, and a
@@ -1190,7 +1190,7 @@ function M.restore_session(entry, opts)
 	-- dead entries either, because the fallback session it now holds has no exchange
 	-- behind it and so is saved without a session ID.
 	local function no_history(reason)
-		vim.notify(("[ai] %s — reopened without history"):format(reason), vim.log.levels.WARN)
+		ui.say(("[ai] %s — reopened without history"):format(reason), vim.log.levels.WARN)
 	end
 
 	await_connection(chat, function(conn)

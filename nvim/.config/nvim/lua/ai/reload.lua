@@ -14,6 +14,7 @@
 local M = {}
 
 local api = vim.api
+local ui = require("ai.ui")
 
 ---The listed buffer holding a path, if one is open.
 ---@param path string
@@ -72,7 +73,7 @@ local function sync(path)
 	-- here would silently throw away one side. Neither is touched: say so, name the file,
 	-- and leave it to the user — `:e!` takes the agent's version, `:w` takes theirs.
 	if vim.bo[bufnr].modified then
-		return vim.notify(
+		return ui.say(
 			("[ai] %s was edited by the agent but has unsaved changes here — :e! to take the agent's version, :w to keep yours"):format(
 				vim.fn.fnamemodify(path, ":~:.")
 			),

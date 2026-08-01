@@ -10,6 +10,7 @@ local acp_defaults = require("codecompanion.interactions.chat.acp.defaults")
 local adapters = require("codecompanion.adapters")
 local async = require("codecompanion.utils.async")
 local providers = require("ai.providers")
+local ui = require("ai.ui")
 
 local M = {}
 
@@ -31,7 +32,7 @@ local function now()
 end
 
 local function notify(msg, level)
-	vim.notify("[ai.pool] " .. msg, level or vim.log.levels.ERROR)
+	ui.say("[ai.pool] " .. msg, level or vim.log.levels.ERROR)
 end
 
 --=============================================================================

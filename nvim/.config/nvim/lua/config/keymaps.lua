@@ -168,7 +168,7 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- <leader>cn - new chat with current provider + options
 -- <leader>cq - close all chats
 -- <leader>cr - rename current chat
--- <leader>cd - delete current chat and its saved transcript (confirms first)
+-- <leader>cd - delete current chat and its saved transcript (y/n, defaults to no)
 -- <leader>cs - status panel
 -- <leader>cl - chat list (? in the picker lists its keys and markers)
 --

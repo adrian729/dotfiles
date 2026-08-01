@@ -224,7 +224,7 @@ local function blocked(bufnr, range)
 	end
 	local what = held.instruction and (' ("%s")'):format(ui.ellipsise(held.instruction, 40)) or ""
 	if held.kind == "request" then
-		vim.notify(
+		ui.say(
 			("[ai] %s already has an inline request in flight%s — <leader>cx cancels it, <leader>cL lists them all"):format(
 				span(held.s0, held.e0),
 				what
@@ -232,7 +232,7 @@ local function blocked(bufnr, range)
 			vim.log.levels.WARN
 		)
 	else
-		vim.notify(
+		ui.say(
 			("[ai] %s has an inline diff waiting on you%s — g2 accepts it, g3 rejects it"):format(
 				span(held.s0, held.e0),
 				what
@@ -534,7 +534,7 @@ local function say_protected(req)
 		return
 	end
 	req.warned = now
-	vim.notify(
+	ui.say(
 		("[ai] those lines are waiting on an inline request (%s) — <leader>cx cancels it"):format(
 			ui.ellipsise(req.instruction or "?", 50)
 		),
@@ -634,7 +634,7 @@ local function enforce_guards(bufnr)
 		if req.swept then
 			req.swept = false
 			cancel_request(req)
-			vim.notify(
+			ui.say(
 				("[ai] a change spanned the lines an inline request was working on (%s) — cancelled it"):format(
 					ui.ellipsise(req.instruction or "?", 40)
 				),
@@ -753,7 +753,7 @@ local function queue_restore(diff)
 				-- what makes the built-in corrupt a second concurrent request.
 				pcall(api.nvim_buf_set_lines, r.bufnr, r.s0, r.e0, false, r.diff.original)
 			else
-				vim.notify(
+				ui.say(
 					("[ai] %s:%d has changed since that edit was made — its original lines were left alone"):format(
 						vim.fn.fnamemodify(api.nvim_buf_get_name(r.bufnr), ":t"),
 						r.s0 + 1
@@ -1002,7 +1002,7 @@ local function show_diff(req, result)
 	local s0, e0 = resolve(bufnr, req.marks)
 	if not s0 then
 		drop_marks(bufnr, req.marks)
-		return vim.notify(
+		return ui.say(
 			"[ai] the anchored range was deleted while the request was in flight — result dropped",
 			vim.log.levels.WARN
 		)
@@ -1026,14 +1026,14 @@ local function show_diff(req, result)
 				title = ("%s — returned the selection unchanged"):format(req.provider),
 				text = result.preamble,
 			})
-			return vim.notify(
+			return ui.say(
 				("[ai] %s returned the selection unchanged, with an explanation — <leader>cL to read it"):format(
 					req.provider
 				),
 				vim.log.levels.WARN
 			)
 		end
-		return vim.notify("[ai] the reply matches the buffer — nothing to change", vim.log.levels.INFO)
+		return ui.say("[ai] the reply matches the buffer — nothing to change", vim.log.levels.INFO)
 	end
 
 	-- An empty buffer never reaches the diff UI. DiffUI's own create_diff_display writes the
@@ -1043,7 +1043,7 @@ local function show_diff(req, result)
 	if api.nvim_buf_line_count(bufnr) == 1 and (api.nvim_buf_get_lines(bufnr, 0, 1, true)[1] or "") == "" then
 		drop_marks(bufnr, req.marks)
 		api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-		return vim.notify("[ai] the buffer was empty, so the reply was inserted directly — u to undo")
+		return ui.say("[ai] the buffer was empty, so the reply was inserted directly — u to undo")
 	end
 
 	-- The diff UI takes over a window to show itself, and falls back to the *current* one when
@@ -1061,7 +1061,7 @@ local function show_diff(req, result)
 			),
 		})
 		drop_marks(bufnr, req.marks)
-		return vim.notify(
+		return ui.say(
 			("[ai] %s answered, but %s is not on screen — nothing was applied, <leader>cL to retry"):format(
 				req.provider,
 				name
@@ -1162,7 +1162,7 @@ local function on_reply(req, reply)
 
 	if result.kind == "noop" then
 		drop_marks(req.bufnr, req.marks)
-		return vim.notify(("[ai] %s"):format(result.reason), vim.log.levels.WARN)
+		return ui.say(("[ai] %s"):format(result.reason), vim.log.levels.WARN)
 	end
 
 	-- Left for the user to come to, rather than opened over whatever they are doing. Requests run
@@ -1173,7 +1173,7 @@ local function on_reply(req, reply)
 		text = result.text,
 	})
 	drop_marks(req.bufnr, req.marks)
-	vim.notify(
+	ui.say(
 		("[ai] %s %s — <leader>cL to read it"):format(req.provider, result.reason),
 		vim.log.levels.WARN
 	)
@@ -1199,7 +1199,7 @@ function M.submit(opts)
 	-- Repeated from M.run because this is a public entry point in its own right, and a deep
 	-- request on a transport that cannot read would otherwise silently run as a shallow one.
 	if opts.deep and not providers.transports[transport].read then
-		vim.notify(
+		ui.say(
 			("[ai] %s uses the %s transport, which cannot read the repository — <leader>cm to switch"):format(selection.provider, transport),
 			vim.log.levels.WARN
 		)
@@ -1283,7 +1283,7 @@ function M.submit(opts)
 			-- the row stays in the list with the range still anchored, and `e` there re-asks.
 			wait_on_user(req, "failed", { title = ("%s — failed"):format(selection.provider), text = msg })
 			drop_marks(bufnr, req.marks)
-			vim.notify(("[ai] %s — <leader>cL to retry"):format(msg), vim.log.levels.ERROR)
+			ui.say(("[ai] %s — <leader>cL to retry"):format(msg), vim.log.levels.ERROR)
 		end,
 		on_tool = function(name)
 			-- Recorded as well as rendered: the virtual text is only visible where the edit is,
@@ -1313,7 +1313,7 @@ function M.run(deep)
 	local transport = providers.transport(selection.provider, deep)
 
 	if deep and not providers.transports[transport].read then
-		return vim.notify(
+		return ui.say(
 			("[ai] <leader>cI needs a transport that can read the repository. %s uses %s, which cannot — "):format(
 				selection.provider,
 				transport
@@ -1343,7 +1343,7 @@ function M.accept(bufnr, diff)
 	bufnr = bufnr or api.nvim_get_current_buf()
 	diff = diff or diff_under_cursor(bufnr)
 	if not diff or not diff.ui then
-		return vim.notify("[ai] no diff here", vim.log.levels.WARN)
+		return ui.say("[ai] no diff here", vim.log.levels.WARN)
 	end
 	require("codecompanion.diff.keymaps").accept_change.callback(diff.ui)
 end
@@ -1354,7 +1354,7 @@ function M.reject(bufnr, diff)
 	bufnr = bufnr or api.nvim_get_current_buf()
 	diff = diff or diff_under_cursor(bufnr)
 	if not diff or not diff.ui then
-		return vim.notify("[ai] no diff here", vim.log.levels.WARN)
+		return ui.say("[ai] no diff here", vim.log.levels.WARN)
 	end
 	require("codecompanion.diff.keymaps").reject_change.callback(diff.ui)
 end
@@ -1392,7 +1392,7 @@ local function settle_all_here(action)
 	local bufnr = api.nvim_get_current_buf()
 	local settled = settle_all(bufnr, action)
 	if settled > 0 then
-		return vim.notify(("[ai] %s %d diff(s)"):format(action == "accept" and "accepted" or "rejected", settled))
+		return ui.say(("[ai] %s %d diff(s)"):format(action == "accept" and "accepted" or "rejected", settled))
 	end
 
 	-- Same distinction M.cancel draws: a diff belongs to the buffer it was made in, so "none here"
@@ -1404,12 +1404,12 @@ local function settle_all_here(action)
 		end
 	end
 	if elsewhere > 0 then
-		return vim.notify(
+		return ui.say(
 			("[ai] no diffs waiting in this buffer — %d in others, <leader>cL settles those"):format(elsewhere),
 			vim.log.levels.INFO
 		)
 	end
-	vim.notify("[ai] no diffs waiting in this buffer", vim.log.levels.INFO)
+	ui.say("[ai] no diffs waiting in this buffer", vim.log.levels.INFO)
 end
 
 ---Accept every diff in the current buffer. The bulk form of g2, scoped like `<leader>cX`.
@@ -1431,14 +1431,14 @@ end
 function M.hunk(bufnr, direction)
 	local diff = diff_under_cursor(bufnr)
 	if not diff then
-		return vim.notify("[ai] no diff here", vim.log.levels.WARN)
+		return ui.say("[ai] no diff here", vim.log.levels.WARN)
 	end
 	local keymaps = require("codecompanion.diff.keymaps")
 	local handler = direction == "next" and keymaps.next_hunk or keymaps.previous_hunk
 	-- The handler reads the cursor out of diff_ui.winnr, captured when the diff was created and
 	-- never revalidated, so a since-closed window would raise instead of reporting.
 	if not (diff.ui and diff.ui.winnr and api.nvim_win_is_valid(diff.ui.winnr)) then
-		return vim.notify("[ai] the window this diff was rendered in is gone", vim.log.levels.WARN)
+		return ui.say("[ai] the window this diff was rendered in is gone", vim.log.levels.WARN)
 	end
 	handler.callback(diff.ui)
 end
@@ -1458,7 +1458,7 @@ function M.cancel()
 		local s0, e0 = resolve(bufnr, req.marks)
 		if s0 and row >= s0 and row <= math.max(s0, e0) then
 			cancel_request(req)
-			return vim.notify("[ai] cancelled 1 request(s)")
+			return ui.say("[ai] cancelled 1 request(s)")
 		end
 	end
 
@@ -1468,7 +1468,7 @@ function M.cancel()
 	local diff = diff_under_cursor(bufnr)
 	if diff and diff.ui then
 		M.reject(bufnr, diff)
-		return vim.notify("[ai] rejected the finished edit here")
+		return ui.say("[ai] rejected the finished edit here")
 	end
 
 	-- A reply that arrived but could not be applied. Discarding is all there is to do to one of
@@ -1477,7 +1477,7 @@ function M.cancel()
 		local ws, we = waiting_region(entry)
 		if ws and row >= ws and row < math.max(we, ws + 1) then
 			forget_waiting(entry)
-			return vim.notify(
+			return ui.say(
 				("[ai] dismissed the %s reply here"):format(entry.kind == "prose" and "unapplied" or "failed")
 			)
 		end
@@ -1498,12 +1498,12 @@ function M.cancel()
 		end
 	end
 	if elsewhere > 0 then
-		return vim.notify(
+		return ui.say(
 			("[ai] nothing in play in this buffer — %d elsewhere, <leader>cL lists them"):format(elsewhere),
 			vim.log.levels.INFO
 		)
 	end
-	return vim.notify("[ai] nothing in flight in this buffer", vim.log.levels.INFO)
+	return ui.say("[ai] nothing in flight in this buffer", vim.log.levels.INFO)
 end
 
 ---Discard everything this buffer has in play: cancel every request still running, reject every diff
@@ -1535,9 +1535,9 @@ function M.cancel_all()
 		table.insert(said, ("dismissed %d unread repl%s"):format(#waiting, #waiting == 1 and "y" or "ies"))
 	end
 	if #said == 0 then
-		return vim.notify("[ai] nothing in play in this buffer", vim.log.levels.INFO)
+		return ui.say("[ai] nothing in play in this buffer", vim.log.levels.INFO)
 	end
-	vim.notify("[ai] " .. table.concat(said, ", "))
+	ui.say("[ai] " .. table.concat(said, ", "))
 end
 
 ---Cancel one request, wherever it came from. What the list acts on; `M.cancel` and
@@ -1668,7 +1668,7 @@ function M.read(entry)
 		text = entry.text,
 		on_confirm = function()
 			if not api.nvim_buf_is_valid(entry.bufnr) then
-				return vim.notify("[ai] source buffer was closed — cannot open chat", vim.log.levels.WARN)
+				return ui.say("[ai] source buffer was closed — cannot open chat", vim.log.levels.WARN)
 			end
 			require("ai.chat").open_with_context({
 				messages = {
@@ -1690,7 +1690,7 @@ end
 ---@param entry table
 function M.to_chat(entry)
 	if not api.nvim_buf_is_valid(entry.bufnr) then
-		return vim.notify("[ai] source buffer was closed — cannot open chat", vim.log.levels.WARN)
+		return ui.say("[ai] source buffer was closed — cannot open chat", vim.log.levels.WARN)
 	end
 	require("ai.chat").open_with_context({
 		messages = {
@@ -1723,21 +1723,21 @@ end
 function M.ask_again(entry, opts)
 	local bufnr = entry.bufnr
 	if not api.nvim_buf_is_valid(bufnr) then
-		vim.notify("[ai] that buffer is gone", vim.log.levels.WARN)
+		ui.say("[ai] that buffer is gone", vim.log.levels.WARN)
 		return false
 	end
 	local st = buf_state(bufnr)
 	local instruction, deep = opts.instruction, entry.deep
 
 	local function gone()
-		vim.notify("[ai] those lines are gone — nothing to ask about", vim.log.levels.WARN)
+		ui.say("[ai] those lines are gone — nothing to ask about", vim.log.levels.WARN)
 		return false
 	end
 
 	if entry.kind == "request" then
 		local req = entry.request
 		if not st.requests[req.id] then
-			vim.notify("[ai] that one finished while you were typing — ask again from the list", vim.log.levels.INFO)
+			ui.say("[ai] that one finished while you were typing — ask again from the list", vim.log.levels.INFO)
 			return false
 		end
 		local s0, e0 = resolve(bufnr, req.marks)
@@ -1756,7 +1756,7 @@ function M.ask_again(entry, opts)
 	if entry.kind == "diff" then
 		local diff = entry.diff
 		if not (st.diffs[diff.id] and diff.ui and not diff.ui.resolved) then
-			vim.notify("[ai] that one was settled already — ask again from the list", vim.log.levels.INFO)
+			ui.say("[ai] that one was settled already — ask again from the list", vim.log.levels.INFO)
 			return false
 		end
 		local s0 = diff_region(diff)
@@ -1783,7 +1783,7 @@ function M.ask_again(entry, opts)
 
 	local waiting = entry.waiting
 	if not st.waiting[waiting.id] then
-		vim.notify("[ai] that reply is no longer waiting", vim.log.levels.INFO)
+		ui.say("[ai] that reply is no longer waiting", vim.log.levels.INFO)
 		return false
 	end
 	local s0, e0 = waiting_region(waiting)
@@ -1816,7 +1816,7 @@ function M.ask_again_prompt(entry)
 				return
 			end
 			if M.ask_again(entry, { instruction = vim.trim(text) }) then
-				vim.notify(("[ai] asked again about %s"):format(file))
+				ui.say(("[ai] asked again about %s"):format(file))
 			end
 		end,
 	})
@@ -1843,7 +1843,7 @@ function M.ask_again_here()
 
 	local entry = under or only or nil
 	if not entry then
-		return vim.notify("[ai] nothing here to ask again about", vim.log.levels.WARN)
+		return ui.say("[ai] nothing here to ask again about", vim.log.levels.WARN)
 	end
 	M.ask_again_prompt(entry)
 end

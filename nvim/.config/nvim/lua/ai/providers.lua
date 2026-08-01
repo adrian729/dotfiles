@@ -343,7 +343,12 @@ function M.opencode_models()
 	local models = { M.AUTO }
 	vim.list_extend(models, configured_free_models())
 	if #models == 1 then
-		vim.notify("[ai] could not read opencode-models.json — opencode falls back to its ambient model", vim.log.levels.WARN)
+		-- Required here rather than at the top of the file: this module is what every other one
+		-- reads, and it stays free of dependencies of its own.
+		require("ai.ui").say(
+			"[ai] could not read opencode-models.json — opencode falls back to its ambient model",
+			vim.log.levels.WARN
+		)
 	end
 	return models
 end
@@ -459,7 +464,7 @@ function M.resolve_chat_option_value(provider, key, value)
 	if not resolved then
 		-- Nothing to pin to, so staying quiet here would land on exactly the default this
 		-- branch exists to avoid. Say so where the user will see it.
-		vim.notify(
+		require("ai.ui").say(
 			"[ai] no free opencode model is known, so this session falls back to opencode's "
 				.. "own default — check opencode-models.json",
 			vim.log.levels.WARN

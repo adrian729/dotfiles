@@ -9,6 +9,7 @@
 local M = {}
 
 local api = vim.api
+local ui = require("ai.ui")
 
 local HL = {
 	label = "Comment",
@@ -292,7 +293,7 @@ local function apply_to_session(row, value)
 	-- The focused chat (last_chat()) may have changed provider since this row
 	-- was built — writing against it would silently commit to the WRONG session.
 	if focused_chat_provider() ~= row.built_for_provider then
-		vim.notify(
+		ui.say(
 			"[ai] focused chat's provider changed since this row was built — reopen the panel to retry",
 			vim.log.levels.WARN
 		)
@@ -336,7 +337,7 @@ local function apply_and_stash(row, value)
 	-- stays open (see the BufEnter refresh in open()). If the provider changed since,
 	-- committing would write this value into the WRONG provider's stored opts.
 	if row.built_for_provider and row.built_for_provider ~= providers.current(scope).provider then
-		vim.notify("[ai] provider changed since this row was built — reopen the panel to retry", vim.log.levels.WARN)
+		ui.say("[ai] provider changed since this row was built — reopen the panel to retry", vim.log.levels.WARN)
 		return
 	end
 

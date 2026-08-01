@@ -528,24 +528,24 @@ local function settle(action)
 			-- The nearest thing to accepting a reply that is not code: take it somewhere it can be
 			-- talked about.
 			require("ai.inline").to_chat(entry.waiting)
-			vim.notify(("[ai] opened %s in a chat"):format(entry.file))
+			ui.say(("[ai] opened %s in a chat"):format(entry.file))
 			return draw()
 		end
 		if action == "reject" then
 			require("ai.inline").dismiss(entry.waiting)
-			vim.notify(("[ai] dismissed %s"):format(entry.file))
+			ui.say(("[ai] dismissed %s"):format(entry.file))
 			return draw()
 		end
-		return vim.notify("[ai] nothing to accept there — <CR> reads it, r asks again", vim.log.levels.WARN)
+		return ui.say("[ai] nothing to accept there — <CR> reads it, r asks again", vim.log.levels.WARN)
 	end
 	if entry.kind ~= "diff" then
-		return vim.notify("[ai] that one is still running — x cancels it", vim.log.levels.WARN)
+		return ui.say("[ai] that one is still running — x cancels it", vim.log.levels.WARN)
 	end
 	-- `resolved` as well as the registry: a diff settled in the buffer itself is refused by
 	-- codecompanion rather than applied twice, and reporting success on top of that would be a
 	-- lie about what the buffer now holds.
 	if not still_listed(entry) or not (entry.diff.ui and not entry.diff.ui.resolved) then
-		return vim.notify("[ai] that one has already been settled", vim.log.levels.INFO)
+		return ui.say("[ai] that one has already been settled", vim.log.levels.INFO)
 	end
 
 	local inline = require("ai.inline")
@@ -554,7 +554,7 @@ local function settle(action)
 	else
 		inline.reject(entry.bufnr, entry.diff)
 	end
-	vim.notify(("[ai] %s %s"):format(action == "accept" and "accepted" or "rejected", entry.file))
+	ui.say(("[ai] %s %s"):format(action == "accept" and "accepted" or "rejected", entry.file))
 	draw()
 end
 
@@ -573,10 +573,10 @@ local function discard_selected()
 		-- It landed in the last frame, so it is a diff now rather than a request. Rejecting is
 		-- what x means for one of those, so redraw and let the next press find it.
 		draw()
-		return vim.notify("[ai] that one just landed — x again rejects it", vim.log.levels.INFO)
+		return ui.say("[ai] that one just landed — x again rejects it", vim.log.levels.INFO)
 	end
 	require("ai.inline").cancel_request(entry.request)
-	vim.notify(("[ai] cancelled %s"):format(entry.file))
+	ui.say(("[ai] cancelled %s"):format(entry.file))
 	draw()
 end
 
@@ -613,7 +613,7 @@ local function settle_every(action)
 	local left = unread > 0 and (", %d repl%s still to read"):format(unread, unread == 1 and "y" or "ies") or ""
 
 	if settled == 0 then
-		return vim.notify(
+		return ui.say(
 			running > 0 and ("[ai] nothing to settle yet — %d still running, x or X cancels%s"):format(running, left)
 				or ("[ai] no diffs waiting to be settled%s"):format(left ~= "" and (" —" .. left:sub(2)) or ""),
 			vim.log.levels.INFO
@@ -624,7 +624,7 @@ local function settle_every(action)
 	if #files > 3 then
 		where = ("%s and %d more"):format(where, #files - 3)
 	end
-	vim.notify(
+	ui.say(
 		("[ai] %s %d diff(s) in %s%s"):format(action == "accept" and "accepted" or "rejected", settled, where, left)
 	)
 	draw()
@@ -663,9 +663,9 @@ local function discard_every()
 		table.insert(said, ("dismissed %d unread repl%s"):format(dismissed, dismissed == 1 and "y" or "ies"))
 	end
 	if #said == 0 then
-		return vim.notify("[ai] nothing in play", vim.log.levels.INFO)
+		return ui.say("[ai] nothing in play", vim.log.levels.INFO)
 	end
-	vim.notify("[ai] " .. table.concat(said, ", "))
+	ui.say("[ai] " .. table.concat(said, ", "))
 	draw()
 end
 
@@ -701,7 +701,7 @@ local function jump()
 	M.close()
 
 	if not api.nvim_buf_is_valid(bufnr) then
-		return vim.notify("[ai] the buffer that edit belongs to is gone", vim.log.levels.WARN)
+		return ui.say("[ai] the buffer that edit belongs to is gone", vim.log.levels.WARN)
 	end
 	local win = vim.fn.bufwinid(bufnr)
 	if win ~= -1 then
@@ -757,7 +757,7 @@ end
 local function open()
 	local entries = require("ai.inline").list()
 	if #entries == 0 then
-		return vim.notify("[ai] nothing in flight, nothing waiting on you", vim.log.levels.INFO)
+		return ui.say("[ai] nothing in flight, nothing waiting on you", vim.log.levels.INFO)
 	end
 
 	ui.ensure_highlights()
@@ -841,7 +841,7 @@ local function open()
 	on({ "R" }, function()
 		-- Bound to say so rather than left silent: a key that does nothing reads as a dropped
 		-- keypress, and this one used to mean something.
-		vim.notify(
+		ui.say(
 			"[ai] there is no ask-again-for-everything — r asks again one row at a time, since each carries its own prompt",
 			vim.log.levels.INFO
 		)

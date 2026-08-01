@@ -149,7 +149,7 @@ A segment appears in your statusline whenever inline has anything in play, and i
 lua/ai/retry.lua        AI 2↻ 1◆        12,4        45%
 ```
 
-`↻` still running · `◆` answered, or an edit waiting on you · `✖` failed. This is the only signal that reaches you when the file in question is not on screen at all — the marks are in the buffer and the list is behind a key, and a notify scrolls away.
+`↻` still running · `◆` answered, or an edit waiting on you · `✖` failed. This is the only signal that reaches you when the file in question is not on screen at all — the marks are in the buffer and the list is behind a key, and a message scrolls away.
 
 It is injected into whatever nvim already puts in your statusline rather than replacing it, so the built-in parts — diagnostics count, the busy indicator, the ruler — are untouched.
 
@@ -223,7 +223,7 @@ Chat is a full conversation buffer where you can talk to a model, invoke tools, 
 - `<leader>cc` — toggle the last chat buffer (creates a new one if none exists)
 - `<leader>cq` — close all chat buffers
 - `<leader>cr` — rename the current chat
-- `<leader>cd` — delete the current chat *and* the agent's saved transcript of it (asks first; cannot be undone)
+- `<leader>cd` — delete the current chat *and* the agent's saved transcript of it (asks `y`/`n` first, defaulting to no; cannot be undone)
 - `<leader>cl` — open the chat list (Telescope picker, see below)
 
 **Switching chat provider or model:**
@@ -417,6 +417,16 @@ MCP servers expose additional tools prefixed `@{mcp:*}`.
 **Rules:**
 
 Rules files (like `CLAUDE.md`, `AGENTS.md`, `.cursorrules`) are automatically loaded into new chat buffers. Use the `/rules` slash command to add more rule groups. `gM` clears all rules from the chat buffer. Rules can contain system prompts, file references, and arbitrary instruction text.
+
+---
+
+## Messages and prompts
+
+Nothing the integration tells you costs a keypress. Messages are fitted to the room the command line has, so none of them can trigger "Press ENTER or type command to continue" — the one that used to come up after deleting a chat, for instance.
+
+A message too long to fit ends in `…`. The full text is still in `:messages`, which is also where to look if one scrolled past before you read it.
+
+Questions are answered `y` or `n`, with Enter taking the default. The default is *no* wherever the answer cannot be undone — deleting a chat, deleting a stored session — so Enter and Esc both leave things as they were. Anything asking for a name or a value asks in the usual way instead, on the command line, with Esc to back out.
 
 ---
 

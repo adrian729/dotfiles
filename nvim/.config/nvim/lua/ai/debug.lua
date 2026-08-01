@@ -5,6 +5,7 @@
 -- step 01 — it is the first thing to reach for when a later step misbehaves.
 
 local providers = require("ai.providers")
+local ui = require("ai.ui")
 
 local M = {}
 
@@ -88,17 +89,17 @@ end
 ---@param prompt string
 function M.send(provider, prompt)
 	if not providers.providers[provider] then
-		return vim.notify(
+		return ui.say(
 			("unknown provider %q — try %s"):format(provider, table.concat(vim.tbl_keys(providers.providers), ", ")),
 			vim.log.levels.ERROR
 		)
 	end
 	if not providers.acp_adapter(provider) then
-		return vim.notify(("%s has no ACP transport — nothing for the pool to do"):format(provider), vim.log.levels.WARN)
+		return ui.say(("%s has no ACP transport — nothing for the pool to do"):format(provider), vim.log.levels.WARN)
 	end
 
 	local started = vim.uv.now()
-	vim.notify(("[ai] sending to %s…"):format(provider))
+	ui.say(("[ai] sending to %s…"):format(provider))
 
 	pool().send({
 		provider = provider,
@@ -114,7 +115,10 @@ function M.send(provider, prompt)
 			scratch(lines, "AiDebugSend")
 		end,
 		on_error = function(msg)
-			vim.notify(("[ai] %s failed after %s: %s"):format(provider, secs(vim.uv.now() - started), msg), vim.log.levels.ERROR)
+			ui.say(
+				("[ai] %s failed after %s: %s"):format(provider, secs(vim.uv.now() - started), msg),
+				vim.log.levels.ERROR
+			)
 		end,
 	})
 end
@@ -128,7 +132,7 @@ function M.setup()
 		local provider = args.fargs[1]
 		local prompt = table.concat(vim.list_slice(args.fargs, 2), " ")
 		if not provider or prompt == "" then
-			return vim.notify("usage: :AiDebugSend {provider} {prompt}", vim.log.levels.ERROR)
+			return ui.say("usage: :AiDebugSend {provider} {prompt}", vim.log.levels.ERROR)
 		end
 		M.send(provider, prompt)
 	end, { nargs = "+", desc = "AI: send a raw prompt through the pool" })

@@ -5,12 +5,13 @@
 local M = {}
 
 local api = vim.api
+local ui = require("ai.ui")
 
 -- List colours come from ai.ui, which owns the palette for every ai surface. Scheduled
 -- because resolving it before catppuccin has loaded would latch the stand-in colours in.
 local function ensure_highlights()
 	vim.schedule(function()
-		require("ai.ui").ensure_highlights()
+		ui.ensure_highlights()
 	end)
 end
 
@@ -258,7 +259,7 @@ local function saved_titles()
 end
 
 -- Shared with the provider picker, which builds its rows the same way.
-local render = require("ai.ui").render
+local render = ui.render
 
 ---@param opts? { current_buf?: number } current_buf: the chat to mark, captured by the
 ---caller before the picker took focus
@@ -391,7 +392,7 @@ end
 ---@param entry table
 local function focus_live(entry)
 	if not api.nvim_buf_is_valid(entry.bufnr) then
-		return vim.notify("[ai] that chat buffer is gone", vim.log.levels.WARN)
+		return ui.say("[ai] that chat buffer is gone", vim.log.levels.WARN)
 	end
 	local chat = require("codecompanion.interactions.chat").buf_get_chat(entry.bufnr)
 	if chat and chat.ui then
@@ -443,7 +444,7 @@ local function rename_stored_session(entry)
 	if not sid then
 		-- No session yet means nothing to key a name to. It would be dropped on the next
 		-- read, so promising otherwise would be a lie.
-		return vim.notify("[ai] this chat has no session yet — open it first, then rename", vim.log.levels.WARN)
+		return ui.say("[ai] this chat has no session yet — open it first, then rename", vim.log.levels.WARN)
 	end
 	local current = entry.title
 	vim.ui.input({ prompt = "Rename session: ", default = current }, function(input)
@@ -453,7 +454,7 @@ local function rename_stored_session(entry)
 		end
 		require("ai.chat").set_saved_title(sid, name)
 		M.clear_cache()
-		vim.notify(("[ai] renamed to %s"):format(name), vim.log.levels.INFO)
+		ui.say(("[ai] renamed to %s"):format(name), vim.log.levels.INFO)
 	end)
 end
 
@@ -466,26 +467,26 @@ local function delete_stored_session(entry)
 	-- A pending chat with no session was never stored by the agent, so there is nothing to
 	-- delete — just stop offering it.
 	if not sid then
-		if vim.fn.confirm(("Forget %s? It has no saved transcript."):format(label), "&Forget\n&Cancel", 2) ~= 1 then
+		if not ui.confirm(("Forget %s? It has no saved transcript."):format(label)) then
 			return
 		end
 		require("ai.chat").forget_pending(entry)
 		M.clear_cache()
-		return vim.notify(("[ai] forgot %s"):format(label), vim.log.levels.INFO)
+		return ui.say(("[ai] forgot %s"):format(label), vim.log.levels.INFO)
 	end
 
-	if vim.fn.confirm(
-		("Delete %s and its saved transcript? This cannot be undone."):format(label),
-		"&Delete\n&Cancel",
-		2
-	) ~= 1 then
+	if
+		not ui.confirm(
+			("Delete %s and its saved transcript? This cannot be undone."):format(label)
+		)
+	then
 		return
 	end
 
 	-- Insist on the agent that listed the session: only it can see the session's file.
 	local conn, _, spawned = session_connection({ provider = entry.provider })
 	if not conn then
-		return vim.notify(
+		return ui.say(
 			("[ai] no %s connection to delete the session with"):format(tostring(entry.provider)),
 			vim.log.levels.ERROR
 		)
@@ -497,7 +498,7 @@ local function delete_stored_session(entry)
 	end
 	if deleted then
 		M.clear_cache()
-		vim.notify(("[ai] deleted %s"):format(label), vim.log.levels.INFO)
+		ui.say(("[ai] deleted %s"):format(label), vim.log.levels.INFO)
 	end
 end
 
@@ -556,7 +557,7 @@ local function close_help()
 	help_win, help_buf = nil, nil
 end
 
-local pad = require("ai.ui").pad
+local pad = ui.pad
 
 ---Toggle the help overlay over an open picker.
 ---
@@ -624,7 +625,7 @@ local PROMPT_TITLE = "Chats & Sessions"
 function M.open()
 	local ok, _ = pcall(require, "telescope")
 	if not ok then
-		return vim.notify("[ai] telescope is required for the chat list", vim.log.levels.ERROR)
+		return ui.say("[ai] telescope is required for the chat list", vim.log.levels.ERROR)
 	end
 
 	ensure_highlights()

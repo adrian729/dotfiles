@@ -22,9 +22,11 @@ local api = vim.api
 -- Entries
 --=============================================================================
 
+local ui = require("ai.ui")
+
 -- Shared with the chat list, which builds its rows the same way.
-local render = require("ai.ui").render
-local pad = require("ai.ui").pad
+local render = ui.render
+local pad = ui.pad
 
 ---Every provider/model pair that can be selected right now.
 ---
@@ -173,7 +175,7 @@ local function notify_current(scope)
 			table.insert(bits, ("%s=%s"):format(key, current.opts[key]))
 		end
 	end
-	vim.notify(
+	ui.say(
 		("[ai] %s → %s · %s%s"):format(
 			scope,
 			current.provider,
@@ -186,7 +188,7 @@ end
 local function notify_unchanged(scope)
 	local providers = require("ai.providers")
 	local current = providers.current(scope)
-	vim.notify(("[ai] %s unchanged — still %s · %s"):format(scope, current.provider, tostring(current.opts.model)))
+	ui.say(("[ai] %s unchanged — still %s · %s"):format(scope, current.provider, tostring(current.opts.model)))
 end
 
 ---Write a pending selection into providers, all of it or none of it.
@@ -279,7 +281,7 @@ local function open_settings(scope, pending)
 		pending.options[setting.key] = stored[setting.key]
 	end
 
-	require("ai.ui").ensure_highlights()
+	ui.ensure_highlights()
 	close_float() -- reopening rather than stacking, if one is somehow still up
 	float.cursor = 1
 	float.committed = false
@@ -465,7 +467,7 @@ end
 local function telescope()
 	local ok = pcall(require, "telescope")
 	if not ok then
-		vim.notify("[ai] telescope is required for the model picker", vim.log.levels.ERROR)
+		ui.say("[ai] telescope is required for the model picker", vim.log.levels.ERROR)
 		return nil
 	end
 	return {
@@ -488,7 +490,7 @@ function M.open(scope)
 	if not t then
 		return
 	end
-	require("ai.ui").ensure_highlights()
+	ui.ensure_highlights()
 
 	local providers = require("ai.providers")
 	local ollama, picker = {}, nil
@@ -522,7 +524,7 @@ function M.open(scope)
 				ollama[endpoint] = models
 				rebuild()
 			elseif err then
-				vim.notify(("[ai] ollama %s not listed: %s"):format(endpoint, err), vim.log.levels.WARN)
+				ui.say(("[ai] ollama %s not listed: %s"):format(endpoint, err), vim.log.levels.WARN)
 			end
 		end)
 	end
@@ -532,7 +534,7 @@ function M.open(scope)
 		if err then
 			-- Still usable: `models` falls back to the configured free list, so the warning is
 			-- about the Go models being absent rather than about the picker being broken.
-			vim.notify(("[ai] opencode Go models not listed: %s"):format(err), vim.log.levels.WARN)
+			ui.say(("[ai] opencode Go models not listed: %s"):format(err), vim.log.levels.WARN)
 		end
 	end)
 

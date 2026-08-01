@@ -34,6 +34,28 @@ local function room_on(bufnr, row)
 	return math.max(20, width_of(bufnr) - vim.fn.strdisplaywidth(line) - 6)
 end
 
+---Ask a yes/no question the way every other command-line program asks one: `y`, `n`, or Enter for
+---the default.
+---
+---One helper rather than a `vim.fn.confirm` at each call site, because the alternative is what was
+---there before — `&Delete\n&Cancel`, `&Forget\n&Cancel` — where the key to press was a different
+---letter for every question and neither of them was `y`. Naming the action in the button reads
+---well in a GUI dialog and badly in a terminal, where the muscle memory is `y`.
+---
+---An aborted prompt (Esc, or an interrupt) returns 0 from confirm, which is a no.
+---@param question string
+---@param opts? { default?: boolean } Defaults to no, for anything that cannot be undone
+---@return boolean
+function M.confirm(question, opts)
+	local yes_by_default = opts ~= nil and opts.default == true
+	local answered_yes = vim.fn.confirm(question, "&Yes\n&No", yes_by_default and 1 or 2, "Question") == 1
+	-- The question stays on the command line after it has been answered, so whatever the caller
+	-- reports next lands on the line below it and costs a "Press ENTER" to clear (measured).
+	-- Redrawing here does take the prompt back — unlike an overflowing message, see M.say.
+	vim.cmd("redraw")
+	return answered_yes
+end
+
 ---Truncate to a display width, marking that something was cut. By character rather than by
 ---byte, so a multibyte glyph is never sliced in half.
 ---@param text string
@@ -47,6 +69,45 @@ function M.ellipsise(text, width)
 end
 
 local ellipsise = M.ellipsise
+
+local LEVEL_HL = {
+	[vim.log.levels.ERROR] = "ErrorMsg",
+	[vim.log.levels.WARN] = "WarningMsg",
+}
+
+---Say something on the command line, without "Press ENTER or type command to continue".
+---
+---That prompt is what a message too big for the command line costs, and nothing takes it back
+---once it is up: `:redraw`, `:redraw!` and `:mode` all leave it standing (measured). So the only
+---way past it is to not overflow. `v:echospace` is exactly how much room there is — 68 cells of
+---an 80-column screen, the remainder reserved for 'showcmd' — and the line shown is fitted to it.
+---
+---A message that does not fit is still recorded whole. 'cmdheight' is grown just long enough for
+---the echo that enters the history, then put back before the next redraw, so `:messages` has every
+---word while the command line shows only the head. Measured as invisible: with three splits and a
+---floating window open, no VimResized or WinResized fired, window heights were unchanged and the
+---float kept its geometry.
+---
+---Used instead of `vim.notify` throughout, which is the same echo without the fitting.
+---@param msg string
+---@param level? number A `vim.log.levels` value; INFO and below go unhighlighted
+function M.say(msg, level)
+	local hl = LEVEL_HL[level]
+	-- A newline overflows the command line as surely as length does, and every one of these
+	-- messages is a single sentence anyway.
+	local flat = msg:gsub("%s*\n%s*", " · ")
+	local fitted = ellipsise(flat, math.max(1, vim.v.echospace))
+
+	if fitted == flat then
+		return api.nvim_echo({ { flat, hl } }, true, {})
+	end
+
+	local saved = vim.o.cmdheight
+	vim.o.cmdheight = math.ceil(vim.fn.strdisplaywidth(flat) / math.max(1, vim.o.columns)) + 1
+	api.nvim_echo({ { flat, hl } }, true, {})
+	vim.o.cmdheight = saved
+	api.nvim_echo({ { fitted, hl } }, false, {})
+end
 
 ---Animated virtual text pinned to a moving row, or to a moving region.
 ---
