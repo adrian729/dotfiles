@@ -127,6 +127,22 @@ return {
 				end,
 				desc = "AI: inline list (in flight + waiting for review)",
 			},
+			-- g2/g3 settle the diff under the cursor; these are their bulk form, scoped to the
+			-- buffer the same way <leader>cX is. Across buffers is the list's A/R.
+			{
+				"<leader>cA",
+				function()
+					require("ai.inline").accept_all()
+				end,
+				desc = "AI: accept all inline diffs in this buffer",
+			},
+			{
+				"<leader>cR",
+				function()
+					require("ai.inline").reject_all()
+				end,
+				desc = "AI: reject all inline diffs in this buffer",
+			},
 			{
 				"<leader>cx",
 				function()

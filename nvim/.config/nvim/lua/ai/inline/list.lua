@@ -60,8 +60,9 @@ end
 -- Widest first: the window is at least as wide as whichever of these fits, so the footer is
 -- never clipped — nvim truncates a border footer to the window silently.
 local FOOTERS = {
-	" <CR> jump · a/r accept/reject · x cancel · X cancel all · q close ",
-	" <CR> jump · a/r · x cancel · q close ",
+	" <CR> jump · a/r accept/reject · A/R all · x discard · X discard all · q close ",
+	" <CR> jump · a/r · A/R all · x discard · X all · q close ",
+	" a/r · A/R · x · X · q ",
 	" a/r · x · q ",
 }
 
@@ -138,8 +139,9 @@ local function state_of(entry, now)
 	return STATE.review, STATE.review.marker
 end
 
----Where the edit is, or that it is nowhere any more. A range the user has since deleted is
----worth saying out loud: a request anchored to one has its answer dropped when it lands.
+---Where the edit is, or that it is nowhere any more. Rare now that a range with a request on it
+---is put back when it is deleted: this shows for the tick between the deletion and the restore,
+---or for a range the restore could not recover — and that one cancels the request outright.
 ---@param entry table
 ---@return string text, string hl
 local function location_of(entry)
@@ -527,35 +529,95 @@ local function settle(action)
 	draw()
 end
 
-local function cancel_selected()
+---Discard the entry under the cursor, whichever half of its life it is in: cancel it if it is
+---running, reject it if it has answered. One key for "make this go away", since which state a row
+---is in is exactly what changes on its own while the list is open.
+local function discard_selected()
 	local entry = selected()
 	if not entry then
 		return
 	end
-	if entry.kind ~= "request" then
-		return vim.notify("[ai] that one has finished — a accepts it, r rejects it", vim.log.levels.WARN)
+	if entry.kind == "diff" then
+		return settle("reject")
 	end
 	if not still_listed(entry) then
-		return vim.notify("[ai] that one had already finished", vim.log.levels.INFO)
+		-- It landed in the last frame, so it is a diff now rather than a request. Rejecting is
+		-- what x means for one of those, so redraw and let the next press find it.
+		draw()
+		return vim.notify("[ai] that one just landed — x again rejects it", vim.log.levels.INFO)
 	end
 	require("ai.inline").cancel_request(entry.request)
 	vim.notify(("[ai] cancelled %s"):format(entry.file))
 	draw()
 end
 
-local function cancel_every()
+---Settle every diff in the list, wherever it belongs — the counterpart to X, which cancels every
+---request the same way.
+---
+---The files are named in the report rather than just counted: this reaches buffers that are not on
+---screen, and knowing which ones changed is what makes the result checkable afterwards.
+---@param action "accept"|"reject"
+local function settle_every(action)
 	local inline = require("ai.inline")
-	local cancelled = 0
+	local settled, files, running = 0, {}, 0
+	for _, entry in ipairs(inline.list()) do
+		if entry.kind ~= "diff" then
+			running = running + 1
+		elseif entry.diff.ui and not entry.diff.ui.resolved then
+			if action == "accept" then
+				inline.accept(entry.bufnr, entry.diff)
+			else
+				inline.reject(entry.bufnr, entry.diff)
+			end
+			settled = settled + 1
+			if not vim.tbl_contains(files, entry.file) then
+				table.insert(files, entry.file)
+			end
+		end
+	end
+
+	if settled == 0 then
+		return vim.notify(
+			running > 0 and ("[ai] nothing to settle yet — %d still running, x or X cancels"):format(running)
+				or "[ai] nothing waiting to be settled",
+			vim.log.levels.INFO
+		)
+	end
+
+	local where = table.concat(vim.list_slice(files, 1, 3), ", ")
+	if #files > 3 then
+		where = ("%s and %d more"):format(where, #files - 3)
+	end
+	vim.notify(("[ai] %s %d diff(s) in %s"):format(action == "accept" and "accepted" or "rejected", settled, where))
+	draw()
+end
+
+---Clear the list out entirely: cancel what is running, reject what has answered. The counterpart
+---to A, which keeps what has answered instead.
+local function discard_every()
+	local inline = require("ai.inline")
+	local cancelled, rejected = 0, 0
 	for _, entry in ipairs(inline.list()) do
 		if entry.kind == "request" then
 			inline.cancel_request(entry.request)
 			cancelled = cancelled + 1
+		elseif entry.diff.ui and not entry.diff.ui.resolved then
+			inline.reject(entry.bufnr, entry.diff)
+			rejected = rejected + 1
 		end
 	end
-	if cancelled == 0 then
-		return vim.notify("[ai] nothing in flight", vim.log.levels.INFO)
+
+	local said = {}
+	if cancelled > 0 then
+		table.insert(said, ("cancelled %d request(s)"):format(cancelled))
 	end
-	vim.notify(("[ai] cancelled %d request(s)"):format(cancelled))
+	if rejected > 0 then
+		table.insert(said, ("rejected %d diff(s)"):format(rejected))
+	end
+	if #said == 0 then
+		return vim.notify("[ai] nothing in play", vim.log.levels.INFO)
+	end
+	vim.notify("[ai] " .. table.concat(said, ", "))
 	draw()
 end
 
@@ -697,8 +759,15 @@ local function open()
 	on({ "r", "g3" }, function()
 		settle("reject")
 	end)
-	on({ "x" }, cancel_selected)
-	on({ "X" }, cancel_every)
+	-- Uppercase is "all of them", the same way X is to x.
+	on({ "A" }, function()
+		settle_every("accept")
+	end)
+	on({ "R" }, function()
+		settle_every("reject")
+	end)
+	on({ "x" }, discard_selected)
+	on({ "X" }, discard_every)
 	on({ "<CR>" }, jump)
 	on({ "q", "<Esc>" }, function()
 		M.close()

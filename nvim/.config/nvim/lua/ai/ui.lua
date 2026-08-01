@@ -12,21 +12,26 @@ M.SPINNER = SPINNER
 
 local ns = api.nvim_create_namespace("ai_ui")
 
+---Width of a window showing this buffer, or of the screen when it is on none.
+---@param bufnr number
+---@return number
+local function width_of(bufnr)
+	for _, win in ipairs(api.nvim_list_wins()) do
+		if api.nvim_win_get_buf(win) == bufnr then
+			return api.nvim_win_get_width(win)
+		end
+	end
+	return vim.o.columns
+end
+
 ---Width available for virtual text on a row, so a long prompt gets an ellipsis instead of
 ---pushing the line off screen.
 ---@param bufnr number
 ---@param row number 0-indexed
 ---@return number
 local function room_on(bufnr, row)
-	local width = vim.o.columns
-	for _, win in ipairs(api.nvim_list_wins()) do
-		if api.nvim_win_get_buf(win) == bufnr then
-			width = api.nvim_win_get_width(win)
-			break
-		end
-	end
 	local line = api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""
-	return math.max(20, width - vim.fn.strdisplaywidth(line) - 6)
+	return math.max(20, width_of(bufnr) - vim.fn.strdisplaywidth(line) - 6)
 end
 
 ---Truncate to a display width, marking that something was cut. By character rather than by
@@ -43,16 +48,24 @@ end
 
 local ellipsise = M.ellipsise
 
----Animated virtual text pinned to a moving row.
+---Animated virtual text pinned to a moving row, or to a moving region.
 ---
 ---Virtual text rather than a cursor-relative float, because several requests can be in flight
 ---in one buffer and all of them have to be visible at once.
+---
+---Given a region — a second return value from `row_fn` — the label goes on a line of its own
+---above it and the region itself is tinted, because end-of-line text on the first row says
+---nothing about how far down the request reaches. A caller marking a single point (the chat
+---spinner) returns one value and keeps the end-of-line text, where there is no extent to show
+---and shifting the buffer down by a line would be noise.
 ---@param bufnr number
----@param row_fn fun(): number|nil 0-indexed row, re-read every frame so the mark follows edits
+---@param row_fn fun(): number|nil, number|nil 0-indexed start row and exclusive end row, re-read
+---   every frame so the marks follow edits
 ---@param label string
 ---@return { stop: fun(), set_label: fun(text: string) }
 function M.progress(bufnr, row_fn, label)
-	local mark, frame = nil, 1
+	M.ensure_highlights()
+	local mark, tint, frame = nil, nil, 1
 	local timer = vim.uv.new_timer()
 	local handle = {}
 	-- render() runs once before the timer starts, and its invalid-buffer branch calls stop(),
@@ -60,10 +73,24 @@ function M.progress(bufnr, row_fn, label)
 	local stopped = false
 
 	local function clear()
-		if mark and api.nvim_buf_is_valid(bufnr) then
-			pcall(api.nvim_buf_del_extmark, bufnr, ns, mark)
+		if api.nvim_buf_is_valid(bufnr) then
+			for _, id in ipairs({ mark or -1, tint or -1 }) do
+				if id >= 0 then
+					pcall(api.nvim_buf_del_extmark, bufnr, ns, id)
+				end
+			end
 		end
-		mark = nil
+		mark, tint = nil, nil
+	end
+
+	---@param id number|nil
+	---@param row number
+	---@param opts table
+	---@return number|nil id
+	local function place(id, row, opts)
+		opts.id = id
+		local ok, new = pcall(api.nvim_buf_set_extmark, bufnr, ns, row, 0, opts)
+		return ok and new or id
 	end
 
 	local function render()
@@ -73,20 +100,54 @@ function M.progress(bufnr, row_fn, label)
 		if not api.nvim_buf_is_valid(bufnr) then
 			return handle.stop()
 		end
-		local row = row_fn()
-		if not row then
+		local s0, e0 = row_fn()
+		if not s0 then
 			return clear()
 		end
-		row = math.max(0, math.min(row, api.nvim_buf_line_count(bufnr) - 1))
-		local text = (" %s %s "):format(SPINNER[frame], ellipsise(label, room_on(bufnr, row)))
-		local ok, id = pcall(api.nvim_buf_set_extmark, bufnr, ns, row, 0, {
-			id = mark,
-			virt_text = { { text, "DiagnosticVirtualTextHint" } },
-			virt_text_pos = "eol",
-			hl_mode = "combine",
+		local rows = api.nvim_buf_line_count(bufnr)
+		local row = math.max(0, math.min(s0, rows - 1))
+
+		if not e0 then
+			local text = (" %s %s "):format(SPINNER[frame], ellipsise(label, room_on(bufnr, row)))
+			mark = place(mark, row, {
+				virt_text = { { text, "DiagnosticVirtualTextHint" } },
+				virt_text_pos = "eol",
+				hl_mode = "combine",
+			})
+			return
+		end
+
+		-- Indented to the code it belongs to, so with two requests in flight the header reads as
+		-- part of the block below it rather than as a line of its own.
+		local indent = (api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""):match("^%s*")
+		local span = e0 - s0
+		-- Said in words as well as shown in colour: a tint is easy to miss, and impossible to
+		-- see at all on the row the cursor is sitting on.
+		local extent = span > 0 and ("%d line%s"):format(span, span == 1 and "" or "s") or "insert"
+		local head = ("%s %s "):format(indent, SPINNER[frame])
+		local tail = (" · %s"):format(extent)
+		local room = width_of(bufnr) - vim.fn.strdisplaywidth(head) - vim.fn.strdisplaywidth(tail) - 2
+		mark = place(mark, row, {
+			virt_lines = {
+				{
+					{ head .. ellipsise(label, math.max(20, room)), "DiagnosticVirtualTextHint" },
+					{ tail, "AiListDim" },
+				},
+			},
+			virt_lines_above = true,
 		})
-		if ok then
-			mark = id
+
+		if span > 0 then
+			local last = math.max(row, math.min(e0 - 1, rows - 1))
+			local text = api.nvim_buf_get_lines(bufnr, last, last + 1, false)[1] or ""
+			-- hl_eol so the tint reads as one block down to the last row, rather than tracing a
+			-- ragged edge that looks like a stray visual selection.
+			tint = place(tint, row, {
+				end_row = last,
+				end_col = #text,
+				hl_group = "AiInlineRange",
+				hl_eol = true,
+			})
 		end
 	end
 
@@ -293,6 +354,11 @@ function M.ensure_highlights()
 	set("AiFooterKey", { fg = p.key, bg = bg, bold = true })
 	set("AiFooterLabel", { fg = p.subtext0, bg = bg })
 	set("AiFooterDim", { fg = p.overlay0, bg = bg })
+
+	-- The lines an inline request is running against. A background rather than a foreground: the
+	-- code underneath keeps its own syntax colours, which is the point — it is being marked, not
+	-- rewritten yet.
+	set("AiInlineRange", { bg = p.surface0 })
 
 	-- Chat list and the provider/model picker
 	set("AiListReady", { fg = p.green, bg = "NONE" })

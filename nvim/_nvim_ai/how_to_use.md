@@ -13,7 +13,34 @@ Inline editing modifies code directly in your buffer. You pick *what* to change 
 
 With a visual selection, the reply replaces exactly that range. Without a selection, the reply is inserted at your cursor. Up to 40 lines above and below the selection are included in the prompt as context. LSP diagnostics in the range are included automatically. The floating prompt and the progress spinner both show the provider and model.
 
-You can have several inline requests in flight in the same buffer at once. Each one gets a spinner on its target row and an independent diff when it lands.
+You can have several inline requests in flight in the same buffer at once. Each one marks its own lines and gets an independent diff when it lands.
+
+**Seeing which lines a request is working on:**
+
+While a request runs, the lines it was given are tinted, and a spinner line sits directly above them showing the provider, model, your instruction, and how many lines are in play:
+
+```
+    ⠋ ollama · gpt-oss:120b · return 2 instead · 3 lines
+    local function f()
+      return 1
+    end
+```
+
+The mark follows the code: edit above it and the whole thing moves down with it. An insertion point — no selection — has no lines to tint, so its label reads `· insert` and marks the row it will insert at.
+
+**One request per region:**
+
+Lines already busy cannot be given a second edit. Starting a request that overlaps one already in flight, or a diff you have not accepted or rejected yet, is refused and tells you which lines are taken, what is on them, and which key clears it — `<leader>cx` to cancel a running request, `g2`/`g3` to settle a diff. Adjacent ranges are fine, and so are the same line numbers in a different buffer.
+
+The reason is that both requests build their prompt from the same lines, so whichever answer arrived second would be rewriting code the other one had already replaced.
+
+**Lines in flight are protected:**
+
+While a request is running you cannot change the lines it was given. Typing on them, deleting them or pasting over them is undone immediately, with a message naming the request holding them; entering insert mode on one of those lines is refused before you type anything. `u` undoes your edit and the revert together, as one step.
+
+This is not tidiness — the model was given those exact lines and its answer is applied back over them, so an edit of yours underneath would be thrown away silently the moment you accepted the diff. Cancel the request with `<leader>cx` if you would rather make the change yourself.
+
+The rest of the buffer is completely free to edit, including the lines immediately above and below the range. Insertion points are not protected either: there are no lines to preserve, and the anchor moves along with whatever you type around it.
 
 **Reviewing and applying edits:**
 
@@ -21,28 +48,33 @@ When a reply arrives it is rendered as a diff — the original code shown as del
 
 - `g2` — accept the diff under your cursor (makes the change permanent)
 - `g3` — reject the diff under your cursor (restores the original)
+- `<leader>cA` / `<leader>cR` — accept / reject **every** diff in this buffer
 - `<leader>cj` / `<leader>ck` — move to the next/previous hunk in the diff under your cursor
 
 When your cursor is outside any diff but only one diff is pending, `g2`/`g3` act on that one.
 
+`<leader>cA`/`<leader>cR` only touch diffs — anything still running is left running, and the message tells you how many were settled. For the whole list across every buffer, `A`/`R` in the inline list do the same thing.
+
+If you edited the lines of a diff yourself before rejecting it, your version is kept and you get a message saying so, rather than having your work quietly replaced by the original.
+
 If you close the buffer or the last window showing it while a diff is pending, the diff is rejected automatically — your buffer is not left in a half-applied state.
 
-**Cancelling in-flight requests:**
+**Discarding an edit:**
 
-Press `<leader>cx`. If your cursor is on the line where an inline request is in flight, that request is cancelled. In a chat buffer, it stops the running agent.
+Press `<leader>cx`. If the edit under your cursor is still running it is cancelled; if it has already answered, it is rejected. One key for "make this go away", whichever half of its life the edit is in — which state it is in is exactly the thing that changes on its own while you are not looking. In a chat buffer it stops the running agent instead.
 
-Press `<leader>cX` to cancel every in-flight inline request in the buffer at once.
+Press `<leader>cX` to clear the whole buffer out: everything still running is cancelled, everything that has answered is rejected. The message says how many of each.
 
 **The inline list — everything in play at once:**
 
-Press `<leader>cL`. One row per inline edit that has not been settled: requests still running, and finished ones whose diff you have not accepted or rejected yet. `<leader>cx` and `g2`/`g3` are scoped to the buffer you are in, but a request runs against the buffer it was *started* in — so this is the view that shows the ones you have since moved away from.
+Press `<leader>cL`. One row per inline edit that has not been settled: requests still running, and finished ones whose diff you have not accepted or rejected yet. The buffer-scoped keys (`g2`/`g3`, `<leader>cx`/`cX`/`cA`/`cR`) only reach the buffer you are in, but a request runs against the buffer it was *started* in — so this is the view that shows the ones you have since moved away from, and the only place that settles them all at once.
 
 ```
 ┌ Inline — 2 thinking · 1 to review ─────────────────────────────────────────────────────┐
 │▶ ◆ review        0s  ollama · gpt-oss:120b  lua/ai/inline/parse.lua:1  make this a s…  │
 │  ⠋ thinking     12s  ollama · gpt-oss:120b  lua/ai/pick.lua:2          add a b key s…  │
 │  ⠋ thinking      4s  claude · sonnet        lua/ai/chat.lua:2          explain the r…  │
-└ <CR> jump · a/r accept/reject · x cancel · X cancel all · q close ──────────────────────┘
+└ <CR> jump · a/r accept/reject · A/R all · x discard · X discard all · q close ───────────┘
 ```
 
 - `⠋ thinking` — still running, with how long for, and on ACP providers the tool it is using right now
@@ -57,13 +89,16 @@ The list redraws itself while it is open, so a request finishing changes state i
 | `<CR>` | close the list and jump to the edit, cursor on its first line |
 | `a` or `g2` | accept the diff on this row |
 | `r` or `g3` | reject it, restoring the original lines |
-| `x` | cancel the request on this row |
-| `X` | cancel every request in the list, across every buffer |
+| `A` / `R` | accept / reject **every** finished edit in the list, across every buffer |
+| `x` | discard this row: cancel it if running, reject it if finished |
+| `X` | discard the whole list: cancel everything running, reject everything finished |
 | `q` / `<Esc>` | close |
 
-`a`/`r` on a row that is still running — or `x` on one that has already finished — tells you which key you wanted instead of doing nothing. Accepting and rejecting work whether or not the target buffer is on screen.
+Uppercase is "all of them" throughout. `A`/`R` leave anything still running alone and report what they settled — naming the files, since they reach buffers that are not on screen. `X` is the one that empties the list outright.
 
-`range gone` where the location should be means the lines the edit was anchored to have since been deleted. For a running request that also means its answer will be dropped when it arrives, so it is worth cancelling.
+`a`/`r` on a row that is still running tells you it is not ready yet rather than doing nothing. Accepting and rejecting work whether or not the target buffer is on screen.
+
+`range gone` where the location should be means the lines the edit was anchored to have since been deleted. You will rarely see it on a running request now that deleting its lines puts them back; on a pending diff it means the answer has nowhere left to go, so reject it.
 
 One thing this list cannot show: a reply that arrives while its buffer is on screen *nowhere* is dropped rather than queued, because the diff UI would otherwise take over whichever window you had moved to. You get a warning naming the file. Requests to a buffer that is merely not focused are fine — the list itself is a float and hides nothing.
 

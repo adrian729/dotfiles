@@ -151,10 +151,13 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- <leader>cI - inline prompt, may read the repo (ACP transports only)
 -- <leader>cmi - switch inline provider + model, then its options (<CR> applies, q discards)
 -- <leader>cmc - the same for chat
--- <leader>cx - cancel inline request under cursor; in a chat buffer stops the agent
--- <leader>cX - cancel all inline requests in this buffer
+-- <leader>cx - discard the inline edit under the cursor: cancels it if still running, rejects it
+--              if it has answered; in a chat buffer stops the agent
+-- <leader>cX - discard everything in this buffer: cancel what is running, reject what answered
+-- <leader>cA / <leader>cR - accept / reject every inline diff in this buffer
 -- <leader>cL - inline list: every request in flight and every diff still waiting on you,
---              across all buffers. Live; a/r settles, x cancels, <CR> jumps to it
+--              across all buffers. Live; a/r settles, A/R settles all, x/X discards,
+--              <CR> jumps to it
 -- <leader>cj / <leader>ck - next / previous inline diff hunk
 -- g2 / g3 - accept / reject inline diff under cursor
 -- <leader>cc - toggle last chat (creates one if none)
