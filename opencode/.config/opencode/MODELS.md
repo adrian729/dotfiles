@@ -153,6 +153,16 @@ Req/mo: 16K
 Use: vision+video tasks
 Skip: text-only work (3.7 Plus same price, newer)
 
+Model: opencode-go/gpt-5.6-luna
+Cost in/out/cached: $0.20 / $1.20 / $0.02 (≤272K); $0.40 / $1.80 / $0.04 (>272K)
+Avg $/session: --
+Context: 1M | Output: 128K
+Input: text
+Cache: 90% | Go rank: --
+Req/mo: --
+Use: cheapest GPT-5 class model, strong reasoning per dollar, temporary 2x usage limits
+Skip: tasks >272K context (premium tier), vision/video/audio
+
 Model: opencode-go/grok-4.5
 Cost in/out/cached: $2.00 / $6.00 / $0.50 (≤200K); $4.00 / $12.00 / $1.00 (>200K)
 Avg $/session: --
@@ -162,6 +172,16 @@ Cache: -- | Go rank: --
 Req/mo: --
 Use: massive output (500K), vision, large reasoning windows
 Skip: budget work (expensive, premium tier over 200K)
+
+Model: opencode-go/hy3
+Cost in/out/cached: $0.14 / $0.58 / $0.035
+Avg $/session: --
+Context: 256K | Output: 64K
+Input: text
+Cache: 75% | Go rank: --
+Req/mo: --
+Use: Tencent open-weight model, cheap input, good cache ratio
+Skip: tasks needing >256K context, vision/video/audio
 
 ## Free models
 
@@ -192,10 +212,15 @@ Input: text
 Privacy: logged for NVIDIA improvement, trial use
 Note: NVIDIA-hosted, limited trial
 
-Model: opencode/hy3-free
+Model: opencode/laguna-s-2.1-free
 Input: text
-Privacy: unknown
-Note: Tencent-hosted, experimental
+Privacy: data may train model
+Note: Poolside, 1M context, 32K output
+
+Model: opencode/ling-3.0-flash-free
+Input: text
+Privacy: data may train model
+Note: flash model, experimental
 
 ## Ollama Cloud (Free)
 
@@ -286,6 +311,11 @@ Context: 262K | Output: 262K
 Input: text+image
 Note: free on Ollama Cloud, specs match Go
 
+Model: ollama-cloud/kimi-k3
+Context: 1M | Output: 131K (Ollama) vs 131K (Go)
+Input: text+image+video
+Note: free on Ollama Cloud, frontier Kimi reasoning, also on Go (paid)
+
 Model: ollama-cloud/minimax-m2.5
 Context: 205K | Output: 131K
 Input: text
@@ -313,18 +343,17 @@ Skip: nemotron-3-super better unless you need ultra
 
 Highest volume / cheapest: opencode-go/deepseek-v4-flash, opencode-go/mimo-v2.5
 Best open reasoning: opencode-go/qwen3.7-max, opencode-go/deepseek-v4-pro
-Best value mid-tier: opencode-go/qwen3.7-plus, opencode-go/minimax-m3
+Best value mid-tier: opencode-go/qwen3.7-plus, opencode-go/minimax-m3, opencode-go/gpt-5.6-luna
 Need vision: opencode-go/mimo-v2.5, opencode-go/qwen3.7-plus, opencode-go/qwen3.6-plus, opencode-go/minimax-m3, opencode-go/grok-4.5
 Need video: opencode-go/mimo-v2.5, opencode-go/kimi-k2.7-code, opencode-go/kimi-k2.6, opencode-go/qwen3.7-plus, opencode-go/qwen3.6-plus, opencode-go/minimax-m3, opencode-go/kimi-k3
 Need PDF input: opencode-go/mimo-v2.5 (was mimo-v2-omni — removed from Go)
 Need audio input: opencode-go/mimo-v2.5
 Need large output (262K+): opencode-go/kimi-k2.7-code (262K), opencode-go/grok-4.5 (500K)
 Need Chinese codebases: opencode-go/glm-5.2
-Cheapest per session: opencode-go/mimo-v2.5 ($0.06), opencode-go/deepseek-v4-flash ($0.08)
+Cheapest per session: opencode-go/mimo-v2.5 ($0.06), opencode-go/hy3 (--), opencode-go/deepseek-v4-flash ($0.08)
 Best cache ratio (lower effective cost): opencode-go/deepseek-v4-pro (97%), opencode-go/qwen3.7-max (97%), opencode-go/deepseek-v4-flash (96%), opencode-go/mimo-v2.5-pro (96%), opencode-go/kimi-k2.7-code (96%)
 Budget exhausted: free models
-Need OpenAI open-weights: ollama-cloud/gpt-oss:20b, ollama-cloud/gpt-oss:120b
-Need Google DeepMind + vision: ollama-cloud/gemma4:31b (audio only on E2B/E4B sizes)
+Need cheapest GPT class: opencode-go/gpt-5.6-luna
 Need NVIDIA 120B reasoning: ollama-cloud/nemotron-3-super
 Need 1M context NVIDIA: ollama-cloud/nemotron-3-nano:30b
 Need Mistral 675B: ollama-cloud/mistral-large-3:675b (no reasoning)
