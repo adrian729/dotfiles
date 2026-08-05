@@ -147,31 +147,7 @@ map("n", "<leader>fk", builtin.keymaps, { desc = "Find keymaps" })
 -- ------------------------------------------------------------------
 -- codecompanion.lua
 -- ------------------------------------------------------------------
--- <leader>ci - inline prompt (forbids tools)
--- <leader>cI - inline prompt, may read the repo (ACP transports only)
--- <leader>cmi - switch inline provider + model, then its options (<CR> applies, q discards)
--- <leader>cmc - the same for chat
--- <leader>cx - discard the inline edit under the cursor: cancels it if still running, rejects it
---              if it has answered; in a chat buffer stops the agent
--- <leader>cX - discard everything in this buffer: cancel what is running, reject what answered
--- <leader>cA - accept every inline diff in this buffer
--- <leader>cR - ask again about the inline edit under the cursor (rejects/cancels it first)
--- <leader>cL - inline list: every request in flight, every diff still waiting on you, and every
---              reply that could not be applied, across all buffers. Live; a accepts, r asks again
---              with the instruction pre-filled, x discards (cancel/reject/dismiss), A/X in bulk,
---              <CR> jumps or reads
---              (the statusline shows the same counts: ↻ running, ◆ waiting, ✖ failed)
--- <leader>cj / <leader>ck - next / previous inline diff hunk
--- g2 / g3 - accept / reject inline diff under cursor
--- <leader>cc - toggle last chat (creates one if none)
--- <leader>ca - action palette
--- <leader>cn - new chat with current provider + options
--- <leader>cq - close all chats
--- <leader>cr - rename current chat
--- <leader>cd - delete current chat and its saved transcript (y/n, defaults to no)
--- <leader>cs - status panel
--- <leader>cl - chat list (? in the picker lists its keys and markers)
---
--- In a chat buffer the footer along the bottom shows the keys worth knowing; ? there opens
--- CodeCompanion's own full keymap list.
+-- The <leader>c* keymaps are ducktape.nvim's, not defined in this config — see
+-- ~/projects/ducktape.nvim/docs/keymaps.md for the current list, so this comment can't drift
+-- out of sync with the plugin again.
 -- ga / gd / … - plugin-native, inside the chat buffer

@@ -93,8 +93,12 @@ nvim/
     lua/config/        options.lua, keymaps.lua, autocmds.lua, lazy.lua
     lua/plugins/       autocomplete, catppuccin, codecompanion, colorizer, core, fzf, git, harpoon, lsp, markdown, rename, telescope, treesitter
     .claude/settings.local.json
+  _nvim_ai/            stubs pointing at ~/projects/ducktape.nvim's own docs (the AI layer that
+                       used to live in lua/ai/ is now that standalone plugin, not part of this repo)
   .stow-local-ignore
   install.sh
+
+`lua/plugins/codecompanion.lua` depends on `~/projects/ducktape.nvim` existing locally: `lua/config/lazy.lua`'s `dev = { path = "~/projects", patterns = { "adrian729" }, fallback = true }` makes lazy.nvim consume that local checkout when present, falling back to a normal GitHub clone (`adrian729/ducktape.nvim`, public) on a machine without it. `fallback = true` is required — lazy.nvim's `dev.patterns` matching otherwise forces the local path unconditionally even when it's absent, breaking any machine but this one.
 
 tmux/
   .config/tmux/

@@ -26,4 +26,10 @@ require("lazy").setup({
 	},
 	install = { colorscheme = { "catppuccin" } },
 	checker = { enabled = true },
+	dev = {
+		path = "~/projects",
+		patterns = { "adrian729" },
+		fallback = true, -- required: without it, a pattern match forces dir=dev_dir even when
+		-- absent (lazy/core/meta.lua), breaking every machine but this one
+	},
 })

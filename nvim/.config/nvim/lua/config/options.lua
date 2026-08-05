@@ -87,21 +87,3 @@ opt.foldexpr = "v:lua.smart_foldexpr()"
 opt.foldtext = ""
 opt.foldlevel = 99
 opt.foldlevelstart = 99
-
--- Inline AI counts in the statusline: the only place that says something arrived while you were in
--- another file. Everything else inline shows is either where the edit is or behind <leader>cL.
---
--- Injected into whatever nvim's default already is rather than replacing it. That default is not
--- empty on this version — it carries the terminal exit code, vim.ui.progress_status(), the busy
--- indicator, vim.diagnostic.status() and the ruler — and writing the documented "equivalent" over
--- it would quietly throw all of that away.
-do
-	local ai = "%{%v:lua.require'ai.statusline'.render()%}"
-	local current = vim.o.statusline
-	if not current:find("ai.statusline", 1, true) then
-		-- Just left of the ruler, so it sits at the right-hand end of the real content. Appended if
-		-- that chunk is ever renamed, which puts it in the wrong place but never breaks the bar.
-		local at = current:find("%{% &ruler ?", 1, true)
-		vim.o.statusline = at and (current:sub(1, at - 1) .. ai .. current:sub(at)) or (current .. ai)
-	end
-end
