@@ -365,7 +365,7 @@ Agent model preferences are maintained in `opencode-models.json` (machine-readab
 
 Agent models sorted by best fit. Max 10. Provider prefix required: `opencode-go/` (Go), `opencode/` (free tier), `ollama-cloud/` (Ollama Cloud).
 
-Agent: auditor (security audit, privacy-critical, no free models — data may train)
+Agent: auditor (security audit, privacy-critical, 25 steps)
 Agent: debugger (bug diagnosis, high context, 40 steps)
 Agent: implementer-quick (scaffolding, boilerplate, small edits, 15 steps)
 Agent: implementer (features, bugs, refactors, tests, 30 steps)

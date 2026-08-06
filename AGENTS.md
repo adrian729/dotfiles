@@ -70,6 +70,9 @@ opencode/
     agents/            8 agent .md files (auditor, debugger, implementer,
                        implementer-quick, planner, researcher, reviewer,
                        reviewer-quick)
+    plugins/           model-fallback.js (auto-loaded; resends rate-limited
+                       sessions on a free model — `opencode/*-free` only,
+                       never ollama-cloud which rate-limits too)
   .local/
     config/            opencode-models.json (unified model config)
     scripts/           opencode-git-wt, opencode-open-wt, opencode-wt,
