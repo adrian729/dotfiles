@@ -31,6 +31,22 @@ if command -v nvim &>/dev/null && ! nvim_ge_012; then
   fi
 fi
 
+if command -v nvim &>/dev/null; then
+  echo "Installing Neovim plugins (lazy.nvim)..."
+  nvim --headless -c "qa" 2>&1
+
+  # markdown-preview.nvim's declared build step (vim.fn["mkdp#util#install"]()) runs during
+  # lazy.nvim's install pipeline before the plugin is ever added to &rtp, so the autoload
+  # function it needs can't resolve — it fails with E117 on every fresh install (not a
+  # one-off network blip) and lazy.nvim never retries a plugin it considers installed.
+  # Run the plugin's own installer script directly instead of routing through vim/autoload.
+  mkdp_app="$HOME/.local/share/nvim/lazy/markdown-preview.nvim/app"
+  if [ -f "$mkdp_app/install.sh" ] && [ -z "$(ls -A "$mkdp_app/bin" 2>/dev/null)" ]; then
+    echo "Building markdown-preview.nvim (fetching preview server binary)..."
+    sh "$mkdp_app/install.sh"
+  fi
+fi
+
 # llvm is keg-only — shared handling lives in clangd/install.sh (sibling package)
 clangd_install="$(dirname "$0")/../clangd/install.sh"
 if [ -f "$clangd_install" ]; then
