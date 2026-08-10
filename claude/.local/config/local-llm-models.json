@@ -1,15 +1,18 @@
 {
   "models": {
-    "qwen3:30b": { "footprint_gb": 22 },
+    "qwen3.6:35b": { "footprint_gb": 24 },
     "qwen3-coder:30b": { "footprint_gb": 22 },
+    "gemma4:26b": { "footprint_gb": 18 },
     "qwen3:14b": { "footprint_gb": 12 },
     "qwen3:8b": { "footprint_gb": 7 },
     "qwen2.5-coder:7b": { "footprint_gb": 6 }
   },
-  "compress_order": ["qwen3:30b", "qwen3:14b", "qwen3:8b"],
+  "compress_order": ["qwen3.6:35b", "gemma4:26b", "qwen3:14b", "qwen3:8b"],
   "coder_order": ["qwen3-coder:30b", "qwen2.5-coder:7b"],
   "better_at_code": {
     "qwen3-coder:30b": ["*"],
     "qwen2.5-coder:7b": ["qwen3:14b", "qwen3:8b"]
-  }
+  },
+  "pull_lineup": ["qwen3.6:35b", "gemma4:26b", "qwen3-coder:30b", "qwen3:14b"],
+  "pull_extras": ["qwen3:8b", "qwen2.5-coder:7b"]
 }

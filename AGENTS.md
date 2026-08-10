@@ -55,8 +55,8 @@ claude/
     tmp/
    .local/
     config/            local-llm-models.json (static ollama model catalog)
-    scripts/           claude-wt, git-wt, llm, llm-models-probe, llm-probe,
-                       open-wt, opencode-llm, opencode-task
+    scripts/           claude-wt, git-wt, llm, llm-models-probe,
+                       llm-probe, open-wt, opencode-llm, opencode-task
   .stow-local-ignore
   install.sh
   pre_stow.sh          clears standalone script copies out of ~/.local/scripts
@@ -157,7 +157,7 @@ kitty/
 ollama/
   .config/ollama/
     ollama.env.template (ollama.env gitignored — secrets)
-  .local/scripts/      ollama-ctl
+  .local/scripts/      ollama-ctl, llm-models-pull
   .gitignore
   .stow-local-ignore
   install.sh
@@ -187,7 +187,7 @@ bettercmdtab/
 1. Bootstraps Homebrew if missing, then verifies/installs `stow`
 2. Stows all 12 packages from its `directories` array (or prompts per-package unless answering "y" to "stow all"), via a `stow_pkg` helper that runs the package's `pre_stow.sh` first if it has one. `pre_stow.sh` is for work that must happen while the target files are still unstowed — the two that exist (`claude/`, `opencode/`) delete the plain script copies `standalone_quick_setup.sh` leaves in `~/.local/scripts`, which stow would otherwise refuse to overwrite. Keep this hook generic in root `install.sh`; package-specific logic belongs in the package's own `pre_stow.sh`. A failing `pre_stow.sh` warns and stows anyway.
 3. Runs each package's own `install.sh` if present — all 12 packages have one now, mostly an idempotent `brew install <tool>` guard (`command -v` check; `agents/install.sh` is a no-op placeholder). Notable exceptions:
-   - **claude/install.sh**: also installs the `claude` CLI itself (brew cask on macOS, `claude.ai/install.sh` on Linux — Linuxbrew has no cask support), copies `settings.json` (not symlink → tool can modify freely), sets `editorMode: "vim"` in `~/.claude.json`, probes local LLM
+   - **claude/install.sh**: also installs the `claude` CLI itself (brew cask on macOS, `claude.ai/install.sh` on Linux — Linuxbrew has no cask support), copies `settings.json` (not symlink → tool can modify freely), sets `editorMode: "vim"` in `~/.claude.json`, probes local LLM (llm-models-probe warns when the catalogued lineup is missing — fix by running `llm-models-pull` manually)
    - **opencode/install.sh**: copies `opencode.json` (not symlink), probes free-tier model availability
    - **bettercmdtab/install.sh**: brew-installs `bettercmdtab`, copies `config.json` (not symlink → app writes back live), sets trigger hotkeys via `defaults write` (⌥Tab/⌥` to leave ⌘Tab/⌘` native)
    - **ollama/install.sh**: checks `ollama.env` exists, prints reminder if not

@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# llm-models-pull — manually install the local-LLM lineup for this machine.
+# Lineup comes from the catalog (~/.local/config/local-llm-models.json:
+# pull_lineup, or pull_extras with --all). Idempotent: skips installed models,
+# pulls only what fits the memory budget (same basis llm-probe uses), then
+# refreshes probe state. Run on a fresh machine when install.sh warns about
+# missing models, or after a lineup change.
+set -euo pipefail
+
+CATALOG="$HOME/.local/config/local-llm-models.json"
+PROBE_STATE="$HOME/.local/state/agents/local-llm.json"
+
+# Last resort when the catalog is missing or lacks the keys (mirrors the
+# fallback catalogs in llm-probe / llm-models-probe).
+FALLBACK_LINEUP=(qwen3.6:35b gemma4:26b qwen3-coder:30b qwen3:14b)
+FALLBACK_EXTRAS=(qwen3:8b qwen2.5-coder:7b)
+
+read_list() {
+  local key="$1"
+  if [ -f "$CATALOG" ]; then
+    jq -r --arg k "$key" '.[$k][]?' "$CATALOG" 2>/dev/null || true
+  fi
+}
+
+lineup=()
+while IFS= read -r m; do [ -n "$m" ] && lineup+=("$m"); done < <(read_list pull_lineup)
+[ ${#lineup[@]} -gt 0 ] || lineup=("${FALLBACK_LINEUP[@]}")
+extras=()
+while IFS= read -r m; do [ -n "$m" ] && extras+=("$m"); done < <(read_list pull_extras)
+[ ${#extras[@]} -gt 0 ] || extras=("${FALLBACK_EXTRAS[@]}")
+
+usage() {
+  cat <<'EOF'
+usage: llm-models-pull [--all] [--yes]
+
+Pulls the curated local-LLM lineup for this machine (idempotent).
+  --all   also pull the catalog's pull_extras (small-machine fallbacks)
+  --yes   skip the confirmation prompt
+EOF
+}
+
+[ $# -gt 0 ] && case "$1" in
+  -h|--help) usage; exit 0 ;;
+  --all) ALL=1 ;;
+  --yes) YES=1 ;;
+  *) echo "llm-models-pull: unknown option: $1" >&2; usage; exit 2 ;;
+esac
+
+footprint_gb() {
+  [ -f "$CATALOG" ] || return 0
+  jq -r --arg n "$1" '.models[$n].footprint_gb // empty' "$CATALOG" 2>/dev/null || true
+}
+
+# Memory budget from the last llm-probe run; falls back to a quick estimate
+# (llm-probe's rules: unified RAM on Apple Silicon / Linux, VRAM on NVIDIA).
+budget_gb() {
+  if [ -f "$PROBE_STATE" ]; then
+    local b
+    b=$(jq -r '.model_budget_gb // empty' "$PROBE_STATE" 2>/dev/null || true)
+    [ -n "$b" ] && { echo "$b"; return 0; }
+  fi
+  local ram vram
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    vram=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null \
+      | awk '{s+=$1} END {print int(s/1024)}')
+    [ -n "$vram" ] && [ "$vram" -gt 0 ] 2>/dev/null && { echo $((vram * 9 / 10)); return 0; }
+  fi
+  ram=$(sysctl -n hw.memsize 2>/dev/null | awk '{print int($1/1073741824)}')
+  [ -z "$ram" ] && ram=$(awk '/MemTotal/{print int($2/1048576)}' /proc/meminfo 2>/dev/null)
+  echo $((ram * 3 / 4))
+}
+
+command -v ollama >/dev/null 2>&1 || { echo "llm-models-pull: ollama not installed — run install.sh first" >&2; exit 1; }
+ollama list >/dev/null 2>&1 || { echo "llm-models-pull: cannot reach the ollama server — start it (Ollama.app or 'ollama serve')" >&2; exit 1; }
+
+PULL=("${lineup[@]}")
+[ "${ALL:-0}" = 1 ] && PULL+=("${extras[@]}")
+
+BUDGET=$(budget_gb)
+TO_PULL=()
+for m in "${PULL[@]}"; do
+  if ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$m"; then
+    echo "llm-models-pull: $m already installed"
+    continue
+  fi
+  fp=$(footprint_gb "$m")
+  if [ -n "$fp" ] && [ "$fp" -gt "$BUDGET" ]; then
+    echo "llm-models-pull: skipping $m (${fp}GB > ${BUDGET}GB budget)"
+    continue
+  fi
+  TO_PULL+=("$m")
+done
+
+[ ${#TO_PULL[@]} -eq 0 ] && { echo "llm-models-pull: nothing to pull"; exit 0; }
+
+total=0
+for m in "${TO_PULL[@]}"; do
+  fp=$(footprint_gb "$m")
+  [ -n "$fp" ] && total=$((total + fp))
+done
+echo "llm-models-pull: pulling ${#TO_PULL[@]} model(s): ${TO_PULL[*]} (~${total}GB)"
+
+if [ "${YES:-0}" != 1 ]; then
+  printf 'Proceed? [y/N] '
+  read -r ans
+  case "$ans" in y|Y) ;; *) echo "aborted"; exit 1 ;; esac
+fi
+
+FAILED=0
+for m in "${TO_PULL[@]}"; do
+  ollama pull "$m" || { echo "llm-models-pull: pull of $m failed" >&2; FAILED=1; }
+done
+
+# Refresh probe state so the runtime `llm` script sees the new lineup.
+command -v llm-models-probe >/dev/null 2>&1 && { llm-models-probe || true; llm-probe || true; }
+
+[ "$FAILED" = 0 ] || exit 1

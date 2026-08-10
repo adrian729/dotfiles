@@ -197,5 +197,5 @@ while [ "$i" -lt "$n" ]; do
   done
 done
 
-echo "llm: no candidate model available (tried: $tried) — 'ollama pull <model>' or fall back to Claude" >&2
+echo "llm: no candidate model available (tried: $tried) — run llm-models-pull or 'ollama pull <model>', or fall back to Claude" >&2
 exit 5
