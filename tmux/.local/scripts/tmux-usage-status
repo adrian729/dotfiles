@@ -21,10 +21,16 @@ RED="#F38BA8"
 # ── Limits ──
 WINDOW_5H=18000
 WINDOW_7D=604800
-WINDOW_30D=2592000
 LIMIT_5H=12
 LIMIT_7D=30
 LIMIT_30D=60
+
+# OpenCode's Go-plan monthly cap is a FIXED billing cycle, not a rolling 30-day window — two
+# independent "Monthly usage limit reached. Resets in N days" server errors (2026-08-04 and
+# 2026-08-06, both counting down to 2026-08-10) confirm a per-account reset anchored to a
+# calendar day-of-month. No local file or `opencode` CLI command exposes this day, so it's
+# hardcoded from that observation; if OpenCode ever changes the account's reset day, update it.
+RESET_DAY_OF_MONTH=10
 
 # Shared with claude/.claude/statusline.sh, which writes CLAUDE_CACHE — keep paths in sync.
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ai-status"
@@ -41,6 +47,20 @@ LOCK_DIR="$CACHE_DIR/tmux-opencode-refresh.lock"
 LOCK_PID_FILE="$LOCK_DIR.pid"
 
 NOW=$(date +%s)
+
+# ── Current OpenCode billing-cycle start (most recent RESET_DAY_OF_MONTH, UTC midnight) ──
+cur_day=$((10#$(date -u +%d)))
+cur_month=$((10#$(date -u +%m)))
+cur_year=$(date -u +%Y)
+if (( cur_day >= RESET_DAY_OF_MONTH )); then
+    cycle_year=$cur_year; cycle_month=$cur_month
+elif (( cur_month == 1 )); then
+    cycle_year=$((cur_year - 1)); cycle_month=12
+else
+    cycle_year=$cur_year; cycle_month=$((cur_month - 1))
+fi
+cycle_date=$(printf '%04d-%02d-%02d 00:00:00' "$cycle_year" "$cycle_month" "$RESET_DAY_OF_MONTH")
+CYCLE_START=$(date -u -j -f '%Y-%m-%d %H:%M:%S' "$cycle_date" +%s 2>/dev/null || date -u -d "$cycle_date" +%s 2>/dev/null || echo 0)
 
 # ── Percent formatting ──
 fmt_pct() {
@@ -117,18 +137,23 @@ refresh_opencode_cache() {
         (
             local cost_5h cost_7d cost_30d ts
             if [[ -f "$OPENCODE_DB" ]]; then
+                # Per-message, not per-session: session.model only holds the LAST model used,
+                # so a session that starts on opencode-go and gets rate-limit-fallen-back to a
+                # free model (model-fallback.js) would have its whole cost mistagged as free and
+                # silently dropped from the Go-plan budget. message.data carries the provider and
+                # timestamp actually billed for that message, so it survives mid-session fallback.
                 cost_5h=$(sqlite3 "$OPENCODE_DB" \
-                    "SELECT COALESCE(SUM(cost), 0) FROM session
+                    "SELECT COALESCE(SUM(json_extract(data, '\$.cost')), 0) FROM message
                      WHERE time_created > (unixepoch('now') - $WINDOW_5H) * 1000
-                     AND json_extract(model, '\$.providerID') = 'opencode-go'" 2>/dev/null) || cost_5h=0
+                     AND json_extract(data, '\$.providerID') = 'opencode-go'" 2>/dev/null) || cost_5h=0
                 cost_7d=$(sqlite3 "$OPENCODE_DB" \
-                    "SELECT COALESCE(SUM(cost), 0) FROM session
+                    "SELECT COALESCE(SUM(json_extract(data, '\$.cost')), 0) FROM message
                      WHERE time_created > (unixepoch('now') - $WINDOW_7D) * 1000
-                     AND json_extract(model, '\$.providerID') = 'opencode-go'" 2>/dev/null) || cost_7d=0
+                     AND json_extract(data, '\$.providerID') = 'opencode-go'" 2>/dev/null) || cost_7d=0
                 cost_30d=$(sqlite3 "$OPENCODE_DB" \
-                    "SELECT COALESCE(SUM(cost), 0) FROM session
-                     WHERE time_created > (unixepoch('now') - $WINDOW_30D) * 1000
-                     AND json_extract(model, '\$.providerID') = 'opencode-go'" 2>/dev/null) || cost_30d=0
+                    "SELECT COALESCE(SUM(json_extract(data, '\$.cost')), 0) FROM message
+                     WHERE time_created > $CYCLE_START * 1000
+                     AND json_extract(data, '\$.providerID') = 'opencode-go'" 2>/dev/null) || cost_30d=0
             else
                 cost_5h=0; cost_7d=0; cost_30d=0
             fi
