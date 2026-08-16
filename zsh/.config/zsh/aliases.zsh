@@ -13,8 +13,13 @@ alias tree='eza --tree --icons'
 # Reuse ls completions for eza (avoids defining a separate completion function)
 compdef eza=ls
 
-# Better cat
-alias cat='bat'
+# Better cat. Debian/Ubuntu package bat as `batcat` to avoid a name clash, so
+# fall back to that name before giving up and leaving plain cat alone.
+if (( $+commands[bat] )); then
+  alias cat='bat'
+elif (( $+commands[batcat] )); then
+  alias cat='batcat'
+fi
 
 # =========================================================
 # Core utilities

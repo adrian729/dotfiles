@@ -1,8 +1,18 @@
 #!/bin/bash
 
-command -v jq &>/dev/null || brew install jq
+. "$(dirname "$0")/../lib/common.sh"
 
-command -v opencode &>/dev/null || brew install opencode
+brew_shellenv 2>/dev/null
+
+ensure_cmd jq
+
+# The opencode formula has x86_64_linux/arm64_linux bottles, so brew covers both
+# platforms; fall back to opencode's own installer if brew never came up.
+if ! have opencode; then
+	ensure_cmd opencode ||
+		run_remote_installer https://opencode.ai/install ||
+		warn "opencode install failed — see https://opencode.ai/docs"
+fi
 
 config_target="$HOME/.config/opencode/opencode.json"
 mkdir -p "$(dirname "$config_target")"

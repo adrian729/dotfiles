@@ -1,8 +1,26 @@
 #!/bin/bash
 
-[[ "$OSTYPE" == "darwin"* ]] || { echo "bettercmdtab is macOS-only, skipping"; exit 0; }
+. "$(dirname "$0")/../lib/common.sh"
 
-command -v bettercmdtab &>/dev/null || brew install --cask bettercmdtab
+brew_shellenv 2>/dev/null
+
+# $OSTYPE is baked in at bash build time rather than read from uname, so it is
+# invisible to the rest of the OS-switch machinery — go through is_macos so
+# every package detects the platform the same way.
+is_macos || { echo "bettercmdtab is macOS-only, skipping"; exit 0; }
+
+# Test the Caskroom entry, not `command -v`: the cask installs an .app bundle
+# and puts no binary on PATH, so a `command -v bettercmdtab` guard is always
+# false and reinstalls the cask on every run — which then kills and relaunches
+# the running app for no reason.
+#
+# Warn rather than exit: the config copy and `defaults write` calls below are
+# still worth running on a machine where only the brew install is unavailable.
+if have brew; then
+	[ -d "$(brew --prefix)/Caskroom/bettercmdtab" ] || brew install --cask bettercmdtab
+else
+	warn "brew unavailable — install bettercmdtab manually; still applying its config"
+fi
 
 # Copy config.json as a regular file (not symlink), so BetterCmdTab can
 # modify it freely (live two-way sync) without dirtying the dotfiles repo.

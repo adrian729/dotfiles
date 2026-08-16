@@ -30,12 +30,20 @@ rss_mib() {
   local raw; raw=$(ps -o rss= -p "${1:-}" 2>/dev/null || echo 0); echo "$(( raw / 1024 ))"
 }
 
+# MiB of memory currently in use. macOS has no /proc, and Linux has no vm_stat,
+# so the two paths compute the same figure from whatever the kernel exposes:
+# active+wired pages on Darwin, MemTotal-MemAvailable on Linux.
 mem_snapshot() {
-  vm_stat 2>/dev/null | awk '/Pages active/ {a=$NF+0} /Pages wired/ {w=$NF+0} END {
-    "sysctl -n hw.memsize" | getline mem; close("sysctl -n hw.memsize");
-    pgsz=4096; if(mem+0 > 4*1024*1024*1024) pgsz=16384;
-    printf "%d", (a+w)*pgsz/1048576
-  }'
+  if [ "$(uname -s)" = Darwin ]; then
+    vm_stat 2>/dev/null | awk '/Pages active/ {a=$NF+0} /Pages wired/ {w=$NF+0} END {
+      "sysctl -n hw.memsize" | getline mem; close("sysctl -n hw.memsize");
+      pgsz=4096; if(mem+0 > 4*1024*1024*1024) pgsz=16384;
+      printf "%d", (a+w)*pgsz/1048576
+    }'
+  else
+    awk '/^MemTotal:/ {t=$2} /^MemAvailable:/ {a=$2} END {printf "%d", (t-a)/1024}' \
+      /proc/meminfo 2>/dev/null || echo 0
+  fi
 }
 
 agent_version() {

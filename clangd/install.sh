@@ -1,5 +1,9 @@
 #!/bin/bash
 
+. "$(dirname "$0")/../lib/common.sh"
+
+brew_shellenv 2>/dev/null
+
 # llvm is keg-only (not linked onto PATH by brew) — this installs it if any
 # requested tool binary is missing, then symlinks each into ~/.local/bin.
 # Shared with nvim/install.sh (sources this file for clang-format too).
@@ -13,7 +17,13 @@ ensure_llvm() {
     [ -f "/home/linuxbrew/.linuxbrew/opt/llvm/bin/$tool" ] && continue
     need_install=1
   done
-  [ "$need_install" -eq 1 ] && brew install llvm
+  if [ "$need_install" -eq 1 ]; then
+    if have brew; then
+      brew install llvm || warn "brew install llvm failed — ${tools[*]} unavailable"
+    else
+      warn "brew unavailable — install llvm manually for ${tools[*]}"
+    fi
+  fi
 
   [ -d /opt/homebrew/opt/llvm/bin ] && llvm_root="/opt/homebrew/opt/llvm"
   [ -d /usr/local/opt/llvm/bin ] && llvm_root="/usr/local/opt/llvm"

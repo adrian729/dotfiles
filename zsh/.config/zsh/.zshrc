@@ -33,8 +33,12 @@ setopt NUMERIC_GLOB_SORT  # sort file10 after file9, not after file1
 # Smart directory navigation & lf
 # =========================================================
 
-LF_ICONS=$(cat ~/.config/lf/icons | tr '\n' ':')
-export LF_ICONS
+# Guarded: the lf package can be blacklisted per-machine, and an unguarded cat
+# on a missing file prints an error on every single shell start.
+if [[ -f ~/.config/lf/icons ]]; then
+  LF_ICONS=$(tr '\n' ':' < ~/.config/lf/icons)
+  export LF_ICONS
+fi
 
 eval "$(zoxide init zsh)"
 

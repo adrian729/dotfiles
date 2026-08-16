@@ -1,30 +1,78 @@
 #!/usr/bin/env bash
-# ollama-ctl — manage ollama as a background service via brew services
+# ollama-ctl — manage ollama as a background service.
+#
+# The service manager differs per platform, so every operation goes through the
+# svc_* indirection below: macOS installs ollama from Homebrew and supervises it
+# with `brew services`, while Linux installs it from ollama.com's own script,
+# which registers a systemd unit and logs to the journal.
 
 SERVICE="ollama"
+
+case "$(uname -s)" in
+    Darwin) PLATFORM=macos ;;
+    *)      PLATFORM=linux ;;
+esac
 
 usage() {
     cat <<EOF
 Usage: ollama-ctl [COMMAND]
 
-Manage ollama as a background service (brew services).
+Manage ollama as a background service ($( [ "$PLATFORM" = macos ] && echo "brew services" || echo "systemd" )).
 
 Commands:
   (no arg)  Show status: running/stopped, PID, RSS, loaded model
   start     Start ollama in the background
   stop      Stop the ollama background service
   restart   Stop then start
-  log       Tail the ollama log file
+  log       Tail the ollama log
   -h, --help  Show this help message
 EOF
     exit 0
 }
 
+# --- platform service backends ----------------------------------------------
+
+if [ "$PLATFORM" = macos ]; then
+    svc_running() { brew services info "$SERVICE" 2>/dev/null | grep -q "Running: true"; }
+    svc_start()   { brew services start "$SERVICE"; }
+    svc_stop()    { brew services stop "$SERVICE"; }
+    svc_log() {
+        local prefix log
+        prefix=$(brew --prefix 2>/dev/null) || prefix=/usr/local
+        log="$prefix/var/log/ollama.log"
+        if [ -f "$log" ]; then
+            tail -f "$log"
+        else
+            echo "ollama-ctl: no log at $log" >&2
+            return 1
+        fi
+    }
+else
+    command -v systemctl >/dev/null 2>&1 ||
+        echo "ollama-ctl: systemctl not found — start ollama manually with 'ollama serve'" >&2
+
+    # The ollama.com installer creates a system-wide unit; a manual install may
+    # instead have a --user one. Pick whichever this machine actually knows
+    # about so start/stop/status all address the same unit.
+    if systemctl list-unit-files --user "$SERVICE.service" 2>/dev/null | grep -q "^$SERVICE.service"; then
+        SCOPE=(--user)
+        SUDO=()
+    else
+        SCOPE=()
+        # Only the state-changing verbs need root. `is-active` and `journalctl`
+        # are readable unprivileged, and routing them through sudo would make a
+        # bare `ollama-ctl` status check prompt for a password.
+        SUDO=(sudo)
+    fi
+    svc_running() { systemctl "${SCOPE[@]}" is-active --quiet "$SERVICE"; }
+    svc_start()   { "${SUDO[@]}" systemctl "${SCOPE[@]}" start "$SERVICE"; }
+    svc_stop()    { "${SUDO[@]}" systemctl "${SCOPE[@]}" stop "$SERVICE"; }
+    svc_log()     { journalctl "${SCOPE[@]}" -u "$SERVICE" -f; }
+fi
+
 status() {
-    local info pid running rss mem model
-    info=$(brew services info "$SERVICE" 2>/dev/null)
-    if echo "$info" | grep -q "Running: true"; then
-        running=true
+    local pid rss mem model
+    if svc_running; then
         pid=$(pgrep -f "ollama serve" | head -1)
         echo "ollama: running"
         if [[ -n "$pid" ]]; then
@@ -53,23 +101,23 @@ status() {
 case "${1:-}" in
     -h|--help) usage ;;
     start)
-        brew services start "$SERVICE"
+        svc_start
         sleep 1
         status
         ;;
     stop)
-        brew services stop "$SERVICE"
+        svc_stop
         status
         ;;
     restart)
-        brew services stop "$SERVICE"
+        svc_stop
         sleep 1
-        brew services start "$SERVICE"
+        svc_start
         sleep 1
         status
         ;;
     log)
-        tail -f /opt/homebrew/var/log/ollama.log
+        svc_log
         ;;
     "")
         status

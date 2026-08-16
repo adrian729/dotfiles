@@ -1,9 +1,15 @@
 #!/bin/bash
 
-command -v jq &>/dev/null || brew install jq
+. "$(dirname "$0")/../lib/common.sh"
 
-# Homebrew ships claude-code as a cask, which Linuxbrew does not support, so
-# Linux goes through the official installer (drops the binary in ~/.local/bin).
+brew_shellenv 2>/dev/null
+
+ensure_cmd jq
+
+# The claude-code cask does now ship arm64_linux/x86_64_linux variants, but
+# Linux still goes through the official installer (drops the binary in
+# ~/.local/bin): it is Anthropic's documented Linux path and self-updates,
+# whereas the cask would pin upgrades to `brew upgrade`.
 if [ "$(uname)" = Darwin ]; then
 	claude_native_fmt="Mach-O"
 	install_claude() { brew install --cask claude-code@latest; }
@@ -11,7 +17,7 @@ if [ "$(uname)" = Darwin ]; then
 	claude_install_desc="Homebrew"
 else
 	claude_native_fmt="ELF"
-	install_claude() { curl -fsSL https://claude.ai/install.sh | bash; }
+	install_claude() { run_remote_installer https://claude.ai/install.sh; }
 	reinstall_claude() { install_claude; }
 	claude_install_desc="claude.ai/install.sh"
 fi
@@ -31,13 +37,19 @@ fi
 # nvim's claude_code ACP adapter execs `claude-agent-acp` directly, so without it
 # every ACP chat and inline request dies at spawn with ENOENT. npm-only: there is
 # no brew formula, and neither the cask nor claude.ai/install.sh bundles it.
+#
+# ensure_node rather than a bare `command -v npm`: npm only happens to be on
+# PATH here because the opencode package installs first and brew's `opencode`
+# formula depends on node. Blacklist opencode, or run this script on its own,
+# and the bare check silently skips the install — this makes the dependency
+# explicit instead of load-bearing on the order of an array in install.sh.
 if ! command -v claude-agent-acp &>/dev/null; then
-	if command -v npm &>/dev/null; then
+	if ensure_node; then
 		echo "Installing claude-agent-acp (ACP bridge for nvim)..."
 		npm install -g @agentclientprotocol/claude-agent-acp ||
 			echo "claude/install.sh: claude-agent-acp install failed — nvim ACP chat and inline will not work" >&2
 	else
-		echo "claude/install.sh: npm not found — skipping claude-agent-acp; nvim ACP chat and inline will not work until it is installed" >&2
+		echo "claude/install.sh: npm unavailable — skipping claude-agent-acp; nvim ACP chat and inline will not work until it is installed" >&2
 	fi
 fi
 

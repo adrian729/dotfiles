@@ -1,5 +1,9 @@
 #!/bin/bash
 
+. "$(dirname "$0")/../lib/common.sh"
+
+brew_shellenv 2>/dev/null
+
 nvim_ge_012() {
   local ver major minor
   ver="$(nvim --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)"
@@ -20,7 +24,27 @@ command -v pyright &>/dev/null || MISSING+=(pyright)
 command -v rust-analyzer &>/dev/null || MISSING+=(rust-analyzer)
 command -v stylua &>/dev/null || MISSING+=(stylua)
 command -v ruff &>/dev/null || MISSING+=(ruff)
-[ ${#MISSING[@]} -gt 0 ] && brew install "${MISSING[@]}"
+if [ ${#MISSING[@]} -gt 0 ]; then
+  if have brew; then
+    brew install "${MISSING[@]}"
+  else
+    warn "brew unavailable — missing: ${MISSING[*]}"
+  fi
+fi
+
+# nvim-treesitter compiles every parser with a C compiler and
+# telescope-fzf-native's spec is `build = "make"`. macOS gets both from the
+# Command Line Tools; a fresh Debian/Ubuntu has neither.
+ensure_build_tools
+
+# lazy.nvim clones every plugin over git, and markdown-preview.nvim's installer
+# (run further down) fetches its server binary over curl.
+for tool in git curl; do
+  have "$tool" || { is_linux && apt_install "$tool"; } || warn "$tool missing — plugin installs may fail"
+done
+
+# opt.clipboard = "unnamedplus" needs a clipboard provider to exist.
+ensure_clipboard
 
 if command -v nvim &>/dev/null && ! nvim_ge_012; then
   cur="$(nvim --version | head -1)"
