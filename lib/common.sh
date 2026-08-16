@@ -38,9 +38,13 @@ warn() { echo "⚠️  $*" >&2; }
 interactive() { [ -t 0 ] && [ -t 1 ]; }
 
 # Ask a yes/no question. Non-interactive runs answer "no", so an unattended
-# install never blocks on an unanswerable prompt.
+# install never blocks on an unanswerable prompt. Root install.sh exports
+# DOTFILES_ASSUME_YES=1 once the user has agreed to stow everything (via -y or
+# the "stow all" prompt), so every confirm() downstream — including inside a
+# package's own install.sh — answers yes without asking again.
 confirm() {
 	local ans
+	[ "${DOTFILES_ASSUME_YES:-}" = "1" ] && return 0
 	interactive || return 1
 	printf '%s [y/N] ' "$1"
 	read -r ans || return 1
@@ -237,8 +241,13 @@ brew_bootstrap() {
 	fi
 
 	info "Installing Homebrew..."
-	run_remote_installer https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh ||
-		warn "the Homebrew installer did not complete"
+	# Homebrew's installer already sets NONINTERACTIVE itself when stdin is not a
+	# TTY; an attended run that has already agreed to DOTFILES_ASSUME_YES gets the
+	# same treatment so it skips Homebrew's own "Press RETURN to continue" prompt.
+	(
+		[ "${DOTFILES_ASSUME_YES:-}" = "1" ] && export NONINTERACTIVE=1
+		run_remote_installer https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh
+	) || warn "the Homebrew installer did not complete"
 
 	brew_shellenv 2>/dev/null
 	have brew || {

@@ -118,6 +118,14 @@ if [ -z "$stow_all" ]; then
 fi
 echo ""
 
+# Once the user has agreed to stow everything — via -y/--yes or this prompt —
+# propagate that "yes" to every confirm() downstream, including inside each
+# package's own install.sh (they inherit this as a plain env var), so nothing
+# asks again for the rest of the run.
+if [[ "$stow_all" =~ ^[Yy]$ ]]; then
+	export DOTFILES_ASSUME_YES=1
+fi
+
 # Stow a package, letting it clear its own way first: a package may ship a
 # pre_stow.sh for anything that has to happen while the target files are still
 # unstowed (stow refuses to overwrite a real file it didn't create).
