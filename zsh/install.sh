@@ -9,8 +9,8 @@ brew_shellenv 2>/dev/null
 # if that tree is missing or unmounted the account can no longer log in.
 if ! have zsh; then
 	if is_linux; then
-		info "Installing zsh (apt)..."
-		apt_install zsh || warn "zsh not installed — this whole package will be inert"
+		info "Installing zsh..."
+		pkg_install zsh || warn "zsh not installed — this whole package will be inert"
 	else
 		warn "zsh missing on macOS, which is unexpected — install it manually"
 	fi

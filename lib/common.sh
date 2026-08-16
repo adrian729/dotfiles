@@ -47,26 +47,94 @@ confirm() {
 	case "$ans" in y | Y | yes | YES) return 0 ;; *) return 1 ;; esac
 }
 
-# ---------- apt (Linux only) ----------
+# ---------- distro package managers (Linux only) ----------
 
-_apt_updated=0
-
-# apt_install PKG... — install Debian packages, refreshing the index once per
-# *process*. Root install.sh runs each package installer as its own `bash`, so
-# this dedupes calls within one script, not across a whole install run.
-# Returns non-zero (without failing the caller's script) on a non-apt distro so
-# callers can degrade to a warning.
-apt_install() {
+# The system package manager, or non-zero if none is recognised.
+#
+# Detected by which binary exists, not by /etc/os-release ID: derivatives are
+# the common case (Kubuntu, Mint, Pop!_OS, CachyOS, EndeavourOS, Nobara), they
+# all report their own ID, and what actually matters here is which tool is
+# present. Order matters only for the rare box carrying two.
+pkg_mgr() {
 	is_linux || return 1
-	have apt-get || {
-		warn "no apt-get — install manually: $*"
+	if [ -n "${_PKG_MGR:-}" ]; then
+		echo "$_PKG_MGR"
+		return 0
+	fi
+	local m
+	for m in apt-get dnf yum zypper pacman apk; do
+		if have "$m"; then
+			_PKG_MGR=$m
+			echo "$m"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# _pkg_name GENERIC MGR — most packages carry the same name everywhere; this
+# translates only the ones that do not. Empty output means "not applicable
+# here", so a caller can list a package that only some distros split out.
+_pkg_name() {
+	case "$1" in
+	procps) case "$2" in dnf | yum | pacman) echo procps-ng ;; *) echo procps ;; esac ;;
+	*) echo "$1" ;;
+	esac
+}
+
+_pkg_index_refreshed=0
+
+# pkg_install PKG... — install distro packages by their common name.
+#
+# Returns non-zero (without failing the caller's script) when no supported
+# package manager exists, so every caller can degrade to a warning instead of
+# assuming one distro family. Only apt needs an explicit index refresh; it is
+# done once per *process*, and since root install.sh runs each package's
+# installer as its own `bash`, that is per-script rather than per-run.
+pkg_install() {
+	is_linux || return 1
+	local mgr
+	mgr=$(pkg_mgr) || {
+		warn "no supported package manager found — install manually: $*"
 		return 1
 	}
-	if [ "$_apt_updated" -eq 0 ]; then
-		sudo apt-get update -qq || warn "apt-get update failed — continuing with a stale index"
-		_apt_updated=1
-	fi
-	sudo apt-get install -y "$@"
+	local pkgs=() p name
+	for p in "$@"; do
+		name=$(_pkg_name "$p" "$mgr")
+		# Deliberately unquoted: a translation may expand to several packages.
+		# shellcheck disable=SC2206
+		[ -n "$name" ] && pkgs+=($name)
+	done
+	[ "${#pkgs[@]}" -gt 0 ] || return 0
+
+	case "$mgr" in
+	apt-get)
+		if [ "$_pkg_index_refreshed" -eq 0 ]; then
+			sudo apt-get update -qq || warn "apt-get update failed — continuing with a stale index"
+			_pkg_index_refreshed=1
+		fi
+		sudo apt-get install -y "${pkgs[@]}"
+		;;
+	dnf | yum) sudo "$mgr" install -y "${pkgs[@]}" ;;
+	zypper) sudo zypper --non-interactive install "${pkgs[@]}" ;;
+	pacman) sudo pacman -S --needed --noconfirm "${pkgs[@]}" ;;
+	apk) sudo apk add "${pkgs[@]}" ;;
+	esac
+}
+
+# True when the distro's own repositories offer PKG. Asking first keeps a
+# missing package from surfacing as an install error when a fallback exists.
+pkg_available() {
+	local mgr
+	mgr=$(pkg_mgr) || return 1
+	case "$mgr" in
+	apt-get) apt-cache show "$1" >/dev/null 2>&1 ;;
+	dnf | yum) "$mgr" list --available "$1" >/dev/null 2>&1 ;;
+	zypper) zypper --non-interactive info "$1" 2>/dev/null | grep -q '^Version' ;;
+	pacman) pacman -Si "$1" >/dev/null 2>&1 ;;
+	apk) apk search -e "$1" 2>/dev/null | grep -q . ;;
+	*) return 1 ;;
+	esac
 }
 
 # ---------- remote installers ----------
@@ -130,18 +198,41 @@ brew_shellenv() {
 	eval "$("$b" shellenv)"
 }
 
+# Homebrew's documented build prerequisites, per distro family. Homebrew checks
+# for these but does not install them, and on a fresh machine curl is often
+# among the missing — which would otherwise kill the installer on its own first
+# line, before anything else in this repo gets a chance to run.
+brew_prereqs() {
+	local mgr
+	mgr=$(pkg_mgr) || {
+		warn "unknown package manager — install Homebrew's prerequisites manually:"
+		warn "  a C compiler, make, procps, curl, file and git"
+		return 1
+	}
+	case "$mgr" in
+	apt-get) pkg_install build-essential procps curl file git ;;
+	pacman) pkg_install base-devel procps curl file git ;;
+	apk) pkg_install build-base procps curl file git ;;
+	# Fedora/RHEL and openSUSE ship their toolchain as a group/pattern rather
+	# than a single package, which ensure_build_tools already knows how to ask
+	# for; the rest are ordinary packages.
+	dnf | yum | zypper)
+		ensure_build_tools
+		pkg_install procps curl file git
+		;;
+	esac
+}
+
 # Install Homebrew if absent and leave it on PATH. Homebrew's own installer
-# handles interactivity (it sets NONINTERACTIVE itself when stdin is not a TTY),
-# but it does not install its Debian prerequisites — the list below is the one
-# from Homebrew's docs, and without it the install fails on a fresh Kubuntu.
+# handles interactivity (it sets NONINTERACTIVE itself when stdin is not a TTY).
 brew_bootstrap() {
 	if brew_shellenv 2>/dev/null && have brew; then
 		return 0
 	fi
 
 	if is_linux; then
-		info "Installing Homebrew prerequisites (apt)..."
-		apt_install build-essential procps curl file git ||
+		info "Installing Homebrew prerequisites..."
+		brew_prereqs ||
 			warn "could not install Homebrew prerequisites — the installer below may fail"
 	fi
 
@@ -181,8 +272,25 @@ ensure_build_tools() {
 		return 1
 	fi
 	have cc && have make && return 0
-	info "Installing build toolchain (build-essential)..."
-	apt_install build-essential || warn "no C toolchain — treesitter parsers will fail to compile"
+	local mgr
+	mgr=$(pkg_mgr) || {
+		warn "unknown package manager — install a C compiler and make manually,"
+		warn "  or treesitter parsers and telescope-fzf-native will not build"
+		return 1
+	}
+	info "Installing build toolchain..."
+	case "$mgr" in
+	apt-get) pkg_install build-essential ;;
+	pacman) pkg_install base-devel ;;
+	apk) pkg_install build-base ;;
+	# Groups and patterns are not ordinary packages, so these bypass
+	# pkg_install; the plain-package fallback covers a stripped-down image
+	# where the group metadata is unavailable.
+	dnf | yum) sudo "$mgr" group install -y development-tools ||
+		sudo "$mgr" install -y gcc gcc-c++ make ;;
+	zypper) sudo zypper --non-interactive install -t pattern devel_basis ||
+		sudo zypper --non-interactive install gcc gcc-c++ make ;;
+	esac || warn "no C toolchain — treesitter parsers will fail to compile"
 }
 
 # Clipboard bridge for the current display server. tmux-clipboard probes
@@ -194,7 +302,7 @@ ensure_clipboard() {
 	is_macos && return 0
 	if have wl-copy || have xclip || have xsel; then return 0; fi
 	info "Installing clipboard bridges (wl-clipboard, xclip)..."
-	apt_install wl-clipboard xclip ||
+	pkg_install wl-clipboard xclip ||
 		warn "no clipboard tool — tmux copy and nvim's system clipboard will silently do nothing"
 }
 
@@ -236,11 +344,11 @@ ensure_nerd_font() {
 		warn "install FiraCode Nerd Font manually — icons will render as tofu"
 		return 1
 	}
-	have unzip || apt_install unzip || {
+	have unzip || pkg_install unzip || {
 		warn "unzip missing — cannot install FiraCode Nerd Font"
 		return 1
 	}
-	have fc-cache || apt_install fontconfig || warn "fontconfig missing — font cache will not refresh"
+	have fc-cache || pkg_install fontconfig || warn "fontconfig missing — font cache will not refresh"
 
 	dir="$HOME/.local/share/fonts/FiraCodeNerdFont"
 	# A temp *directory*, not `mktemp <tmpl>.zip`: both BSD and GNU mktemp only

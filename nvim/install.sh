@@ -40,7 +40,7 @@ ensure_build_tools
 # lazy.nvim clones every plugin over git, and markdown-preview.nvim's installer
 # (run further down) fetches its server binary over curl.
 for tool in git curl; do
-  have "$tool" || { is_linux && apt_install "$tool"; } || warn "$tool missing — plugin installs may fail"
+  have "$tool" || { is_linux && pkg_install "$tool"; } || warn "$tool missing — plugin installs may fail"
 done
 
 # opt.clipboard = "unnamedplus" needs a clipboard provider to exist.

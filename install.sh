@@ -33,7 +33,7 @@ brew_bootstrap || echo "⚠️  Continuing without Homebrew — most package ins
 # stow is the one hard requirement: without it nothing gets linked at all, so
 # fall back to apt when the Homebrew bootstrap did not work out.
 if ! command -v stow &>/dev/null; then
-	ensure_cmd stow || apt_install stow ||
+	ensure_cmd stow 2>/dev/null || pkg_install stow ||
 		{ echo "❌ stow is required and could not be installed." >&2; exit 1; }
 fi
 
