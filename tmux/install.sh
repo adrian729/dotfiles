@@ -18,3 +18,9 @@ if [ ! -d ~/.tmux/plugins/tpm ]; then
 	echo "Cloning TPM..."
 	git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
 fi
+
+# tmux.conf's @tpm_plugins are fetched by prefix+I normally; do it here so a
+# fresh machine (or an update) gets catppuccin/cpu/battery/etc. without anyone
+# remembering to hit prefix+I. install_plugins is idempotent and offline-safe.
+echo "Installing tmux plugins via TPM..."
+~/.tmux/plugins/tpm/bin/install_plugins
