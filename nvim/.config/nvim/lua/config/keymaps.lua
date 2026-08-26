@@ -79,7 +79,7 @@ map("n", "<leader>as", function()
 	if alt > 0 and vim.api.nvim_buf_is_loaded(alt) then
 		vim.api.nvim_set_current_buf(alt)
 	end
-end, { desc = "Swap to last buffer" })
+end, { desc = "Harpoon swap to last buffer" })
 -- ------------------------------------------------------------------
 -- LSP Actions
 -- ------------------------------------------------------------------
