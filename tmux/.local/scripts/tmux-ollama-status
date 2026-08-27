@@ -21,7 +21,12 @@ fi
 printf '#[fg=%s,bg=%s] ● ' "$GREEN" "$SURFACE_0"
 printf '#[fg=%s,bg=%s]id%s' "$FG" "$SURFACE_0" "$PID"
 
-RSS=$(ps -o rss= -p "$PID" 2>/dev/null)
+# Model weights live in the spawned llama-server process, not the tiny ollama
+# daemon — sum both RSS values or the pill under-reports loaded models by GBs.
+RSS=$(ps -o rss= -p "$PID" 2>/dev/null | tr -d ' ')
+for child in $(pgrep -x llama-server 2>/dev/null); do
+    RSS=$(( RSS + $(ps -o rss= -p "$child" 2>/dev/null | tr -d ' ') ))
+done
 if [[ -n "$RSS" ]]; then
     if (( RSS > 1048576 )); then
         mem=$(echo "scale=1; $RSS / 1048576" | bc -l)"GB"

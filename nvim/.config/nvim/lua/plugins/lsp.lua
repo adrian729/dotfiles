@@ -113,7 +113,9 @@ return {
 			vim.api.nvim_create_autocmd("FileType", {
 				pattern = { "markdown" },
 				callback = function(args)
-					vim.fn.jobstart({ "prettierd", "start" }, { detach = true })
+					if vim.fn.executable("prettierd") == 1 then
+						vim.fn.jobstart({ "prettierd", "start" }, { detach = true })
+					end
 
 					local opts = { buffer = args.buf, silent = true }
 
