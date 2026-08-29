@@ -74,12 +74,40 @@ map("n", "<leader>ak", function() harpoon:list():select(3) end, { desc = "Harpoo
 map("n", "<leader>al", function() harpoon:list():select(4) end, { desc = "Harpoon select 4" })
 map("n", "<leader>ap", function() harpoon:list():prev() end, { desc = "Harpoon prev" })
 map("n", "<leader>an", function() harpoon:list():next() end, { desc = "Harpoon next" })
+local file_history = {}
+vim.api.nvim_create_autocmd("BufEnter", {
+	callback = function(ev)
+		if vim.bo[ev.buf].buftype ~= "" or vim.bo[ev.buf].filetype == "netrw" or vim.fn.bufname(ev.buf) == "" then
+			return
+		end
+		for i, buf in ipairs(file_history) do
+			if buf == ev.buf then
+				table.remove(file_history, i)
+				break
+			end
+		end
+		table.insert(file_history, ev.buf)
+		if #file_history > 2 then
+			table.remove(file_history, 1)
+		end
+	end,
+})
 map("n", "<leader>as", function()
-	local alt = vim.fn.bufnr("#")
-	if alt > 0 and vim.api.nvim_buf_is_loaded(alt) then
-		vim.api.nvim_set_current_buf(alt)
+	local cur = vim.api.nvim_get_current_buf()
+	local target
+	if vim.bo[cur].filetype == "netrw" then
+		target = file_history[#file_history]
+	else
+		for _, buf in ipairs(file_history) do
+			if buf ~= cur then
+				target = buf
+			end
+		end
 	end
-end, { desc = "Harpoon swap to last buffer" })
+	if target and vim.api.nvim_buf_is_loaded(target) then
+		vim.api.nvim_set_current_buf(target)
+	end
+end, { desc = "Swap to last file" })
 -- ------------------------------------------------------------------
 -- LSP Actions
 -- ------------------------------------------------------------------
