@@ -53,3 +53,15 @@ if [ -x "$probe_agent" ]; then
 else
     echo "opencode-agent-models-probe not stowed yet — skipping"
 fi
+
+# Sync provider.ollama.models in the copied opencode.json with whatever's
+# actually pulled in the local Ollama daemon right now (live query, not a
+# static list). Non-fatal: no Ollama / daemon down / zero models all resolve
+# to an empty models map. Same script is meant to be re-run manually after
+# `ollama pull`/`ollama rm` — see opencode-ollama-models-sync.
+sync_ollama="$HOME/.local/scripts/opencode-ollama-models-sync"
+if [ -x "$sync_ollama" ]; then
+    "$sync_ollama" || echo "opencode-ollama-models-sync failed — leaving provider.ollama.models as-is"
+else
+    echo "opencode-ollama-models-sync not stowed yet — skipping"
+fi

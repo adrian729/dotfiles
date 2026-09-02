@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# opencode-ollama-models-probe — populate provider.ollama.models from locally
+# pulled Ollama models (queried live from the daemon, not opencode.json).
+# Non-fatal: no Ollama / daemon down / zero models all resolve to {}.
+set -eo pipefail
+
+STATE_DIR="$HOME/.local/state/agents"
+OUT_FILE="$STATE_DIR/opencode-ollama-models.json"
+
+HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+case "$HOST" in
+  http://*|https://*) : ;;
+  *) HOST="http://$HOST" ;;
+esac
+
+mkdir -p "$STATE_DIR"
+
+MODELS_JSON='{}'
+if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+  TAGS=$(curl -sf "$HOST/api/tags" 2>/dev/null || true)
+  if [ -n "$TAGS" ]; then
+    MODELS_JSON=$(echo "$TAGS" | jq '
+      [.models[]?.name] | map(select(. != null)) |
+      map({(.): {name: (. + " (local)")}}) | add // {}
+    ' 2>/dev/null || echo '{}')
+  fi
+fi
+
+printf '%s\n' "$MODELS_JSON" >"$OUT_FILE"
+
+count=$(echo "$MODELS_JSON" | jq 'length' 2>/dev/null || echo 0)
+names=$(echo "$MODELS_JSON" | jq -r 'keys | join(", ")' 2>/dev/null || true)
+echo "opencode-ollama-models-probe: $count local Ollama model(s) found${names:+: $names}"

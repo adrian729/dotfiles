@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# opencode-ollama-models-sync — refresh provider.ollama.models in opencode.json
+# from whatever's actually pulled in the local Ollama daemon right now.
+# Run manually after `ollama pull`/`ollama rm` — install.sh also calls this.
+set -eo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROBE="$SELF_DIR/opencode-ollama-models-probe"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json"
+STATE_FILE="$HOME/.local/state/agents/opencode-ollama-models.json"
+
+die() { echo "opencode-ollama-models-sync: $*" >&2; exit 1; }
+
+command -v jq >/dev/null 2>&1 || die "jq not found"
+[ -x "$PROBE" ] || die "probe not found at $PROBE"
+[ -f "$CONFIG" ] || die "no config at $CONFIG"
+
+"$PROBE"
+
+tmp=$(mktemp "$CONFIG.XXXXXX")
+if jq --slurpfile m "$STATE_FILE" '.provider.ollama.models = $m[0]' "$CONFIG" >"$tmp"; then
+  chmod 644 "$tmp"
+  mv "$tmp" "$CONFIG"
+  echo "opencode-ollama-models-sync: updated $CONFIG"
+else
+  rm -f "$tmp"
+  die "merge failed — config left untouched"
+fi

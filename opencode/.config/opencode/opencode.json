@@ -4,7 +4,17 @@
   "server": {
     "port": 42069
   },
-  "provider": {},
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama",
+      "options": {
+        "baseURL": "http://localhost:11434/v1",
+        "apiKey": "ollama"
+      },
+      "models": {}
+    }
+  },
   "permission": {
     "read": "allow",
     "grep": "allow",
@@ -31,6 +41,8 @@
       "ollama show *": "allow",
       "opencode-models *": "allow",
       "opencode-agent-models-probe *": "allow",
+      "opencode-ollama-models-probe *": "allow",
+      "opencode-ollama-models-sync *": "allow",
       "cat *": "allow",
       "bat *": "allow",
       "ls *": "allow",
