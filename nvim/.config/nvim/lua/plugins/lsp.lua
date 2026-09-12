@@ -224,7 +224,7 @@ return {
 			},
 			formatters = {
 				prettier = {
-					args = { "--stdin-filepath", "$FILENAME", "--prose-wrap", "always", "--parser", "markdown" },
+					args = { "--stdin-filepath", "$FILENAME", "--prose-wrap", "preserve", "--parser", "markdown" },
 				},
 				leptosfmt = {
 					prepend_args = { "--rustfmt" },
