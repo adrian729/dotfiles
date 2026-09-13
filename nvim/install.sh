@@ -20,10 +20,10 @@ MISSING=()
 command -v lua-language-server &>/dev/null || MISSING+=(lua-language-server)
 command -v marksman &>/dev/null || MISSING+=(marksman)
 command -v nvim &>/dev/null || MISSING+=(neovim)
-command -v pyright &>/dev/null || MISSING+=(pyright)
 command -v rust-analyzer &>/dev/null || MISSING+=(rust-analyzer)
 command -v stylua &>/dev/null || MISSING+=(stylua)
 command -v ruff &>/dev/null || MISSING+=(ruff)
+command -v ty &>/dev/null || MISSING+=(ty)
 if [ ${#MISSING[@]} -gt 0 ]; then
   if have brew; then
     brew install "${MISSING[@]}"

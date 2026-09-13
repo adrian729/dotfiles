@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "dotfiles",
+  "owner": {
+    "name": "adrian729"
+  },
+  "plugins": [
+    {
+      "name": "ty-lsp",
+      "description": "Python language server (ty) for type checking and code intelligence",
+      "version": "1.0.0",
+      "source": "./plugins/ty-lsp",
+      "category": "development"
+    }
+  ]
+}

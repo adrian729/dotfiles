@@ -177,7 +177,7 @@ return {
 				"lua_ls",
 				"clangd",
 				"rust_analyzer",
-				"pyright",
+				"ty",
 				"marksman",
 			})
 		end,

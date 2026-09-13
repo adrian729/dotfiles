@@ -108,3 +108,19 @@ else
     echo "claude/install.sh: failed to copy settings.json — leaving existing $settings_target untouched" >&2
 fi
 
+# The official marketplace has no ty plugin, so ty-lsp lives in this repo's own
+# marketplace. Registered via the CLI rather than extraKnownMarketplaces in the
+# repo settings.json because the directory source must be an absolute path,
+# which differs per machine; it has to run after the copy above, since `add`
+# writes that declaration into ~/.claude/settings.json. Safe to re-run.
+#
+# install copies the plugin into ~/.claude/plugins/cache and never refreshes it:
+# `claude plugin update` is gated on the version field, so after editing
+# marketplace/plugins/ty-lsp either bump its version or uninstall and reinstall.
+if command -v claude &>/dev/null; then
+    marketplace="$(cd "$(dirname "$0")/marketplace" && pwd)"
+    claude plugin marketplace add "$marketplace" >/dev/null &&
+        claude plugin install ty-lsp@dotfiles >/dev/null ||
+        echo "claude/install.sh: failed to install ty-lsp plugin — Claude Code will have no Python LSP" >&2
+fi
+

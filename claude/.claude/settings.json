@@ -94,10 +94,10 @@
     "command": "~/.claude/statusline.sh"
   },
   "enabledPlugins": {
-    "pyright-lsp@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
     "lua-lsp@claude-plugins-official": true,
-    "clangd-lsp@claude-plugins-official": true
+    "clangd-lsp@claude-plugins-official": true,
+    "ty-lsp@dotfiles": true
   },
   "effortLevel": "high",
   "autoMemoryEnabled": false,
