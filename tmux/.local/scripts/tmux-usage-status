@@ -2,8 +2,8 @@
 
 # ── AI usage status for tmux — shows Claude (brain icon) + OpenCode (star_cog icon)
 # Called by tmux via #() in status-right every status-interval (1s).
-# Claude data from /tmp/statusline-rate-limits (written by claude's statusline.sh).
-# OpenCode data from SQLite DB, cached to /tmp/tmux-opencode-cache (60s stale → bg refresh).
+# Claude data from $CACHE_DIR/statusline-rate-limits (written by claude's statusline.sh).
+# OpenCode data from SQLite DB, cached to $CACHE_DIR/tmux-opencode-cache (60s stale → bg refresh).
 
 # ── Icons ──
 CLAUDE_ICON="󰚩"
