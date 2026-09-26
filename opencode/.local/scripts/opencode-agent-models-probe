@@ -53,35 +53,76 @@ if ! $AVAILABLE_ANY; then
   echo "opencode-agent-models-probe: $NOTE" >&2
 fi
 
-# Strip provider prefix for cross-provider matching — same model (e.g. deepseek-v4-flash)
-# often appears on multiple providers (opencode-go, ollama-cloud) and the agent's
-# ranked list may pick any provider's variant. Stripping lets us compare bare IDs.
-strip_prov() { echo "${1##*/}"; }
+# Strip provider prefix inline as "${1##*/}" for cross-provider matching — same model
+# (e.g. deepseek-v4-flash) often appears on multiple providers and the agent's ranked
+# list may name any provider's variant. Do NOT wrap this in a helper function that
+# echoes: the comparisons below are O(agents x list x models), so each $(...) call
+# forks a subshell and a helper cost this script ~29s per run.
 
 # For each agent, find first free+available model
 mkdir -p "$STATE_DIR" || true
 OVERRIDES_TMP=$(mktemp "${TMPDIR:-/tmp}/opencode-agent-overrides.XXXXXX")
 i=0
 n="${#AGENT_NAMES[@]}"
+UNPINNED=""
 while [ "$i" -lt "$n" ]; do
   agent="${AGENT_NAMES[$i]}"
   models_str=$(jq -r ".agents[\"$agent\"][]?" "$CONFIG_FILE" 2>/dev/null | tr '\n' ' ')
   found=""
   for m in $models_str; do
-    p=$(strip_prov "$m")
+    p="${m##*/}"
     is_free=0
     for f in "${FREE_MODELS[@]}"; do
-      [ "$(strip_prov "$f")" = "$p" ] && { is_free=1; break; }
+      [ "${f##*/}" = "$p" ] && { is_free=1; break; }
     done
     [ "$is_free" -eq 0 ] && continue
     for a in "${ALL_MODELS[@]}"; do
-      [ "$(strip_prov "$a")" = "$p" ] && { found="$a"; break; }
+      # Guard the free-only invariant on the real pick, not just the requested
+      # name: bare IDs collide across providers (opencode/big-pickle and
+      # opencode-go/big-pickle share one), so if the free provider was
+      # unreachable the first match could be the paid variant.
+      case "$a" in
+        opencode/*)
+          if [ "${a##*/}" = "$p" ]; then
+            found="$a"
+            break
+          fi
+          ;;
+      esac
     done
     [ -n "$found" ] && break
   done
-  [ -n "$found" ] && printf '{"%s":{"model":"%s"}}\n' "$agent" "$found" >> "$OVERRIDES_TMP"
+  if [ -n "$found" ]; then
+    printf '{"%s":{"model":"%s"}}\n' "$agent" "$found" >> "$OVERRIDES_TMP"
+  else
+    UNPINNED="${UNPINNED:+$UNPINNED, }$agent"
+  fi
   i=$(( i + 1 ))
 done
+
+# An agent with no free+available pick gets no override at all, so it silently
+# falls back to whatever ambient model the provider picks — possibly a paid one.
+# That is the failure this probe exists to prevent, so surface it loudly.
+if [ -n "$UNPINNED" ]; then
+  echo "opencode-agent-models-probe: WARNING no available free model for: $UNPINNED" >&2
+  echo "opencode-agent-models-probe: those agents will use the ambient default model (may be paid)" >&2
+  NOTE="${NOTE:+$NOTE · }no free model available for: $UNPINNED"
+fi
+
+# Report free models configured but absent from the live catalog, so a rotated
+# free tier is caught here rather than by a subagent failing to spawn.
+STALE=""
+for f in "${FREE_MODELS[@]}"; do
+  p="${f##*/}"
+  seen=false
+  for a in "${ALL_MODELS[@]}"; do
+    if [ "${a##*/}" = "$p" ]; then seen=true; break; fi
+  done
+  $seen || STALE="${STALE:+$STALE, }$f"
+done
+if [ -n "$STALE" ]; then
+  echo "opencode-agent-models-probe: WARNING configured but not available: $STALE" >&2
+fi
 
 OVERRIDES=$(jq -s '{agent: (add // {})}' "$OVERRIDES_TMP" 2>/dev/null || echo '{"agent":{}}')
 rm -f "$OVERRIDES_TMP"

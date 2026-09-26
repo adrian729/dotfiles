@@ -1,62 +1,50 @@
 {
   "free_models": [
-    "opencode/big-pickle",
-    "opencode/ling-3.0-flash-fin-free",
-    "opencode/mimo-v2.5-free",
-    "opencode/muse-spark-1.2-contributor-free",
-    "opencode/nemotron-3-ultra-free",
-    "opencode/nemotron-3.5-lightning-free",
-    "ollama-cloud/gpt-oss:20b",
-    "ollama-cloud/gpt-oss:120b",
-    "ollama-cloud/gemma4:31b",
-    "ollama-cloud/nemotron-3-super"
+      "opencode/muse-spark-1.3-contributor-free", "opencode/space-bunny-free", "opencode/mimo-v2.6-flash-free", "opencode/big-pickle", "opencode/nemotron-3.5-lightning-free", "opencode/nemotron-3-ultra-free", "opencode/ling-3.0-flash-fin-free"
   ],
   "relay": [
-    "opencode/muse-spark-1.2-contributor-free",
-    "opencode/mimo-v2.5-free",
-    "opencode/nemotron-3.5-lightning-free",
-    "opencode/ling-3.0-flash-fin-free",
-    "opencode/big-pickle"
+      "opencode/space-bunny-free", "opencode/muse-spark-1.3-contributor-free", "opencode/nemotron-3.5-lightning-free", "opencode/ling-3.0-flash-fin-free", "opencode/big-pickle", "opencode/mimo-v2.6-flash-free", "opencode/nemotron-3-ultra-free"
   ],
   "agents": {
     "auditor": [
-      "opencode-go/qwen3.7-max", "opencode-go/deepseek-v4-pro", "opencode-go/gpt-5.6-luna", "opencode/muse-spark-1.2-contributor-free", "ollama-cloud/gpt-oss:120b", "opencode-go/qwen3.7-plus", "ollama-cloud/nemotron-3-super",
-      "opencode-go/deepseek-v4-flash", "opencode-go/minimax-m3", "opencode-go/kimi-k2.7-code", "ollama-cloud/gpt-oss:20b"
+      "opencode/space-bunny-free", "opencode-go/qwen3.7-max", "opencode-go/deepseek-v4-pro", "opencode-go/gpt-6-luna", "opencode-go/glm-5.3",
+      "opencode/muse-spark-1.3-contributor-free", "opencode-go/kimi-k2.7-code", "opencode-go/grok-4.7", "opencode-go/qwen3.8-max", "opencode/big-pickle"
     ],
     "debugger": [
-      "opencode-go/deepseek-v4-flash", "opencode-go/deepseek-v4-pro", "opencode-go/gpt-5.6-luna", "opencode-go/qwen3.7-plus", "opencode-go/qwen3.7-max", "opencode-go/minimax-m3",
-      "opencode/muse-spark-1.2-contributor-free", "opencode-go/kimi-k2.7-code", "ollama-cloud/gpt-oss:120b", "ollama-cloud/gpt-oss:20b"
+      "opencode/muse-spark-1.3-contributor-free", "opencode-go/deepseek-v4.1-flash", "opencode-go/deepseek-v4-pro", "opencode-go/gpt-6-luna", "opencode-go/qwen3.7-plus",
+      "opencode-go/muse-spark-1.3-contributor", "opencode-go/kimi-k2.7-code", "opencode/space-bunny-free", "opencode-go/minimax-m3", "opencode/big-pickle"
     ],
     "implementer": [
-      "opencode-go/deepseek-v4-flash", "opencode-go/deepseek-v4-pro", "opencode-go/gpt-5.6-luna", "opencode-go/qwen3.7-plus", "opencode-go/qwen3.7-max", "opencode-go/minimax-m3",
-      "opencode-go/kimi-k2.7-code", "opencode/muse-spark-1.2-contributor-free", "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super"
+      "opencode/muse-spark-1.3-contributor-free", "opencode-go/deepseek-v4.1-flash", "opencode-go/deepseek-v4-pro", "opencode-go/gpt-6-luna", "opencode-go/qwen3.7-plus",
+      "opencode-go/muse-spark-1.3-contributor", "opencode-go/kimi-k2.7-code", "opencode/space-bunny-free", "opencode-go/minimax-m3", "opencode/big-pickle"
     ],
     "implementer-quick": [
-      "opencode-go/deepseek-v4-flash", "opencode/muse-spark-1.2-contributor-free", "opencode-go/gpt-5.6-luna", "opencode-go/mimo-v2.5", "opencode-go/qwen3.7-plus", "opencode-go/minimax-m3",
-      "ollama-cloud/gpt-oss:20b", "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super", "opencode-go/deepseek-v4-pro"
+      "opencode/space-bunny-free", "opencode-go/deepseek-v4.1-flash", "opencode-go/gpt-6-luna", "opencode-go/qwen3.7-plus", "opencode-go/minimax-m3",
+      "opencode/muse-spark-1.3-contributor-free", "opencode-go/mimo-v2.6-pro", "opencode/big-pickle", "opencode/mimo-v2.6-flash-free"
     ],
     "planner": [
-      "opencode-go/qwen3.7-max", "opencode-go/deepseek-v4-pro", "opencode-go/gpt-5.6-luna", "opencode-go/qwen3.7-plus", "opencode/muse-spark-1.2-contributor-free", "ollama-cloud/gpt-oss:120b", "opencode-go/deepseek-v4-flash",
-      "opencode-go/minimax-m3", "ollama-cloud/nemotron-3-super", "ollama-cloud/gpt-oss:20b", "opencode-go/kimi-k2.7-code"
+      "opencode/muse-spark-1.3-contributor-free", "opencode-go/qwen3.7-max", "opencode-go/deepseek-v4-pro", "opencode-go/gpt-6-luna", "opencode-go/qwen3.8-max",
+      "opencode-go/glm-5.3", "opencode/space-bunny-free", "opencode-go/grok-4.7", "opencode-go/kimi-k3", "opencode/big-pickle"
     ],
     "researcher": [
-      "opencode-go/deepseek-v4-flash", "opencode-go/gpt-5.6-luna", "opencode-go/qwen3.7-plus", "opencode-go/deepseek-v4-pro", "opencode-go/minimax-m3", "opencode-go/qwen3.7-max",
-      "opencode/muse-spark-1.2-contributor-free", "ollama-cloud/gpt-oss:120b", "ollama-cloud/gpt-oss:20b", "ollama-cloud/nemotron-3-super"
+      "opencode/muse-spark-1.3-contributor-free", "opencode-go/deepseek-v4.1-flash", "opencode-go/gpt-6-luna", "opencode-go/qwen3.7-plus", "opencode-go/muse-spark-1.3-contributor",
+      "opencode-go/kimi-k2.7-code", "opencode/space-bunny-free", "opencode-go/mimo-v2.6-pro", "opencode/big-pickle", "opencode/mimo-v2.6-flash-free"
     ],
     "reviewer": [
-      "opencode-go/deepseek-v4-pro", "opencode-go/qwen3.7-max", "opencode-go/gpt-5.6-luna", "opencode-go/qwen3.7-plus", "opencode-go/deepseek-v4-flash", "opencode-go/minimax-m3",
-      "opencode/muse-spark-1.2-contributor-free", "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super", "opencode-go/kimi-k2.7-code", "ollama-cloud/gpt-oss:20b"
+      "opencode/muse-spark-1.3-contributor-free", "opencode-go/deepseek-v4-pro", "opencode-go/qwen3.7-max", "opencode-go/gpt-6-luna", "opencode-go/qwen3.7-plus",
+      "opencode-go/muse-spark-1.3-contributor", "opencode/space-bunny-free", "opencode-go/kimi-k2.7-code", "opencode-go/grok-4.7", "opencode/big-pickle"
     ],
     "reviewer-quick": [
-      "opencode-go/deepseek-v4-flash", "opencode/muse-spark-1.2-contributor-free", "opencode-go/gpt-5.6-luna", "opencode-go/mimo-v2.5", "opencode-go/qwen3.7-plus", "opencode-go/minimax-m3",
-      "ollama-cloud/gpt-oss:20b", "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super", "opencode-go/deepseek-v4-pro"
+      "opencode/space-bunny-free", "opencode-go/deepseek-v4.1-flash", "opencode-go/gpt-6-luna", "opencode-go/qwen3.7-plus", "opencode-go/minimax-m3",
+      "opencode/muse-spark-1.3-contributor-free", "opencode-go/mimo-v2.6-pro", "opencode/big-pickle", "opencode/mimo-v2.6-flash-free"
     ],
     "task": [
-      "opencode-go/deepseek-v4-flash", "opencode-go/deepseek-v4-pro", "opencode-go/gpt-5.6-luna", "opencode-go/qwen3.7-plus", "opencode-go/qwen3.7-max", "opencode-go/minimax-m3",
-      "opencode-go/kimi-k2.7-code", "opencode/muse-spark-1.2-contributor-free", "ollama-cloud/gpt-oss:120b", "ollama-cloud/nemotron-3-super"
+      "opencode/muse-spark-1.3-contributor-free", "opencode-go/deepseek-v4.1-flash", "opencode-go/deepseek-v4-pro", "opencode-go/gpt-6-luna", "opencode-go/qwen3.7-plus",
+      "opencode-go/muse-spark-1.3-contributor", "opencode/space-bunny-free", "opencode-go/kimi-k2.7-code", "opencode-go/minimax-m3", "opencode/big-pickle"
     ],
     "relay": [
-      "opencode/muse-spark-1.2-contributor-free", "opencode/mimo-v2.5-free", "opencode/nemotron-3.5-lightning-free", "opencode/ling-3.0-flash-fin-free", "opencode/big-pickle"
+      "opencode/space-bunny-free", "opencode/muse-spark-1.3-contributor-free", "opencode/nemotron-3.5-lightning-free", "opencode/ling-3.0-flash-fin-free", "opencode/big-pickle",
+      "opencode/mimo-v2.6-flash-free", "opencode/nemotron-3-ultra-free"
     ]
   }
 }
