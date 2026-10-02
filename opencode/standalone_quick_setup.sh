@@ -114,8 +114,6 @@ have_opencode && echo "- run 'opencode' once to log in (if you haven't)"
 if have gh && ! gh auth status >/dev/null 2>&1; then
   echo "- run 'gh auth login' for draft-PR automation"
 fi
-echo "- add git push deny to ~/.config/opencode/opencode.json:"
-echo '  { "permission": { "bash": { "*": "allow", "git push *": "deny" } } }'
 echo "- smoke test:  cd <some-git-repo> && opencode-wt hello green"
 echo ""
 echo "Docs: opencode-wt-quickstart.md / opencode-wt-guide.md"

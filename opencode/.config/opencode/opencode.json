@@ -68,23 +68,7 @@
       "git diff *": "allow",
       "git log *": "allow",
       "git status *": "allow",
-      "git show *": "allow",
-      "git commit": "ask",
-      "git commit *": "ask",
-      "npm publish": "deny",
-      "npm publish *": "deny",
-      "gh release": "deny",
-      "gh release *": "deny",
-      "docker push": "deny",
-      "docker push *": "deny",
-      "terraform apply": "deny",
-      "terraform apply *": "deny",
-      "kubectl apply": "deny",
-      "kubectl apply *": "deny",
-      "cargo publish": "deny",
-      "cargo publish *": "deny",
-      "git push": "deny",
-      "git push *": "deny"
+      "git show *": "allow"
     }
   },
   "agent": {

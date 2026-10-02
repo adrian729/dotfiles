@@ -7,7 +7,7 @@ steps: 15
 permission:
   edit: allow
   # deny list below fully replaces (doesn't merge with) opencode.json's top-level
-  # bash permission — keep in sync with it and with debugger.md/implementer.md.
+  # bash permission — keep it in sync across the three agent copies.
   bash:
     "*": allow
     "git push": deny

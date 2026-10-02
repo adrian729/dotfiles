@@ -123,8 +123,7 @@ reset_color() {
 }
 
 # After the session ends, offer to push new commits and open/update the
-# branch's draft PR. Claude sessions are denied `git push` by settings.json,
-# so this wrapper is where pushing happens. Runs inside the worktree.
+# branch's draft PR. Runs inside the worktree.
 offer_push_pr() {
   local name=$1 base count dirty ans url
   has_origin . || return 0

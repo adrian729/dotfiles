@@ -44,18 +44,6 @@
       "Bash(git log *)",
       "Bash(git status *)",
       "Bash(git show *)"
-    ],
-    "deny": [
-      "Bash(git push*)"
-    ],
-    "ask": [
-      "Bash(git commit *)",
-      "Bash(npm publish*)",
-      "Bash(gh release*)",
-      "Bash(docker push*)",
-      "Bash(terraform apply*)",
-      "Bash(kubectl apply*)",
-      "Bash(cargo publish*)"
     ]
   },
   "hooks": {

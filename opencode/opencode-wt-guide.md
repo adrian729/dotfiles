@@ -46,19 +46,9 @@ Or via GNU Stow from the dotfiles repo: `stow opencode` places the scripts in th
 
 ### 3. Permissions
 
-OpenCode needs `git push` denied so the wrapper handles pushing after the
-session exits. Add to your global `~/.config/opencode/opencode.json`:
-
-```json
-{
-  "permission": {
-    "bash": {
-      "*": "allow",
-      "git push *": "deny"
-    }
-  }
-}
-```
+No permission config is required. OpenCode's default bash policy is permissive,
+and the wrapper still offers to push and open/update a draft PR after the
+session exits (with your consent).
 
 ## The 30-second mental model
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # opencode-task — delegate a real coding task to OpenCode's agent headlessly.
-# SAFETY MODEL: --auto is required (no TTY). opencode.json denies git push;
-# agent denies external_directory. Not a real sandbox — bash tool escapes worktree.
+# SAFETY MODEL: --auto is required (no TTY). The task agent denies
+# external_directory. Not a real sandbox — bash tool escapes worktree.
 # Do NOT repurpose to run --auto against a real working directory.
 set -euo pipefail
 
