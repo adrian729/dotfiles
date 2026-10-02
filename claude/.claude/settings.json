@@ -43,8 +43,18 @@
       "Bash(git diff *)",
       "Bash(git log *)",
       "Bash(git status *)",
-      "Bash(git show *)"
-    ]
+      "Bash(git show *)",
+      "Bash(npm *)",
+      "Bash(gh *)",
+      "Bash(node *)",
+      "Bash(set *)",
+      "Bash(cut *)",
+      "Bash(printf *)",
+      "Bash(test *)",
+      "Bash([ *)",
+      "Bash(exit *)"
+    ],
+    "additionalDirectories": ["/tmp"]
   },
   "hooks": {
     "UserPromptSubmit": [

@@ -68,7 +68,16 @@
       "git diff *": "allow",
       "git log *": "allow",
       "git status *": "allow",
-      "git show *": "allow"
+      "git show *": "allow",
+      "npm *": "allow",
+      "gh *": "allow",
+      "node *": "allow",
+      "set *": "allow",
+      "cut *": "allow",
+      "printf *": "allow",
+      "test *": "allow",
+      "[ *": "allow",
+      "exit *": "allow"
     }
   },
   "agent": {

@@ -30,6 +30,10 @@ Query available models:
 - `opencode-models free` — free-tier models only
 - `opencode-models agents <name>` — full priority list for an agent (paid + free)
 
+# Local app / PATH setup
+
+When installing or wiring up a new app, add its PATH entry to `~/.local/.local_profile` — or place its artifacts under the appropriate `~/.local/` folder (`bin/`, `scripts/`, `config/`, etc.). Never add PATH/bin lines to shell rc files like `.zshrc`.
+
 # Code comments
 
 - Never add any comments unless it was explicitly asked. Don't ever ignore this rule.
