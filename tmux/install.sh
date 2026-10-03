@@ -6,7 +6,7 @@ brew_shellenv 2>/dev/null
 
 ensure_cmd tmux
 ensure_cmd fzf
-# tmux-ollama-status and tmux-usage-status both format RSS with bc, which macOS
+# tmux-ollama-status formats RSS with bc, which macOS
 # ships but a Debian install is not guaranteed to have.
 ensure_cmd bc
 

@@ -38,8 +38,7 @@ parsed=$(jq -r '
   "${HOURS:=-1}" "${WEEK:=-1}" "${HOURS_RESET:=0}" "${WEEK_RESET:=0}" "${SESSION_COST:=0}"
 
 # Private per-user cache dir — avoids predictable shared /tmp paths (symlink-follow
-# clobber vector, spoofable reads on multi-user hosts). Shared with tmux-usage-status,
-# which reads RATE_CACHE; keep both scripts' paths in sync if this moves again.
+# clobber vector, spoofable reads on multi-user hosts).
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ai-status"
 mkdir -p -m 700 "$CACHE_DIR"
 chmod 700 "$CACHE_DIR" 2>/dev/null
@@ -133,10 +132,10 @@ get_claude_token() {
     printf '%s' "$tok"
 }
 
-# Backgrounded, mkdir-locked refresh (mirrors tmux-usage-status's OpenCode cache refresh) so
-# the statusline itself never blocks on the network. The token is passed to curl via a 600
-# temp config file (`-K`), not `-H` on argv, so it never shows up in `ps`; the file is removed
-# immediately after the request regardless of outcome.
+# Backgrounded, mkdir-locked refresh so the statusline never blocks on the network.
+# The token is passed to curl via a 600-mode temp config file (`-K`), not `-H` on argv,
+# so it never shows up in `ps`; the file is removed immediately after the request
+# regardless of outcome.
 refresh_usage_cache() {
     if [ -d "$USAGE_LOCK_DIR" ]; then
         local lock_pid; lock_pid=$(cat "$USAGE_LOCK_PID_FILE" 2>/dev/null)
@@ -344,28 +343,6 @@ fi
 [ "$WEEK"  -lt 0 ] 2>/dev/null && WEEK=0
 if [ "${HOURS_RESET:-0}" -gt 0 ] 2>/dev/null || [ "${WEEK_RESET:-0}" -gt 0 ] 2>/dev/null; then
     tmp=$(mktemp "${RATE_CACHE}.XXXXXX") && printf '%s|%s|%s|%s\n' "$HOURS" "$WEEK" "$HOURS_RESET" "$WEEK_RESET" > "$tmp" && mv -f "$tmp" "$RATE_CACHE"
-fi
-
-WEEKLY_LOG="$HOME/.local/share/claude/weekly-usage.log"
-WEEKLY_STATE="$HOME/.local/share/claude/weekly-usage-state"
-if [ "${WEEK_RESET:-0}" -gt 0 ] 2>/dev/null; then
-    [ ! -d "$HOME/.local/share/claude" ] && mkdir -p "$HOME/.local/share/claude"
-    PREV_WEEK_RESET=""
-    PREV_WEEK_PCT=""
-    if [ -f "$WEEKLY_STATE" ]; then
-        IFS='|' read -r PREV_WEEK_PCT PREV_WEEK_RESET < "$WEEKLY_STATE" 2>/dev/null
-    fi
-    if [ -n "${PREV_WEEK_RESET}" ] && [ "${WEEK_RESET}" != "${PREV_WEEK_RESET}" ]; then
-        printf '%s|%s|%s\n' "$(date +%s)" "${PREV_WEEK_PCT}" "${PREV_WEEK_RESET}" >> "$WEEKLY_LOG"
-    fi
-    printf '%s|%s\n' "$WEEK" "$WEEK_RESET" > "${WEEKLY_STATE}.$$" && mv -f "${WEEKLY_STATE}.$$" "$WEEKLY_STATE"
-    if [ $((RANDOM % 50)) -eq 0 ] && [ -f "$WEEKLY_LOG" ]; then
-        CUTOFF=$(( $(date +%s) - 3024000 ))
-        TMPLOG="${WEEKLY_LOG}.trim.$$"
-        while IFS='|' read -r ts pct rst; do
-            [ "${ts:-0}" -gt "$CUTOFF" ] 2>/dev/null && printf '%s|%s|%s\n' "$ts" "$pct" "$rst"
-        done < "$WEEKLY_LOG" > "$TMPLOG" && mv -f "$TMPLOG" "$WEEKLY_LOG"
-    fi
 fi
 
 # Force the values that feed arithmetic to plain integers: guards against jq exponential

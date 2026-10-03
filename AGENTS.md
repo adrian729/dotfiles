@@ -116,7 +116,7 @@ tmux/
     .gitignore         excludes plugins/* (installed by TPM)
    .local/scripts/      ready-tmux, tmux-sessionizer, tmux-session-tracker,
                         tmux-keymaps, tmux-clipboard, tmux-ollama-status,
-                        tmux-usage-status, wt-sessionizer
+                        wt-sessionizer
   .stow-local-ignore
   install.sh
 
