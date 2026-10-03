@@ -395,7 +395,7 @@ ensure_node() {
 	# drops an npm on PATH before this ever runs.
 	if [ ! -s "$NVM_DIR/nvm.sh" ]; then
 		info "Installing nvm..."
-		run_remote_installer https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh ||
+		PROFILE=/dev/null run_remote_installer https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh ||
 			warn "nvm install failed"
 	fi
 

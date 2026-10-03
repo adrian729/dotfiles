@@ -1,30 +1,27 @@
 ---
 name: autonomous-process
-description: Drive task end-to-end hands-off through three gated phases — plan, implement, final review — running audit-loop at each gate, then emit full per-phase process report; runs whole task in auto-mode. Use when user EXPLICITLY asks to run task autonomously / "the full process" / "plan it, build it, and review it on your own" / "end to end without me". NOT triggered by merely being in or selecting auto-mode; NOT for one-off audit/review (use audit-loop or reviewer/auditor), nor plain "just implement X" with no plan→review lifecycle.
+description: "Carry out an explicitly requested plan, implement, and review workflow with audit gates, without routine approval pauses. Use for a requested full autonomous process; ordinary implementation or a single review does not require this workflow."
 ---
 
 # Autonomous Process
 
-Run task through its full lifecycle with no hand-holding: plan → implement → final review, each gate closed by `audit-loop`, then report whole run. Rules below always hold.
+Complete plan → implementation → final review in order. Advance through the audit gates on evidence, while making routine decisions within the user's request.
 
-## Auto-mode (first action, before any work)
-This skill always runs hands-off — there is no interactive variant. Your **very first action**, before Phase 1 or any planning, is to get into auto-mode (auto-accepting actions, no per-step approval): switch it automatically if you can; otherwise prompt user once to enable it and wait for confirmation. This is the **only** interactive moment — after it the entire run, planning included, proceeds unattended. Hard rules below still hold with auto-mode on.
+## Setup
 
-## Hard rules
-- **No code in Phase 1.** Never edit/write project files during planning or its audit loop — even in auto-mode. Plan artifacts only. Touch code before plan converges only for reason you state explicitly.
-- **Subagents when task needs it** — many files, large file that splits cleanly, multi-source investigation, or parallelizable audit (see `audit-loop` split mode). Spawn them in parallel (one message, multiple calls). Give each enough context plus structured return format so main thread isn't left guessing; keep prompts and returns concise. Don't spawn for trivial single-file work.
-- **Token discipline** — concise everywhere, but never so terse a step fails or agent returns too little to act on.
+- Establish the intended result, acceptance criteria, scope, and any iteration, time, or cost limits from the request and available context. Ask only for missing information or a decision that materially affects the result.
+- Use existing permission settings and authorization. This workflow does not require enabling auto-accept or changing safeguards.
+- Read [audit-loop](../audit-loop/SKILL.md) for the review gates. Honor overall limits across phases and nested reviews; reset a limit only when the user specified it per phase.
+- Delegate separable work when useful and permitted. Give each worker the requirements, owned scope, relevant context, and expected result; prevent overlapping writes.
 
 ## Phases
-1. **Plan** — produce implementation plan (tool's planner agent: Claude Code → `Plan`/`Explore`, OpenCode → `planner`/`explore` subagent; or inline if small). No code changes. Then `audit-loop` the plan: completeness vs intent, contradictions, unstated assumptions, missing edge cases, feasibility. Iterate to convergence. Code stays untouched until plan passes.
-2. **Implement** — execute converged plan; subagents per rule above. Then `audit-loop` the implementation.
-3. **Final review** — fresh end-to-end pass over whole change against original intent and plan. Issues found → `audit-loop` again until clean. None → done.
 
-Run 1→2→3 without stopping for approval — only pause is one-time auto-mode setup above (and any deviation you explicitly state).
+1. **Plan.** Inspect the relevant state and produce a plan proportional to the task, covering the approach, dependencies, and validation. Planning may create plan artifacts, but implementation changes wait until the plan passes its audit. Run audit-loop on the plan, fixing gaps in completeness, consistency, feasibility, and alignment with the request. Advance only after its two clean passes.
+2. **Implement.** Execute the audited plan and validate the result. If evidence requires a material change in approach, update and re-audit the affected plan before dependent implementation. Run audit-loop on the implementation, including integration across delegated work. Advance only after its two clean passes and required checks.
+3. **Final review.** Use a fresh reviewer to assess the complete result against the original request and acceptance criteria. Check that the pieces work together and required outcomes were actually delivered. Significant findings reopen the implementation audit within the remaining budget; its confirming passes must cover the affected end-to-end behavior.
 
-## Report (always, at the end)
-One report, three sections — **Plan**, **Implementation**, **Final review**. Per section:
-- summary of what was produced/done;
-- audit-loop outcome: findings + fixes + skips per iteration (and per subagent, if split), and why it stopped.
+Continue between phases without routine approval requests. If a gate stalls or a limit is reached, retain the current work and report the unmet gate. If a genuine user decision blocks part of the task, continue independent work where possible.
 
-End with **Needs your attention**: every deferred/skipped fix and open decision.
+## Completion
+
+Declare completion only when the required gates and task checks have passed. Report the result, phase outcomes, relevant validation, and unresolved decisions at the requested level of detail. Include full iteration logs only when requested or needed to explain a blocker.

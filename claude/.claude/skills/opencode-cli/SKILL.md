@@ -1,209 +1,33 @@
 ---
 name: opencode-cli
-description: Invoke the OpenCode CLI from another AI tool (Claude Code, Cursor, etc.), a shell script, or CI pipeline — subcommand reference (run, serve, session, agent, mcp, models, providers), flags (`--format json` for scripting, `--dir` to confine tools, `--auto` for unattended approval, `-m` for model, `--agent` for subagent), config precedence chain, env vars, permission model. Use when the caller needs subcommands, flags, scripting patterns, or config mechanics to spawn or interact with an `opencode` process programmatically; NOT for hand-editing opencode's own static config or agent definitions (static config lives in opencode.json; agent definitions can be either inline in opencode.json's `agent` block or standalone markdown files created via `opencode agent create --path` — check which form is in use before editing), nor running under OpenCode itself (self-referential).
+description: Invoke or inspect OpenCode from a shell, script, or another agent. Use for direct CLI runs, sessions, server attachment, and troubleshooting; use opencode-task for the dotfiles worktree workflow or opencode-llm for its text relay.
 ---
 
-OpenCode CLI — the `opencode` binary. `opencode run --format json` is the scripting workhorse.
+# OpenCode CLI
 
-## Subcommands
+## Workflow
 
-| Command | Description |
-|---|---|
-| `opencode [project]` | Start interactive TUI (default) |
-| `opencode run [message..]` | Non-interactive: run a prompt, exit |
-| `opencode serve` | Start headless HTTP server |
-| `opencode web` | Start server + open web UI |
-| `opencode attach <url>` | Attach TUI to a remote server |
-| `opencode session` | Manage sessions (list, delete) |
-| `opencode agent` | Manage agents (create, list) |
-| `opencode mcp` | Manage MCP servers |
-| `opencode providers` | Manage provider credentials (alias: auth) |
-| `opencode models [provider]` | List available models |
-| `opencode stats` | Token usage and cost stats |
-| `opencode export [sessionID]` | Export session as JSON |
-| `opencode import <file>` | Import session from JSON file or URL |
-| `opencode pr <number>` | Fetch PR branch, checkout, run |
-| `opencode github` | GitHub agent subcommands |
-| `opencode plugin <module>` | Install plugin (alias: plug) |
-| `opencode db` | Database tools (sqlite3 shell, path) |
-| `opencode acp` | Agent Client Protocol server (stdin/stdout) |
-| `opencode debug` | Debugging tools (config, paths, startup, LSP) |
-| `opencode upgrade [target]` | Upgrade to latest or specific version |
-| `opencode uninstall` | Remove OpenCode and all related files |
-| `opencode completion` | Generate shell completion script |
-
-## `opencode run` — scripting workhorse
-
-`opencode run [message..]` runs a prompt without the TUI and exits. Extended flags:
-
-| Flag | Short | Description |
-|---|---|---|
-| `--model <provider/model>` | `-m` | Model (e.g. `opencode/deepseek-v4-flash-free`) |
-| `--continue` | `-c` | Continue the last session |
-| `--session <id>` | `-s` | Continue a specific session |
-| `--fork` | | Fork the session before continuing |
-| `--agent <name>` | | Agent to use (e.g. `task`, `relay`) |
-| `--format <format>` | | Output: `default` (formatted text) or `json` (raw JSON events) |
-| `--auto` | | Auto-approve permissions not explicitly denied |
-| `--dir <path>` | | Working directory (confines file tools when agent denies external_directory) |
-| `--file <path>` | `-f` | Attach file to message (repeatable) |
-| `--title <text>` | | Session title |
-| `--attach <url>` | | Connect to a running opencode server |
-| `--variant <level>` | | Model variant/reasoning effort (e.g. `high`, `max`, `minimal`) |
-| `--thinking` | | Show thinking blocks in output |
-| `--interactive` | `-i` | Direct interactive split-footer mode |
-| `--port <n>` | | Port for local server |
-| `--password <pwd>` | `-p` | Basic auth password (defaults to `OPENCODE_SERVER_PASSWORD`) |
-| `--username <name>` | `-u` | Basic auth username (defaults to `OPENCODE_SERVER_USERNAME` or `'opencode'`) |
-
-## Session management
+1. Choose the working directory, agent, model, and session. Supply the task and necessary context explicitly; a separate process does not inherit the caller's conversation. Do not launch recursive OpenCode delegation from inside OpenCode; diagnostic commands remain useful there.
+2. Check `opencode run --help` or the relevant subcommand's help for installed options. Use the [CLI reference](https://opencode.ai/docs/cli/) for additional commands and environment variables.
+3. For delegation, use a currently available free model unless explicitly asked to use a paid one, including by an invoked workflow. For free selection, compare `opencode-models free` with `opencode models opencode`; resolve stale catalog entries before relying on them. Pass the selected model with `-m` rather than assuming an agent has a valid pin.
+4. Check `opencode agent list` for the intended agent. Direct `run --agent` calls need a `primary` or `all` agent; do not rely on a subagent-only definition to constrain the run. The dotfiles `task` agent can edit and run shell commands; `relay` is intended for supplied-text responses.
+5. Run with `--format json` when a script needs structured events. Check exit status, error events, and actual task results before accepting the response. Retain the session ID when follow-up work is needed.
 
 ```sh
-opencode session list --format json    # list sessions as JSON array
-opencode session list --max-count 20   # limit to 20 most recent
-opencode session delete <sessionID>    # delete a session
-```
+# Set delegate_model to the selected provider/model; replace other placeholders.
+opencode run -m "$delegate_model" --agent task --dir /path/to/worktree \
+  --format json -- "TASK"
 
-## Headless server
+opencode run -m "$delegate_model" --agent task --dir /path/to/worktree \
+  --session SESSION_ID --format json -- "FOLLOW_UP"
 
-```sh
-# Start headless HTTP API server (random port by default)
-OPENCODE_SERVER_PASSWORD=secret opencode serve
-
-# With explicit port and hostname
-opencode serve --port 4096 --hostname 0.0.0.0
-
-# Web mode (server + browser UI)
-opencode web
-
-# Attach TUI to a running server
-opencode attach http://localhost:4096
-
-# Run against a server (avoids cold-start overhead)
-opencode run --attach http://localhost:4096 --dir /repo "task"
-```
-
-## Agent management
-
-```sh
-# List agents
-opencode agent list
-
-# Create agent (non-interactive with all flags)
-opencode agent create \
-  --path ./my-project \
-  --description "Does X" \
-  --mode subagent \
-  --tools "bash,read,edit,glob,grep" \
-  --model provider/model
-```
-
-`--path` only sets the target directory (an `agents/` subfolder is created under it) — it does not name the agent. The filename is an identifier generated by an LLM call from `--description`, not from `--path`'s value, and this generation call always happens, even when every flag is supplied non-interactively.
-
-## MCP
-
-```sh
-opencode mcp add <name> -- <command> [args...]   # add local MCP server (command must follow "--")
-opencode mcp add <name> --url <url>              # add remote MCP server
-opencode mcp list                             # list servers
-opencode mcp auth <name>                      # authenticate
-opencode mcp logout <name>                    # clear credentials
-opencode mcp debug <name>                     # debug connection
-```
-
-## Providers / auth
-
-```sh
-opencode providers list       # list configured providers
-opencode providers login      # log in (interactive)
-opencode providers login <url> # log in with custom URL
-opencode providers logout <name> # remove provider credentials
-```
-
-## Permission model
-
-Each permission rule resolves to one of three states:
-
-| State | Behavior |
-|---|---|
-| `allow` | Run without approval |
-| `ask` | Prompt for approval (once/always/reject) |
-| `deny` | Block the action |
-
-Permission keys include `read`, `edit`, `glob`, `grep`, `list`, `bash`, `task`, `skill`, `lsp`, `question`, `webfetch`, `websearch`, `external_directory`, `doom_loop`, `todowrite` — but this list is not exhaustive. The schema is an open record: any string key is valid (e.g. plan-mode gating keys `plan_enter`/`plan_exit`, or custom MCP tool names), not just the ones enumerated here.
-
-`bash` supports object syntax with glob patterns — last matching rule wins:
-
-```json
-"bash": {
-  "*": "allow",
-  "git push": "deny",
-  "git push *": "deny",
-  "npm publish": "ask",
-  "npm publish *": "ask"
-}
-```
-
-## Config precedence (later wins)
-
-1. Remote (organizational) — `.well-known/opencode` endpoint
-2. Global user — `~/.config/opencode/opencode.json`
-3. Custom path — `$OPENCODE_CONFIG` env var
-4. Project — `<git-root>/opencode.json`
-5. `.opencode/` dir and `$OPENCODE_CONFIG_DIR` — both processed in the same directory-scan pass; don't assume a fixed order between them (`<project>/.opencode/{agents,skills,tools,themes,...}`)
-6. Inline — `$OPENCODE_CONFIG_CONTENT` env var
-7. Active org account config — if logged into an organization, config fetched from the org server's `/api/config` endpoint loads after `OPENCODE_CONFIG_CONTENT` and overrides it. Run `opencode debug config` to see the effective merged result if an `OPENCODE_CONFIG_CONTENT` override doesn't appear to take effect.
-8. Managed file — `/Library/Application Support/opencode/` etc.
-9. Managed MDM — `ai.opencode.managed` preference domain
-
-TUI config: `~/.config/opencode/tui.json` (overridable via `$OPENCODE_TUI_CONFIG`).
-
-## Key environment variables
-
-Most-used vars inline; full list in [`env-vars.md`](env-vars.md).
-
-| Variable | Purpose |
-|---|---|
-| `OPENCODE_CONFIG` | Path to config file |
-| `OPENCODE_CONFIG_DIR` | Path to config directory |
-| `OPENCODE_CONFIG_CONTENT` | Inline JSON config (highest override among static/env config sources — an active org login can still override this; see Config precedence) |
-| `OPENCODE_PERMISSION` | Inline JSON permissions config |
-| `OPENCODE_SERVER_PASSWORD` | Basic auth password for serve/web |
-| `OPENCODE_SERVER_USERNAME` | Basic auth username (default: `opencode`) |
-| `OPENCODE_TUI_CONFIG` | Path to TUI config file |
-| `OPENCODE_DISABLE_CLAUDE_CODE` | Don't read `.claude` (prompt + skills) |
-| `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` | Don't load `.claude/skills` |
-| `OPENCODE_DISABLE_AUTOUPDATE` | Disable update checks |
-
-## Scripting patterns
-
-```sh
-# One-shot query, JSON output
-opencode run --format json "Explain closures in JavaScript" | jq .
-
-# Pipe content
-cat build.log | opencode run --format json "Extract every error with file:line"
-
-# With specific provider/model
-opencode run -m opencode/deepseek-v4-flash-free --format json "Summarize this"
-
-# Headless task agent in specific directory, auto-approve
-opencode run --agent task --dir /workspace --auto "Refactor module" --format json
-
-# Continue a specific session
-opencode run -s <sessionID> --format json "Follow up"
-
-# Attach to running server (avoids cold-start overhead)
-opencode run --attach http://localhost:4096 --format json "Quick task"
-
-# Attach file to prompt
-opencode run -f src/main.rs "Review this file for bugs"
-
-# With reasoning effort variant
-opencode run --variant high "Solve this problem" --format json
-
-# List sessions programmatically
 opencode session list --format json
 ```
 
-Interactive-only shortcut (not for scripts/automation): `opencode --mini --prompt "Walk me through the architecture"` launches the minimal interactive interface.
+## Execution details
+
+- `--dir` selects the working directory; it is not a shell sandbox. `external_directory` permissions do not confine bash commands.
+- For an authorized unattended run, `--auto` approves permissions that are not explicitly denied. Choose permissions and workspace to match the task; the flag adds neither filesystem isolation nor a read-only guarantee.
+- JSON output is an event stream. Extract text events, keeping the latest text per `part.id` when snapshots repeat; inspect error events separately.
+- Use `--session ID` for deliberate follow-ups. `--continue` selects the last session; `--fork` retains that session's context and is not an independent candidate.
+- `--attach URL` uses an existing server; its `--dir` path belongs to that server's filesystem. Inspect effective configuration with `opencode debug config` when behavior differs from local files.

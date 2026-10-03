@@ -1,99 +1,39 @@
 ---
 name: best-of-n
-description: Generate N independent solutions from different angles, judge against rubric, synthesize best parts. Use when user says "best of N" (any number), "tournament", "contest between approaches"; NOT when user wants one-shot implementation or single-review audit (→ implementer or audit-loop).
+description: "Generate independent candidate solutions, compare them against the same rubric, and select or combine the strongest result. Use when explicitly asked for best of N, a tournament, or competing approaches; not for a single attempt or an iterative critique loop."
 ---
 
 # Best-of-N
 
-Spawn workers with different angles, judge against rubric, synthesize best parts. Works for any task type and any AI tool.
+Produce separate solutions to the same task before judging them. Independence, a shared rubric, and validation of the selected result define this workflow.
 
-## 1. Set N
-- User specifies → use that.
-- Otherwise propose: critical → 7, standard → 5. State reasoning, user confirms.
-- Higher defaults add diversity at zero API cost — free workers (opencode, ollama) supplement Claude under Claude Code; more agent variety under OpenCode. N counts all workers.
+## 1. Define the comparison
 
-## 2. Set worker distribution
+Use the requested positive candidate count. If omitted, use five candidates, or seven for explicitly critical work, subject to the user's budget. State the count and any necessary reduction of a default; do not silently reduce an explicit N.
 
-Free workers count toward N, not on top. Task type → agent pool varies by tool.
+Derive the rubric from the task's acceptance criteria before generating candidates. Separate mandatory requirements from preferences. Use weights or numerical scores only when they clarify a real tradeoff; a high preference score cannot compensate for a failed requirement. Resolve material ambiguity, then keep the rubric stable across candidates.
 
-### Tool: Claude Code
+Assign distinct approaches that could reasonably solve the whole task. Differences should be substantive, such as algorithm, architecture, or explanatory structure. These are competing solutions, not pieces of a divided task. Routine choices of angles and rubric do not require an approval gate.
 
-| Task type | Workers |
-|---|---|
-| Implementation | `implementer-quick` / `implementer` / `implementer-deep` |
-| Planning/architecture | `planner-quick` / `planner` / `planner-deep` |
-| Writing/docs | `writer-quick` / `writer` / `writer-deep` |
-| Research | `researcher-quick` / `researcher` / `researcher-deep` |
-| Debugging | `debugger-quick` / `debugger` / `debugger-deep` |
-| Mixed / unknown | Ask user |
+## 2. Generate independently
 
-Free pool: `opencode-task` (full coding agent in worktree), `llm` (local ollama, text-only), `opencode-llm` (free cloud, text-only).
+- Use separate worker contexts. Give every worker the same task, constraints, rubric, and relevant starting state, plus its assigned approach. Do not expose other candidates or their critiques.
+- For code, include relevant uncommitted work in the starting state. Give each worker an isolated workspace or request a patch without target edits; workers must not concurrently modify the shared target.
+- Run workers in parallel when resources permit, otherwise sequentially in separate contexts. Use available tools and models within the existing cost constraints; do not assume a model is free.
+- Collect the candidate, its assumptions, and validation evidence. Retry a failed worker once within the budget. If fewer than N candidates succeed, continue with those available but mark the comparison incomplete; if none succeed, stop. If independent contexts are unavailable, stop and report the limitation.
 
-| N | Free | Claude workers | Free workers |
-|---|---|---|---|
-| 1–2 | 0 | Existing formula for N | — |
-| 3 | 1 | Formula for N=2: 1 quick + 1 base | 1 opencode-task |
-| 4 | 1 | Formula for N=3: 1 quick + 1 base + 1 deep | 1 opencode-task |
-| 5 | 1 | Formula for N=4: 1 quick + 2 base + 1 deep | 1 opencode-task |
-| 6 | 2 | Formula for N=4: 1 quick + 2 base + 1 deep | 1 opencode-task + 1 llm/opencode-llm |
-| 7 | 2 | Formula for N=5: 1 quick + 2 base + 1 deep + 1 effort-* | 1 opencode-task + 1 llm/opencode-llm |
+## 3. Judge
 
-Beyond N=7: free = min(floor(N/3), 2), Claude = tier formula for (N − free_count).
+Give a separate judge the common task, rubric, necessary context, and candidate artifacts. Instruct it to evaluate without editing candidates. Use neutral candidate labels; judge the artifacts and evidence rather than their model or tier. Run relevant objective checks where practical. Reject candidates that violate mandatory requirements before comparing preferences. If the judge cannot complete the comparison, stop and report it as incomplete.
 
-### Tool: OpenCode
+If no candidate satisfies the requirements, correct the strongest attempt within the remaining budget and have it judged under the original rubric. If it still fails, stop and report an incomplete result with the remaining gaps. Explain meaningful ties using the user's priorities; ask only when choosing between unresolved tradeoffs needs their judgment.
 
-| Task type | Workers |
-|---|---|
-| Implementation | `implementer-quick` / `implementer` |
-| Planning | `planner` |
-| Research | `researcher` |
-| Debugging | `debugger` |
-| Review | `reviewer-quick` / `reviewer` |
-| Audit | `auditor` |
-| Text / cheap | `relay` / `llm` / `opencode-llm` |
+## 4. Select and validate
 
-No Claude models — all workers from opencode agents or ollama.
+Start with the strongest qualifying candidate. Incorporate another candidate's contribution only when it improves that result coherently; combining candidates is optional. Apply the chosen result without overwriting unrelated work, then validate the actual integrated artifact. Candidate scores alone do not validate a synthesis.
 
-| N | Workers |
-|---|---|
-| 1 | 1 quick (`implementer-quick` / `reviewer-quick`) |
-| 2 | 1 quick + 1 base (`implementer`) |
-| 3 | 1 quick + 1 base + 1 text (`relay` / `llm`) |
-| 4 | 1 quick + 1 base + 1 text + 1 specialist per task type |
-| 5+ | Above + 1 additional specialist per extra N |
+Keep enough candidate state to explain or recover the selection until the final result is saved. Clean up only disposable artifacts created by this run.
 
-## 3. Define angles
-- N distinct approaches from the task. State each, user confirms.
+## Report
 
-## 4. Define rubric
-- Extract evaluation criteria from task acceptance criteria.
-- Each criterion: weight (1–5) + score (1–10). User confirms.
-
-## 5. Spawn workers
-
-### Tool: Claude Code
-- Spawn Claude workers via Agent tool. Each gets: task + its angle + output path. No worker sees others' outputs.
-- Spawn free workers via `run_in_background` for each bash call, at the same time as Claude workers:
-  - `opencode-task best-of-n-{angle} -T {timeout} "task + angle"` → response on stdout, changes in `.worktrees/best-of-n-{angle}/`. Write response to `.best-of-n-outputs/{angle}.md`.
-  - `echo "task + angle" | llm --code -o .best-of-n-outputs/{angle}.md "spec"` — local ollama text-only
-  - `echo "task + angle" | opencode-llm -o .best-of-n-outputs/{angle}.md "spec"` — free cloud text-only
-- On free worker failure (opencode/ollama unavailable, timeout) → treat as no output, continue with remaining.
-
-### Tool: OpenCode
-- Spawn workers via `opencode run --agent <name> --auto -- "prompt + angle"`. Write response to `.best-of-n-outputs/{angle}.md`.
-- Text-only: `llm "instruction"` or `opencode-llm -o .best-of-n-outputs/{angle}.md "spec"`.
-- Each gets: task + its angle + output path. No cross-contamination. Never use Claude models.
-
-## 6. Score
-- Judge receives rubric + all N outputs (primary + free workers).
-- Auditor agent for critical tasks; reviewer otherwise.
-- Scores each per criterion with reasoning — free workers scored on same rubric, no special treatment.
-
-## 7. Synthesize
-- Combine best parts from all outputs into final result.
-- No clear winner → present tradeoffs.
-
-## 8. Report
-- Scoring matrix (criteria × solutions), synthesized output, provenance per part (which tool produced each).
-- Note which workers were free (opencode/ollama) and cost savings.
-- State upfront: cost estimate before user confirms.
+Respect the requested reporting detail. Include the requested and completed counts, concise comparison, selection rationale, final validation, and remaining tradeoffs. Describe model usage or cost only from observed information; do not invent savings.

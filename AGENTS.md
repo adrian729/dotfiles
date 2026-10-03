@@ -6,7 +6,8 @@ This is a [GNU Stow](https://www.gnu.org/software/stow/) dotfiles farm. Each top
 | --------------- | ------------------------- | -------------------------------------------------- |
 | `claude/`       | `~/.claude/`              | Claude Code config: agents, skills, hooks, scripts |
 | `opencode/`     | `~/.config/opencode/`     | OpenCode config                                    |
-| `agents/`       | `~/.agents/`              | Shared, tool-agnostic behavior rules (`AGENTS.md`) |
+| `codex/`        | `~/.codex/`               | Codex config (copied)                              |
+| `agents/`       | `~/.agents/`              | Shared behavior rules (`AGENTS.md`) and skills     |
 | `nvim/`         | `~/.config/nvim/`         | Neovim config                                      |
 | `tmux/`         | `~/.config/tmux/`         | tmux config                                        |
 | `zsh/`          | `~/.config/zsh/`          | Zsh config                                         |
@@ -19,9 +20,12 @@ This is a [GNU Stow](https://www.gnu.org/software/stow/) dotfiles farm. Each top
 
 Shared, tool-agnostic behavior rules live in `~/.agents/AGENTS.md` (the `agents/` package). Claude Code pulls them into `claude/.claude/CLAUDE.md` via a relative `@import`; OpenCode's `~/.config/opencode/AGENTS.md` is a symlink to the same file.
 
+Codex deliberately has no global `AGENTS.md` link. Its package copies portable settings to `${CODEX_HOME:-$HOME/.codex}/config.toml`. The `agents/` package owns files deployed to `~/.agents/`, including the original `markdown-no-wrap` skill. Claude's skills directory links to that original; Codex discovers it directly through `~/.agents/skills/`. No custom Codex agents or hooks are added.
+
 ## Key paths for Claude Code work
 
-- **`claude/.claude/skills/`** — SKILL.md files. This is the canonical skills directory. Skills go here, not under `.claude/skills/` at repo root. OpenCode natively discovers these too.
+- **`agents/.agents/skills/`** — canonical originals for shared, tool-agnostic skills. Tool-specific discovery directories can link here; `markdown-no-wrap` uses this layout.
+- **`claude/.claude/skills/`** — Claude-specific skills, existing unmigrated skills, and symlinks to shared skills. OpenCode natively discovers these too. Root `.claude/skills/` is not a deployment directory.
 - **`claude/.claude/agents/`** — Claude Code agent definitions (implementer, planner, researcher, writer, debugger, reviewer, auditor, analyzer, summarizer, operator, cleaner, explorer, effort-_, opencode-_ delegation wrappers, most with quick/base/deep tiers). OpenCode does **not** read `.claude/agents/`; its own subagents are separate `.md` files under `opencode/.config/opencode/agents/` (the `agent` key in `opencode.json` itself only holds `relay`/`task`).
 - **`claude/.claude/hooks/`** — guard and eval hooks.
 - **`claude/.local/scripts/`** — utility scripts for claude worktree management.
@@ -29,7 +33,7 @@ Shared, tool-agnostic behavior rules live in `~/.agents/AGENTS.md` (the `agents/
 ## Rules
 
 - claude operational config (agents, skills, hooks, scripts, settings) goes under `claude/.claude/`. Root `.claude/` holds project CLAUDE.md only.
-- When creating a new skill, the path is `claude/.claude/skills/<name>/SKILL.md`.
+- Create shared, tool-agnostic skills at `agents/.agents/skills/<name>/SKILL.md`; add symlinks in other tool discovery directories when needed. Claude-specific skills go at `claude/.claude/skills/<name>/SKILL.md`.
 - Every package has a `.stow-local-ignore` excluding at least its own `install.sh` from stow symlinking — see the exclusions table below for package-specific extras.
 - Root `install.sh` stows with **`--no-folding`**, and must keep doing so. Without it, stow "folds" an entire directory into one symlink whenever the target does not exist yet — on a fresh machine `~/.config` itself becomes a link into this repo. That defeats the whole copied-not-symlinked design: `claude/.claude/settings.json`, `opencode.json` and `bettercmdtab/config.json` become live repo files, so each tool writes its own state straight into git. A `.stow-local-ignore` entry does **not** protect against this — ignoring a file stops stow linking it individually, not the parent fold that exposes it anyway. Verified by experiment, and observed in the wild: `~/.config/bettercmdtab` on the original Mac was a folded symlink into the repo, and BetterCmdTab had been writing `config.json` (and a stray `schema.json`) into the working tree through it. Adding the flag does not un-fold an already-folded target — that needs `stow -D <pkg>` followed by a normal re-stow.
 - `install.sh` at repo root is the bootstrap installer. `lib/common.sh` holds the shared OS-switch and dependency helpers every installer sources — put platform branching there rather than re-deriving it per package, and detect the platform with its `is_macos`/`is_linux` rather than `$OSTYPE`.
@@ -55,7 +59,7 @@ claude/
     agents/            44 agent defs — YAML-frontmatter .md (incl. 9 opencode-* delegation wrappers)
     hooks/             agent-eval, agent-guard, agent-skill-nudge, skill-eval
                        lib/skill-names.sh (shared skill listing, sourced by two of them)
-    skills/            12 SKILL.md dirs
+    skills/            Claude skill dirs + markdown-no-wrap/SKILL.md symlink to agents/.agents/skills/
     tmp/
    .local/
     config/            local-llm-models.json (static ollama model catalog)
@@ -88,10 +92,20 @@ opencode/
   install.sh
   pre_stow.sh          clears standalone script copies out of ~/.local/scripts
 
+codex/
+  .codex/
+    config.toml        copied by install.sh, not symlinked
+  .stow-local-ignore
+  README.md            settings and installation guide, not deployed
+  install.sh           CLI bootstrap + config copy
+
 agents/
   .agents/
     AGENTS.md          shared behavior rules (deployed to ~/.agents/)
     ARCHITECTURE.md    design rationale (.stow-local-ignored — not deployed)
+    skills/
+      markdown-no-wrap/
+        SKILL.md       original shared Markdown skill; Claude links here
   .stow-local-ignore
   install.sh           no-op placeholder (nothing to bootstrap for this package)
 
@@ -197,16 +211,17 @@ lib/                   not a stow package — shared installer helpers only
 1. Bootstraps Homebrew via `brew_bootstrap` if missing, then verifies/installs `stow` (falling back to `pkg_install` if the Homebrew bootstrap failed — without stow nothing links at all, which is the difference between a partial install and one that achieves literally nothing). On Linux `brew_bootstrap` installs Homebrew's own prerequisites via `brew_prereqs` first, since the upstream installer checks for them but does not install them. Interactivity is left to that installer, which already sets `NONINTERACTIVE` itself when stdin is not a TTY.
 2. Filters out packages that cannot exist on this platform via the `macos_only` array (`bettercmdtab`, `kitty`) when running on Linux, then applies `.stow_blacklist.local`. A package in both lists is announced once, with the platform reason taking precedence.
 3. Stows the surviving packages from its `directories` array (or prompts per-package unless answering "y" to "stow all"), via a `stow_pkg` helper that runs the package's `pre_stow.sh` first if it has one. The stow call passes **`--no-folding`, which is load-bearing** — see the rule below. `pre_stow.sh` is for work that must happen while the target files are still unstowed — the two that exist (`claude/`, `opencode/`) delete the plain script copies `standalone_quick_setup.sh` leaves in `~/.local/scripts`, which stow would otherwise refuse to overwrite. Keep this hook generic in root `install.sh`; package-specific logic belongs in the package's own `pre_stow.sh`. A failing `pre_stow.sh` warns and stows anyway.
-4. Runs each package's own `install.sh` if present — all 12 packages have one now, mostly an idempotent `ensure_cmd <tool> [formula]` guard (`agents/install.sh` is a no-op placeholder). Notable exceptions:
+4. Runs each package's own `install.sh` if present — all 13 packages have one now, mostly an idempotent `ensure_cmd <tool> [formula]` guard (`agents/install.sh` is a no-op placeholder). Notable exceptions:
    - **claude/install.sh**: also installs the `claude` CLI itself (brew cask on macOS, `claude.ai/install.sh` on Linux — the cask does ship Linux variants now, but the official installer is Anthropic's documented Linux path and self-updates), copies `settings.json` (not symlink → tool can modify freely), sets `editorMode: "vim"` in `~/.claude.json`, probes local LLM (llm-models-probe warns when the catalogued lineup is missing — fix by running `llm-models-pull` manually), then registers `claude/marketplace/` via `claude plugin marketplace add` and installs `ty-lsp@dotfiles` (CLI rather than `extraKnownMarketplaces` in the repo settings.json, because the directory source needs a per-machine absolute path; must run after the settings copy, which it writes into). The plugin is copied into `~/.claude/plugins/cache` and `claude plugin update` is version-gated, so edits under `claude/marketplace/plugins/ty-lsp/` only take effect after bumping its `version` or running `claude plugin uninstall ty-lsp@dotfiles && claude plugin install ty-lsp@dotfiles`. Uses `ensure_node` rather than a bare `command -v npm` before installing `claude-agent-acp`: npm only happens to be on PATH there because `opencode/` installs first and brew's `opencode` formula depends on `node`, so the bare check is silently load-bearing on the order of the `directories` array.
    - **opencode/install.sh**: copies `opencode.json` (not symlink), probes free-tier model availability
+   - **codex/install.sh**: installs the CLI through Homebrew with the official standalone installer as fallback, then atomically copies `config.toml` (not symlink). Re-running replaces live settings with the portable repo baseline. Authentication is separate.
    - **bettercmdtab/install.sh**: macOS-only; brew-installs `bettercmdtab`, copies `config.json` (not symlink → app writes back live), sets trigger hotkeys via `defaults write` (⌥Tab/⌥` to leave ⌘Tab/⌘` native)
    - **ghostty/install.sh**: brew cask on macOS; on Linux tries the distro's own package (official on Arch `extra`, Alpine testing, Gentoo, Void, Solus, NixOS) → the `mkasberg/ghostty-ubuntu` .deb, Debian family only → the `--classic` snap, which upstream builds from Ghostty's own scripts. Fedora has only a community COPR, which is printed as a suggestion rather than enabled automatically; there is no Flathub package, so Flatpak is deliberately not attempted.
    - **kitty/install.sh**: macOS-only by choice, not by packaging limit — ghostty is the sole Linux terminal. Listed in root `install.sh`'s `macos_only`; changing that means changing both.
    - **ollama/install.sh**: brew on macOS; on Linux the official `ollama.com/install.sh`, which registers the systemd unit and pulls the CUDA/ROCm runtime that the Homebrew build does not set up. Checks `ollama.env` exists and prints a reminder if not.
    - **zsh/install.sh**: installs `zsh` itself from the distro on Linux (never from brew — a login shell under `/home/linuxbrew` locks the account out if that tree goes missing) and offers `chsh`, since a fresh Linux account is usually on bash and would leave this whole package inert. The offer only ever names an OS-owned zsh (`/bin/zsh`, `/usr/bin/zsh`), never whatever `command -v zsh` resolves to — after `brew_shellenv` that is Homebrew's, and pointing a login shell there is the same lock-out.
 
-Key design: `settings.json`/`opencode.json`/`config.json` are **copied** so tools can modify freely without dirtying the repo. Re-running install.sh resets from repo version.
+Key design: `settings.json`/`opencode.json`/`config.toml`/`config.json` are **copied** so tools can modify freely without dirtying the repo. Re-running install.sh resets from repo version.
 
 ## `lib/common.sh` (shared installer helpers)
 
@@ -238,6 +253,7 @@ Every package now has a `.stow-local-ignore` excluding at least its own `^/insta
 | --------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | `claude/`       | guides, `pre_stow.sh`, `settings.json`, `settings.local.json`, `claude.env`, `marketplace/` | docs, installer-only, per-machine, must be copied/gitignored, or registered in place |
 | `opencode/`     | guides, `pre_stow.sh`, `opencode.json`                                      | docs, installer-only, or must be copied                         |
+| `codex/`        | `README.md`, `.codex/config.toml`                                         | docs or settings that must be copied                           |
 | `agents/`       | `ARCHITECTURE.md`                                                           | design doc, not deployed                                        |
 | `nvim/`         | `.config/nvim/.claude/`                                                     | per-project Claude settings, not deployed                       |
 | `ollama/`       | `.gitignore`, `ollama.env`                                                  | not meant to be symlinked out                                   |
@@ -253,10 +269,12 @@ Every package now has a `.stow-local-ignore` excluding at least its own `^/insta
 | Change tmux keybind/layout             | `tmux/` (tmux.conf)                                                                  |
 | Change Neovim plugin/setting           | `nvim/` (lua/plugins/_.lua or lua/config/_.lua)                                      |
 | Add/update AI agent def                | `claude/.claude/agents/` (+ mirror in opencode if OpenCode needs it)                 |
-| Add/update AI skill                    | `claude/.claude/skills/<name>/SKILL.md`                                              |
+| Add/update shared AI skill             | `agents/.agents/skills/<name>/SKILL.md` (+ tool discovery symlinks as needed)       |
+| Add/update Claude-specific AI skill    | `claude/.claude/skills/<name>/SKILL.md`                                              |
 | Add/update AI hook                     | `claude/.claude/hooks/`                                                              |
 | Change tool permissions                | `claude/.claude/settings.json` + mirror in `opencode/.config/opencode/opencode.json` |
 | Change shared agent rules (both tools) | `agents/.agents/AGENTS.md`                                                           |
+| Change Codex settings                 | `codex/.codex/config.toml` (copied by `codex/install.sh`)                            |
 | Bootstrap a new machine                | `install.sh` (repo root)                                                             |
 | Add new stow package                   | Create `<name>/` dir, add to `install.sh` stow list                                  |
 | Add a macOS/Linux switch or shared dep | `lib/common.sh` (then call the helper from the package's `install.sh`)               |
@@ -282,5 +300,6 @@ Every package now has a `.stow-local-ignore` excluding at least its own `^/insta
 - `~/.gitconfig` — git config (excluded from repo via .gitignore, created manually)
 - `~/.config/ollama/ollama.env` — Ollama API key (gitignored, template provided)
 - `~/.config/opencode/opencode.json` — copied from repo (tool may modify)
+- `${CODEX_HOME:-~/.codex}/config.toml` — copied from repo (tool may modify)
 - `~/.claude/settings.json` — copied from repo (tool may modify)
 - `~/.config/bettercmdtab/config.json` — copied from repo (app writes back live)

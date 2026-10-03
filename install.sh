@@ -41,6 +41,7 @@ directories=(
   # AI tooling
   "opencode"
   "claude"
+  "codex"
   "agents"
   "ollama"
 

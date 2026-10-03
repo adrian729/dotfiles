@@ -1,0 +1,20 @@
+model = "gpt-6.1-sol"
+model_reasoning_effort = "high"
+model_post_turn_compact_threshold_percent = 40
+model_auto_compact_token_limit = 100000
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+web_search = "live"
+
+[tui]
+vim_mode_default = true
+status_line = [
+  "model-with-reasoning",
+  "context-used",
+  "five-hour-limit",
+  "weekly-limit",
+  "current-dir",
+  "git-branch",
+  "branch-changes",
+  "thread-name",
+]

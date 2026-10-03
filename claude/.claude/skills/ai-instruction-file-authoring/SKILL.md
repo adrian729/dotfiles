@@ -1,74 +1,29 @@
 ---
 name: ai-instruction-file-authoring
-description: Author and evaluate AI-read instruction files — skills (SKILL.md), subagents (.claude/agents/*.md or opencode.json agent block), CLAUDE.md/AGENTS.md memory files. Use when creating, editing, auditing/reviewing, or judging well-formedness of any such file; explaining why a skill/agent over-/under-fires or mis-routes; or supplying the rubric while audit-loop drives an audit of these files. NOT for running a skill's task, executing/delegating to an agent, merely reading/quoting an instruction file, non-instruction-file audits (audit-loop), or settings.json/hooks/permissions/harness automations (update-config).
+description: Write or review skills (SKILL.md), agent definitions, and memory files (CLAUDE.md/AGENTS.md); diagnose their triggering or routing. Use for instruction-file changes or audits, not for executing the tasks those files describe.
 ---
 
 # AI Instruction-File Authoring
 
-Skill: `.claude/skills/<name>/SKILL.md`; agent: `.claude/agents/<name>.md` (Claude Code) or `opencode.json` `agent` block / `opencode/.config/opencode/agents/<name>.md` (OpenCode). Both `description` fields load every session (skill: trigger matching; agent: router delegation). Skill body loads only on trigger; agent body becomes subagent's system prompt. Optimize to that split: description = trigger/routing precision in fewest tokens; body = just enough rules for correct behavior.
-
-CLAUDE.md (global `~/.claude/CLAUDE.md` or project `<repo>/CLAUDE.md`): no frontmatter, no trigger — loaded unconditionally every session, read as prose. Frontmatter and Description sections below don't apply; every other doctrine does.
-
-**Audience: reader is always AI — router model choosing skills/agents, agent executing them, or model reading its own always-loaded memory — never a human.** Direct instructions, not documentation. No onboarding, motivation, or "this will help you" framing. Governs every choice below.
-
-## Frontmatter
-- Skill: `name` (lowercase-hyphenated, = dir name) + `description`.
-- Agent: `name` (= filename minus `.md`) + `description`; optional `model`, `effort`. effort-* carriers: only `name`/`description`/`effort` — model passed at call time.
-- `description`: one unwrapped inline line — never fold (`>-`) or wrap (see `markdown-no-wrap`). Preserve punctuation shape when editing — frontmatter parser tolerance proven only for existing form.
-
-## Description
-- Skill format: `<what it does, terse>. Use when <triggers>[; NOT when <anti-triggers>].` MUST end with "Use when …" — it fires the skill.
-- Agent format — task agents: `Use PROACTIVELY to <task> — <scope>. NOT: <case> (<sibling>), <case> (<sibling>).`; explicit-ask carriers (effort-*): `Use when user explicitly asks <X> for delegated task.` NOT-clause routes each borderline case to its sibling.
-- Triggers concrete: paraphrased user phrasings + situations, not just topic.
-- Anti-triggers when sibling skill/agent or base agent could grab request — they route *elsewhere*, not *off*; legitimate co-fire? say so, keep anti-trigger narrow.
-- Voice: imperative, condition-first. **you** only when trigger is Claude's own judgment; name **user** only to mark explicit ask vs. inference; never **I**.
-- Word-level trim: drop articles/filler where meaning stays unambiguous — AI readers don't need them. Never cut semantic load: quoted phrasings, sibling names, verbs, NOT-clauses, numbers, slash-commands.
-- Agents with quick/base/deep tiers: descriptions must be cumulative. Deep tier: `"cover everything <base> does AND additionally <its focus>"`. Base tier must encompass quick scope. NOT-clause still routes trivial/specialized cases away, but agent when invoked covers the full stack below it.
-
-## Body
-- Skill: one line what/why, then procedure. Numbered steps; **bold** labels + `→` for rules; inline code for literals. Reference other skills/commands by name, don't re-explain. Rarely-needed detail → sibling files, pointed to.
-- Agent: one terse imperative line stating deliverable and report shape (e.g. `Analyze and explain, citing file:line.`).
-
-## CLAUDE.md / AGENTS.md / memory files
-- No frontmatter/trigger → skip those sections. Loaded every turn → token discipline applies doubly.
-- One topic per `#` header; each line a behavior-changing directive — imperative rule, not description of current behavior; cut "why".
-- No duplication across hierarchy: project file holds only repo-specific deltas, never restates global rules.
-- Don't re-encode an existing skill's/agent's job — reference by name.
-- Boundary: automated triggers ("whenever/each time/before/after X") belong to the harness's own automation mechanism (Claude Code: `settings.json` hooks, via update-config) — NOT the memory file, which holds only what the model decides/acts on at inference time. Flag and redirect misplaced requests.
-
-## Portability
-- Default target: Claude Code + OpenCode both. Cursor too when free, not a hard requirement.
-- Generic by default costs nothing — don't hardcode `claude`-namespaced paths/state dirs, "Claude"-specific wording, or tool examples when a generic equivalent works identically.
-- Tool-specific mechanics only where the task genuinely requires them: Claude Code hooks/settings.json, model/effort dials, UI keybindings, or anything keyed to `.claude/agents/`-only subagents. Don't invent portability where the mechanism doesn't exist elsewhere.
-- Skill/agent inherently tied to one tool (wraps a tool-only mechanism) → say so in its description/body. Don't leave portability ambiguous by omission.
-- A skill genuinely tied to one tool's own mechanism (not just tool-flavored wording) → add an explicit `NOT when <host isn't that tool>` clause to its `description`, so it doesn't fire under a host where it's meaningless or circular — not just document the limit in the body.
-
-## Registration (Claude Code)
-During **create** and **audit**, evaluate whether the skill's description should be `skillOverrides: "name-only"` in `settings.json`:
-- **Recommend name-only** when trigger is narrow + user-driven AND description non-trivial length. Say: `"Recommend skillOverrides: name-only — trigger user-driven, description costs N tokens."`
-- **Don't recommend** when trigger broad/useful with valuable auto-fire, or description short.
-- **Always recommend, never decide** — phrase as suggestion, user sets the key.
-
-## Token discipline
-Two failure modes:
-- **Bloat** → tokens wasted every trigger. Cut any line that doesn't change behavior.
-- **Under-spec** → wrong behavior, then more tokens to catch and redo. Never cut a rule whose absence causes mistakes.
-Test per line: "delete this — behavior change?" No → cut. Yes → keep, tighten. Then per word: "delete this word — meaning change?" No → cut.
-
-## Audit checklist
-1. **Trigger/Routing** — skill: ends with "Use when", triggers concrete, anti-triggers present where collision possible yet narrow. Agent: leads with "Use", NOT-clause names existing siblings. Mentally test: fires/routes when it should, co-fires where valid, quiet otherwise?
-2. **Frontmatter** — valid; `name` = dir (skill) / filename (agent); only allowed fields. N/A for CLAUDE.md (none).
-3. **Tokens** — every word earns its place; no human framing; no restating description; articles/filler cut where safe.
-4. **Sufficiency** — rules cover needed cases; no gap forcing a guess; agent body states deliverable. Quick/base/deep tiers: each tier's description encompasses the tier below.
-5. **Consistency** — body matches description; no contradictions; referenced skills/commands/siblings exist.
-6. **CLAUDE.md** — one topic per header; no cross-hierarchy duplication; automations redirected to hooks/update-config, not memory.
-7. **Portability** — generic by default (Claude Code + OpenCode; Cursor when free); tool-specific only where the mechanism requires it; genuine tool-lock stated explicitly, not left implicit.
-8. **Registration** — flag name-only for skills with narrow user-driven triggers and non-trivial descriptions; don't flag when auto-fire is valuable or savings negligible. Recommend, don't decree.
-
-Report by item; fix safe issues, flag judgment calls.
+Write concise instructions an agent can reliably apply. Include the context and constraints needed for correct decisions; assume the model already knows general concepts and routine techniques.
 
 ## Workflow
-- **Write** → name+location → description (what + Use when/routing + anti-triggers) → registration mode → body → checklist.
-- **Update** → make the change → re-run checklist (esp. Trigger + Consistency).
-- **Audit** → checklist only → report + fix safe issues.
-- **CLAUDE.md** → skip name/description/frontmatter → header-grouped directives → checklist (minus Frontmatter, plus hook-boundary check).
+
+1. **Establish scope.** Identify the intended outcome, target tools, file type, and requested mode. Respect review-only requests; edit when requested. For revisions, identify the behavior to preserve or correct before adding rules. Keep fixes specific to the demonstrated problem.
+2. **Inspect context.** Read the file and relevant inherited instructions. Determine what each target tool discovers and loads, including imports and conditional references. Check overlapping guidance and available dependencies before removing duplication or adding references. Keep repository conventions scoped to that repository.
+3. **Draft.** Use the file-type guidance below. Specify needed inputs, decisions, outputs, and completion criteria. Use exact steps for fragile operations and leave judgment where valid approaches vary. Include exceptions or examples when they resolve likely ambiguity. Preserve precise tool-specific paths and mechanics where the task requires them.
+4. **Validate.** Parse frontmatter or configuration when present; check required fields, supported options, naming, and location against the target tool's format. Consult current documentation when uncertain; preserve valid existing options. Check for conflicting instructions, including inherited rules, and ensure descriptions match their bodies. Verify references to files, commands, skills, and agents are available in the intended environment. For routing changes, examine requests that should and should not match. For substantial behavioral changes, exercise representative tasks where practical and compare with previous behavior. Distinguish actual runs from reasoning through examples.
+5. **Compress and report.** Apply the token guidance below, then check that necessary requirements and distinctions survived. In a review, report concrete issues, likely effects, and proposed changes. After editing, summarize what changed, what was checked, and any untested behavior.
+
+## File types
+
+- **Skills:** Use the description to identify the task and when to select it. Prefer concrete situations; add exclusions only for likely collisions. No exact phrase is required. Put the executable workflow and its decision points in the body. Move conditional detail into supporting files when useful, with explicit paths and instructions for when to read them. Keep essential constraints in the entrypoint.
+- **Agent definitions:** Describe the delegated responsibility and when it fits. Include the scope, constraints, task guidance, and expected result needed to perform that role. Body length follows the task. Encourage proactive delegation only when intended; tier relationships depend on the actual agent design. Validate metadata separately for each tool rather than assuming agents share a schema.
+- **Memory and project instructions:** Record persistent, non-obvious facts, constraints, and conventions that affect work. Retain short rationale when it helps the agent apply a rule correctly. Place guidance where it loads for the intended scope; remove duplication only after checking inheritance. Use the tool's automation mechanism when an action must execute at a supported lifecycle event; conditional advice such as “before editing, inspect symlink targets” can remain in prose.
+
+## Token discipline
+
+- Prioritize frequently loaded descriptions and instructions. Check actual loading behavior; discovery metadata, invoked bodies, and optional references have different context costs.
+- Remove irrelevant policy, repetition, and obvious explanations before trimming individual words. Preserve clear sentences, useful examples, and rationale that prevent mistakes. Avoid arbitrary line limits or reduction targets.
+- Keep small files self-contained. Split out material only when selective loading helps; make each reference's purpose clear so the agent can find it without reading everything.
+- Preserve intended invocation behavior when shortening descriptions. Change visibility or invocation settings only within the requested scope. If reviewing Claude's `skillOverrides`, `name-only` still exposes the skill's name to the model; it does not make the skill manual-only.

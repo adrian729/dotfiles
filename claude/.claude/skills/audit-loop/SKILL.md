@@ -1,106 +1,34 @@
 ---
 name: audit-loop
-description: Iteratively audit work: find issues, fix safe ones, re-audit until two consecutive clean passes or user-given iteration cap. Use when "audit loop", "keep auditing until clean", "iteratively audit"; NOT when one-shot audit/review/harden/double-check (→ reviewer/auditor).
+description: "Repeatedly audit and fix a target, then confirm it with two consecutive clean passes. Use when explicitly asked for an audit loop or to keep auditing until clean; a one-pass review does not need this workflow."
 ---
 
 # Audit Loop
 
-Repeatedly find issues, fix safe ones, re-audit until clean. Run hands-off; report at end.
+Review, triage, fix, and repeat. Require two consecutive clean passes to declare convergence; unresolved issues remain visible.
 
-## 1. Target
-- Named in request → audit exactly that.
-- Else → most recent work this session (analysis, plan, implementation, docs), inferred from context.
-- State target in one line before starting.
+## Setup
 
-## 2. Options (natural language, no flags)
-- **Iter cap** — number ("max 5", "cap at 3") → hard cap. Otherwise no cap; rely on convergence.
-- **Split mode** — see §9.
+- Use the named target, or infer the most recent work when unambiguous. Record its scope and acceptance criteria. For conversational plans or analysis, provide the actual text to reviewers.
+- Honor requested iteration, time, and cost limits. A pass covers the whole target; splitting it does not multiply or reset the budget. Without a supplied cap, continue while making progress toward confirmation.
+- Establish whether fixes are authorized. A review-only request keeps the target unchanged. Use available reviewers and implementers within the current tool and model constraints.
 
-## 3. Agent roles by tool
+## Each pass
 
-Each step maps to a tool-specific agent. The host tool's section controls which agent fills each role.
+1. **Review.** Use a fresh reviewer context, instructed to inspect without editing. Supply the target, requirements, and relevant surrounding context, excluding earlier verdicts and the author's reasoning. Focus on correctness, missing requirements, contradictions, and relevant risks. For code, use tests where they provide evidence; for plans and documents, check feasibility, accuracy, and references.
+2. **Triage.** Reconcile findings with the existing issue ledger. Each significant finding needs a location, supporting evidence, and concrete impact. Reject unsupported findings with a reason. Track optional improvements separately; greater review depth does not turn cosmetic preferences into defects.
+3. **Fix.** Correct supported significant issues within the authorized scope, then run checks appropriate to the change. Leave optional improvements unless requested. Delegate fixes only when useful, with clear ownership. Record anything that remains unresolved and why.
+4. **Count.** A pass is clean only if its review completes, it finds no supported significant issue, it has no unresolved significant issue in the ledger, and it makes no fixes. Increment the clean streak for a clean pass; otherwise reset it. Fixing an issue during a pass requires a later pass to confirm the result.
 
-### Tool: Claude Code
+The orchestrating agent can triage, fix, and report; separate agents for these roles are optional. Fresh reviewer contexts are required for independent confirmation. If the environment cannot provide them, stop and report the blocked gate.
 
-| Step | Default agent | Escalated agent |
-|------|--------------|-----------------|
-| Audit | per tier table (§4) | per tier table |
-| Triage | `analyzer` (sonnet medium) | `analyzer-deep` (opus high) for paranoid mode |
-| Fix | `implementer` (sonnet medium) | `implementer-deep` (opus high) for risky fixes |
-| Report | `summarizer` (sonnet medium) | — |
+For large targets, reviewers may cover disjoint subsets in the same pass. Give them access to related context and include a review of interfaces and shared assumptions before counting the pass as complete.
 
-Non-code targets use same agents — dimensions (§5) drive the focus, not agent body.
+## Stop and report
 
-### Tool: OpenCode
+- **Converged:** two consecutive clean passes. Optional improvements may remain and do not restart the loop.
+- **Limit reached:** stop at the user's cap or budget, including when only one clean pass has completed. Report the unconfirmed state.
+- **Stalled or blocked:** stop when only issues that cannot currently be resolved remain, or repeated fixes make no meaningful progress. Keep those issues unresolved; repetition never downgrades their severity.
+- **Review-only:** findings remain open for reporting. Do not start fixing them to obtain a clean result.
 
-| Step | Default agent | Escalated agent |
-|------|--------------|-----------------|
-| Audit | per tier table (§4) | per tier table |
-| Triage | `reviewer` (free model) | `auditor` (upgraded model) for paranoid mode |
-| Fix | `implementer` (free model) | `implementer` (rerun with more steps) for risky fixes |
-| Report | `relay` (free model) | — |
-
-Non-code targets use same agents — dimensions (§5) drive the focus, not agent body.
-
-## 4. Tiers
-
-### Tool: Claude Code
-
-| Mode | Trigger | Main loop audit | Confirmation (clean_streak==1) |
-|------|---------|-----------------|-------------------------------|
-| Quick/cheap | "quick", "cheap", "light" | `reviewer-quick` (sonnet med) | `reviewer` (sonnet xhigh) |
-| Normal | (default) | `reviewer` (sonnet xhigh) | `auditor` (opus high) |
-| Paranoid | "security", "thorough", "paranoid", "deep" | `auditor` (opus high) | `auditor-deep` (opus xhigh) |
-| Maximum | "exhaustive", "leave no stone unturned" | `auditor-deep` (opus xhigh) | `auditor-deep` (fresh spawn) |
-
-### Tool: OpenCode
-
-| Mode | Trigger | Main loop audit | Confirmation (clean_streak==1) |
-|------|---------|-----------------|-------------------------------|
-| Quick/cheap | "quick", "cheap", "light" | `reviewer-quick` | `reviewer` |
-| Normal | (default) | `reviewer` | `auditor` |
-| Paranoid | "security", "thorough", "paranoid", "deep" | `auditor` | `auditor` (fresh spawn) |
-| Maximum | "exhaustive", "leave no stone unturned" | `auditor` | `auditor` (fresh spawn) |
-
-After confirmation fails → next iteration uses Main loop agent again (all tiers: Reset == Main).
-
-## 5. Dimensions
-Adapt to target type — pass relevant dimensions to auditor in its prompt:
-- **Code** — correctness & bugs, edge cases, missing/weak tests, security (auditor only), simplification & reuse.
-- **Plan/analysis/design** — completeness vs intent, contradictions, unstated assumptions, missing edge cases, feasibility.
-- **Docs/updates** — accuracy vs actual code/state, internal consistency, stale/broken references.
-
-## 6. Findings & severity
-- Every finding: location, severity, one-line summary. Blocking additionally: concrete failure scenario (inputs/state → wrong outcome; plans/docs: concrete decision or reader misled).
-- **blocking** — real impact: bugs, security, correctness gaps, contradictions, missing requirements. Resets clean streak; fixed or explicitly deferred.
-- **minor** — style, naming, cosmetic, no concrete failure scenario. Never resets streak, never auto-fixed, never looped on → ledger, deduped by parent.
-- Paranoid/max mode: all findings treated as blocking.
-- Clean pass = zero blocking findings after triage; minor-only pass counts clean.
-
-## 7. Loop
-Track `iteration = 0`, `clean_streak = 0`, minor ledger, deferred list. Log every iteration.
-
-Repeat:
-1. `iteration += 1`
-2. **Agent selection** — if `clean_streak == 1`, use Confirmation column from tier table. Otherwise use Main loop column.
-3. **Audit** — spawn selected agent. Prompt: read-only, report findings, never edit files; target dimensions (§5). Provide: target scope, dimensions, current deferred list. Do NOT provide own reasoning or prior-iteration findings. Target exists only in conversation → serialize first (embed full text in prompt, or scratch file + path).
-4. **Triage** — spawn the tool's triage agent (§3) with all findings + target scope + deferred list. Per finding: is it a re-sight of a deferred item? **First** re-sight → treat as blocking normally. **Second+** re-sight of same finding → mark non-blocking (noted for report, no action). Missing or unsound failure scenario → downgrade to minor or reject. Log all reasons. Paranoid mode → escalate (§3).
-5. Surviving blocking findings → `clean_streak = 0`. Per finding: in-scope and low-risk → fix via tool's fix agent (§3); else defer + record reason (risky / ambiguous / out-of-scope / needs user decision). Minors → ledger.
-6. No surviving blocking findings → `clean_streak += 1`.
-7. **Stop** when EITHER `clean_streak == 2` (two consecutive clean passes — never stop on one) OR cap was given and `iteration == cap`.
-
-**Stall guard** — only remaining blocked issues were already deferred AND no new fix possible → stop, "stalled". A deferred finding that became fixable → re-triage, don't stall. A pass whose only blocking findings are re-sighted deferreds with no new findings and no fixes applied contributes to stall detection.
-
-## 8. Report (always)
-Spawn the tool's report agent (§3) with full iteration log. Output:
-- **Target** + **mode** (tier used).
-- **Per iteration**: blocking found / fixed / deferred + reasons, downgrades + reasons, clean_streak, agents used.
-- **Outcome**: total iterations + why stopped (2 clean / cap reached / stalled).
-- **Needs your attention**: every deferred finding, with its reason and re-sight count. Flag that deferred findings are unresolved and not minor — user decides.
-- **Minor findings (non-blocking)**: deduped ledger, location + one-liner each; user decides — fix later or rerun loop including them.
-
-## 9. Split mode
-1. **Partition** — automatically decompose by directory boundary (no file in >1 part). If user names parts, use those. State each part's file set.
-2. **Independent loops** — each part runs full sequential loop (§7) with own iteration count, clean_streak, deferred list. Auditors receive only their part's files. If an auditor reads outside files for context, it must only report findings on its own part's files.
-3. **Seam scan** — after each part reaches `clean_streak == 2` independently, one sequential loop over boundary files (interfaces, shared modules, partition edges). Catches cross-cutting issues.
-4. **Report** — merge all per-part reports + seam scan into single §8 report.
+Keep a compact ledger of findings, fixes, validation, and pass outcomes. Report the stopping reason and unresolved issues with the decisions they need, respecting the requested reporting detail. A deferred significant issue prevents convergence.
