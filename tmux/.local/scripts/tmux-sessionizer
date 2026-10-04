@@ -6,21 +6,45 @@ if [[ -z "$selected" ]]; then
   exit 0
 fi
 
-selected_name=$(basename "$selected" | tr ":,. " "____")
+selected=$(cd -- "$selected" && pwd -P) || exit 1
+base_name=$(basename "$selected" | tr ":,. " "____")
+# cksum is available on both macOS and Linux. Ordinary names stay unchanged.
+checksum=$(printf '%s' "$selected" | cksum)
+collision_name="$base_name-${checksum%% *}"
 
-switch_to() {
-  if [[ -z "$TMUX" ]]; then
-    tmux attach-session -t "$selected_name"
-  else
-    tmux switch-client -t "$selected_name"
+session_matches() {
+  local session_root
+  tmux has-session -t "=$1" 2>/dev/null || return 1
+  session_root=$(tmux show-options -qv -t "=$1" @sessionizer_root)
+  if [[ -z "$session_root" ]]; then
+    session_root=$(tmux display-message -p -t "=$1:" '#{pane_start_path}')
   fi
+  [[ "$session_root" == "$selected" ]]
 }
 
-if tmux has-session -t="$selected_name" 2> /dev/null; then
-  switch_to
+selected_name="$base_name"
+if session_matches "$collision_name"; then
+  selected_name="$collision_name"
 else
-  tmux new-session -ds "$selected_name" -c "$selected"
-  tmux send-keys -t "$selected_name" "ready-tmux" ^M
-  switch_to
+  suffix=0
+  while tmux has-session -t "=$selected_name" 2>/dev/null; do
+    session_matches "$selected_name" && break
+    selected_name="$collision_name"
+    (( suffix > 0 )) && selected_name+="-$suffix"
+    suffix=$((suffix + 1))
+  done
 fi
 
+if tmux has-session -t "=$selected_name" 2>/dev/null; then
+  session_id=$(tmux display-message -p -t "=$selected_name:" '#{session_id}') || exit 1
+else
+  session_id=$(tmux new-session -d -s "$selected_name" -c "$selected" -P -F '#{session_id}') || exit 1
+  tmux set-option -t "$session_id" @sessionizer_root "$selected" || exit 1
+  tmux send-keys -t "$session_id:" "ready-tmux" C-m || exit 1
+fi
+
+if [[ -z "${TMUX:-}" ]]; then
+  tmux attach-session -t "$session_id"
+else
+  tmux switch-client -t "$session_id"
+fi

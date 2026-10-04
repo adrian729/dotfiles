@@ -36,17 +36,21 @@ alias df='df -h'
 alias -- -='cd -'  # -- prevents - being parsed as a flag; cd - jumps to previous directory
 
 lf() {
-    local no_cd_flag="/tmp/lf-no-cd-$(id -u)"
-    tmp=$(mktemp)
-    rm -f "$no_cd_flag"
-    command lf -last-dir-path="$tmp" "$@"
-    if [ -f "$no_cd_flag" ]; then
-        rm -f "$no_cd_flag"
-    elif [ -f "$tmp" ]; then
-        dir=$(cat "$tmp")
-        [ -d "$dir" ] && [ "$dir" != "$(pwd)" ] && cd "$dir"
-    fi
-    rm -f "$tmp"
+    local tmpdir dir rc
+    tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/lf.XXXXXX") || return
+    {
+        LF_NO_CD_FILE="$tmpdir/no-cd" command lf -last-dir-path="$tmpdir/last-dir" "$@"
+        rc=$?
+        if (( rc == 0 )) && [[ ! -e "$tmpdir/no-cd" && -s "$tmpdir/last-dir" ]]; then
+            dir=$(<"$tmpdir/last-dir")
+            if [[ -d "$dir" ]]; then
+                builtin cd -- "$dir" || rc=$?
+            fi
+        fi
+    } always {
+        command rm -rf -- "$tmpdir"
+    }
+    return "$rc"
 }
 
 # =========================================================
@@ -55,7 +59,10 @@ lf() {
 
 alias glog='PAGER="less -F -X" git log'                              # -F quit if one screen, -X no clear on exit
 alias gadog='PAGER="less -F -X" git log --all --decorate --oneline --graph'
-alias dotfiles='git --git-dir=$HOME/.dotfiles --work-tree=$HOME'
+# Resolve the checkout through the stowed symlink, including clone paths with spaces.
+typeset _dotfiles_repo="${${(%):-%x}:A:h:h:h:h}"
+alias dotfiles="git -C ${(q)_dotfiles_repo}"
+unset _dotfiles_repo
 
 # =========================================================
 # Video

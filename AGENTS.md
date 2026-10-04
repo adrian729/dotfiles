@@ -143,7 +143,7 @@ zsh/
     .zshrc             starship + zoxide (no oh-my-zsh); sources fzf.zsh,
                        aliases.zsh, bindings.zsh, plugins.zsh, prompt.zsh
     aliases.zsh        ls/ll/la/tree (eza), cat->bat, grep->rg, lf wrapper,
-                       glog/gadog, dotfiles bare-repo alias, nc_tcp_write,
+                       glog/gadog, dotfiles checkout alias, nc_tcp_write,
                        nc_udp_listen
     bindings.zsh       zsh-vi-mode cursor/keybinding overrides
     fzf.zsh            fzf defaults + Ctrl-F file picker
@@ -185,7 +185,7 @@ ollama/
 
 clangd/
   .config/clangd/
-    config.yaml        -std=c++23 fallback
+    config.yaml        preserves project flags and clangd defaults
   .stow-local-ignore
   install.sh
 
@@ -199,6 +199,7 @@ lf/
 bettercmdtab/
   .config/bettercmdtab/
     config.json        (copied by install.sh, not symlinked — live two-way sync)
+    schema.json        (copied too; the app can rewrite it)
   .stow-local-ignore
   install.sh           macOS-only (is_macos guard + root install.sh's macos_only)
 
@@ -211,12 +212,12 @@ lib/                   not a stow package — shared installer helpers only
 0. Sources `lib/common.sh` (see below) and `cd`s to the repo root, so every path in the script is repo-relative regardless of the caller's cwd
 1. Bootstraps Homebrew via `brew_bootstrap` if missing, then verifies/installs `stow` (falling back to `pkg_install` if the Homebrew bootstrap failed — without stow nothing links at all, which is the difference between a partial install and one that achieves literally nothing). On Linux `brew_bootstrap` installs Homebrew's own prerequisites via `brew_prereqs` first, since the upstream installer checks for them but does not install them. Interactivity is left to that installer, which already sets `NONINTERACTIVE` itself when stdin is not a TTY.
 2. Filters out packages that cannot exist on this platform via the `macos_only` array (`bettercmdtab`, `kitty`) when running on Linux, then applies `.stow_blacklist.local`. A package in both lists is announced once, with the platform reason taking precedence.
-3. Stows the surviving packages from its `directories` array (or prompts per-package unless answering "y" to "stow all"), via a `stow_pkg` helper that runs the package's `pre_stow.sh` first if it has one. The stow call passes **`--no-folding`, which is load-bearing** — see the rule below. `pre_stow.sh` is for work that must happen while the target files are still unstowed — the two that exist (`claude/`, `opencode/`) clear plain script copies from `~/.local/scripts`, which stow would otherwise refuse to overwrite. Both remove identical copies and back up differing local scripts before stowing. Keep this hook generic in root `install.sh`; package-specific logic belongs in the package's own `pre_stow.sh`. A failing `pre_stow.sh` warns and stows anyway.
-4. Runs each package's own `install.sh` if present — all 13 packages have one now, mostly an idempotent `ensure_cmd <tool> [formula]` guard (`agents/install.sh` is a no-op placeholder). Notable exceptions:
+3. Stows the surviving packages from its `directories` array (or prompts per-package unless answering "y" to "stow all"), via a `stow_pkg` helper that runs the package's `pre_stow.sh` first if it has one. The stow call passes **`--no-folding`, which is load-bearing** — see the rule below. `pre_stow.sh` is for work that must happen while the target files are still unstowed — the two that exist (`claude/`, `opencode/`) clear plain script copies from `~/.local/scripts`, which stow would otherwise refuse to overwrite. Both remove identical copies and back up differing local scripts before stowing. Keep this hook generic in root `install.sh`; package-specific logic belongs in the package's own `pre_stow.sh`. A failing `pre_stow.sh` skips that package. Stow and installer failures are reported together with a nonzero exit, while other selected packages continue.
+4. Runs `install.sh` only for selected packages that stowed successfully — all 13 packages have one now, mostly an idempotent `ensure_cmd <tool> [formula]` guard (`agents/install.sh` is a no-op placeholder). Notable exceptions:
    - **claude/install.sh**: also installs the `claude` CLI itself (brew cask on macOS, `claude.ai/install.sh` on Linux — the cask does ship Linux variants now, but the official installer is Anthropic's documented Linux path and self-updates), copies `settings.json` (not symlink → tool can modify freely), sets `editorMode: "vim"` in `~/.claude.json`, probes local LLM (llm-models-probe warns when the catalogued lineup is missing — fix by running `llm-models-pull` manually), then registers `claude/marketplace/` via `claude plugin marketplace add` and installs `ty-lsp@dotfiles` (CLI rather than `extraKnownMarketplaces` in the repo settings.json, because the directory source needs a per-machine absolute path; must run after the settings copy, which it writes into). The plugin is copied into `~/.claude/plugins/cache` and `claude plugin update` is version-gated, so edits under `claude/marketplace/plugins/ty-lsp/` only take effect after bumping its `version` or running `claude plugin uninstall ty-lsp@dotfiles && claude plugin install ty-lsp@dotfiles`. Uses `ensure_node` rather than a bare `command -v npm` before installing `claude-agent-acp`: npm only happens to be on PATH there because `opencode/` installs first and brew's `opencode` formula depends on `node`, so the bare check is silently load-bearing on the order of the `directories` array.
    - **opencode/install.sh**: atomically copies `opencode.json` with explicit free agent and `small_model` pins, probes catalog availability, and syncs the local Ollama model map. Failed catalog probes keep configured free pins; failed Ollama queries preserve the model map. Folded target directories are rejected.
    - **codex/install.sh**: installs the CLI through Homebrew with the official standalone installer as fallback, then atomically copies `config.toml` (not symlink). Re-running replaces live settings with the portable repo baseline. Authentication is separate.
-   - **bettercmdtab/install.sh**: macOS-only; brew-installs `bettercmdtab`, copies `config.json` (not symlink → app writes back live), sets trigger hotkeys via `defaults write` (⌥Tab/⌥` to leave ⌘Tab/⌘` native)
+   - **bettercmdtab/install.sh**: macOS-only; brew-installs `bettercmdtab`, copies `config.json` and `schema.json` (not symlinks → app writes stay local), sets trigger hotkeys via `defaults write` (⌥Tab/⌥` to leave ⌘Tab/⌘` native)
    - **ghostty/install.sh**: brew cask on macOS; on Linux tries the distro's own package (official on Arch `extra`, Alpine testing, Gentoo, Void, Solus, NixOS) → the `mkasberg/ghostty-ubuntu` .deb, Debian family only → the `--classic` snap, which upstream builds from Ghostty's own scripts. Fedora has only a community COPR, which is printed as a suggestion rather than enabled automatically; there is no Flathub package, so Flatpak is deliberately not attempted.
    - **kitty/install.sh**: macOS-only by choice, not by packaging limit — ghostty is the sole Linux terminal. Listed in root `install.sh`'s `macos_only`; changing that means changing both.
    - **ollama/install.sh**: brew on macOS; on Linux the official `ollama.com/install.sh`, which registers the systemd unit and pulls the CUDA/ROCm runtime that the Homebrew build does not set up. `ollama.env` is optional shell client configuration; local inference needs no API key.
@@ -228,7 +229,7 @@ Key design: `settings.json`/`opencode.json`/`config.toml`/`config.json` are **co
 
 Sourced, never executed. Root `install.sh` reaches it as `$(dirname "$0")/lib/common.sh`; every package installer as `$(dirname "$0")/../lib/common.sh` — which also resolves correctly for `clangd/install.sh` when `nvim/install.sh` sources it, because both packages sit one level deep. A `DOTFILES_COMMON_SH` guard makes double-sourcing a no-op.
 
-Homebrew is the primary package manager on **both** platforms; all 22 formulae the repo installs have `x86_64_linux`/`arm64_linux` bottles. The distro's own package manager is used only for things that are inherently system integration and that brew either cannot provide or should not own: Homebrew's own build prerequisites (brew cannot install what it needs in order to exist), the display-server clipboard bridges, `fontconfig`, the C toolchain, and the login shell.
+Homebrew is the primary package manager on **both** platforms; the formulae the repo installs have `x86_64_linux`/`arm64_linux` bottles. The distro's own package manager is used only for things that are inherently system integration and that brew either cannot provide or should not own: Homebrew's own build prerequisites (brew cannot install what it needs in order to exist), the display-server clipboard bridges, `fontconfig`, the C toolchain, and the login shell.
 
 | Helper | What it does |
 | --- | --- |
@@ -259,7 +260,7 @@ Every package now has a `.stow-local-ignore` excluding at least its own `^/insta
 | `nvim/`         | `.config/nvim/.claude/`                                                     | per-project Claude settings, not deployed                       |
 | `ollama/`       | `.gitignore`, `ollama.env`                                                  | not meant to be symlinked out                                   |
 | `zsh/`          | `.gitignore`                                                                | not meant to be symlinked out                                   |
-| `bettercmdtab/` | `config.json`                                                               | must be copied (live two-way sync)                              |
+| `bettercmdtab/` | `config.json`, `schema.json`                                                               | must be copied (live two-way sync)                              |
 
 ## Task→Package map
 

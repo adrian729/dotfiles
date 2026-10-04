@@ -33,13 +33,6 @@ setopt NUMERIC_GLOB_SORT  # sort file10 after file9, not after file1
 # Smart directory navigation & lf
 # =========================================================
 
-# Guarded: the lf package can be blacklisted per-machine, and an unguarded cat
-# on a missing file prints an error on every single shell start.
-if [[ -f ~/.config/lf/icons ]]; then
-  LF_ICONS=$(tr '\n' ':' < ~/.config/lf/icons)
-  export LF_ICONS
-fi
-
 eval "$(zoxide init zsh)"
 
 # =========================================================
@@ -119,7 +112,7 @@ source "$ZDOTDIR/prompt.zsh"
 export NVM_DIR="$HOME/.nvm"
 
 _load_nvm() {
-  [[ -s "$NVM_DIR/nvm.sh" ]] && source "$NVM_DIR/nvm.sh" --no-use
+  [[ -s "$NVM_DIR/nvm.sh" ]] && source "$NVM_DIR/nvm.sh"
   [[ -s "$NVM_DIR/bash_completion" ]] && source "$NVM_DIR/bash_completion"
 }
 for _nvm_cmd in nvm node npm npx; do

@@ -1,5 +1,9 @@
 return {
 	{
+		"christoomey/vim-tmux-navigator",
+		lazy = false,
+	},
+	{
 		"folke/lazydev.nvim", -- LuaLS config for nvim
 		ft = "lua",
 		opts = {

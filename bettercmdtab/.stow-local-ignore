@@ -1,2 +1,2 @@
 ^/install\.sh
-^/\.config/bettercmdtab/config\.json
+^/\.config/bettercmdtab/(config|schema)\.json

@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
-# tmux-clipboard — cross-platform clipboard for tmux copy mode
-if command -v pbcopy &>/dev/null; then
-  pbcopy
-elif command -v wl-copy &>/dev/null; then
-  wl-copy
-elif command -v xclip &>/dev/null; then
-  xclip -selection clipboard
-elif command -v xsel &>/dev/null; then
-  xsel -ib
-else
-  cat > /dev/null
+# Keep the input available if a display's clipboard helper fails.
+buffer=$(mktemp "${TMPDIR:-/tmp}/tmux-clipboard.XXXXXX") || exit 1
+trap 'rm -f "$buffer"' EXIT
+trap 'exit 1' HUP INT TERM
+cat > "$buffer" || exit 1
+
+if command -v pbcopy &>/dev/null && pbcopy < "$buffer"; then
+  exit 0
 fi
+if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-copy &>/dev/null && wl-copy < "$buffer"; then
+  exit 0
+fi
+if [[ -n "${DISPLAY:-}" ]]; then
+  if command -v xclip &>/dev/null && xclip -selection clipboard < "$buffer"; then
+    exit 0
+  fi
+  if command -v xsel &>/dev/null && xsel -ib < "$buffer"; then
+    exit 0
+  fi
+fi
+echo "tmux-clipboard: no working clipboard helper for the active display" >&2
+exit 1

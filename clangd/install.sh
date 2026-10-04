@@ -19,9 +19,10 @@ ensure_llvm() {
   done
   if [ "$need_install" -eq 1 ]; then
     if have brew; then
-      brew install llvm || warn "brew install llvm failed — ${tools[*]} unavailable"
+      brew install llvm || { warn "brew install llvm failed — ${tools[*]} unavailable"; return 1; }
     else
       warn "brew unavailable — install llvm manually for ${tools[*]}"
+      return 1
     fi
   fi
 
@@ -30,13 +31,17 @@ ensure_llvm() {
   [ -d /home/linuxbrew/.linuxbrew/opt/llvm/bin ] && llvm_root="/home/linuxbrew/.linuxbrew/opt/llvm"
   [ -z "$llvm_root" ] && return 0
 
-  mkdir -p ~/.local/bin
+  mkdir -p "$HOME/.local/bin" || return 1
   for tool in "${tools[@]}"; do
     src="$llvm_root/bin/$tool"
     dst="$HOME/.local/bin/$tool"
     if [ -f "$src" ]; then
-      case "$dst" in "$HOME"/.local/bin/*) rm -f "$dst" ;; esac
-      ln -s "$src" "$dst"
+      if [ -e "$dst" ] || [ -L "$dst" ]; then
+        [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ] && continue
+        warn "preserving existing $dst"
+        continue
+      fi
+      ln -s "$src" "$dst" || return 1
     fi
   done
 }

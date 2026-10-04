@@ -1,3 +1,9 @@
 map <enter> open
-map Q $touch /tmp/lf-no-cd-$(id -u) && lf -remote "send $id quit"
-nmap <esc> $touch /tmp/lf-no-cd-$(id -u) && lf -remote "send $id quit"
+cmd quit-no-cd ${{
+    if [ -n "${LF_NO_CD_FILE:-}" ]; then
+        : > "$LF_NO_CD_FILE"
+    fi
+    lf -remote "send $id quit"
+}}
+map Q quit-no-cd
+nmap <esc> quit-no-cd

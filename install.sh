@@ -80,7 +80,7 @@ blacklist_file=".stow_blacklist.local"
 blacklist=()
 
 if [ -f "$blacklist_file" ]; then
-	while IFS= read -r line; do
+	while IFS= read -r line || [ -n "$line" ]; do
 		line="${line%%#*}"
 		line=$(echo "$line" | xargs)
 		[ -n "$line" ] && blacklist+=("$line")
@@ -134,7 +134,10 @@ stow_pkg() {
 	local dir=$1
 	echo "🔗 Stowing $dir..."
 	if [ -f "$dir/pre_stow.sh" ]; then
-		bash "$dir/pre_stow.sh" || echo "⚠️  $dir/pre_stow.sh failed — stowing anyway."
+		bash "$dir/pre_stow.sh" || {
+			echo "❌ $dir/pre_stow.sh failed — skipping this package." >&2
+			return 1
+		}
 	fi
 	# --no-folding is load-bearing, not a style choice. Without it stow "folds" a
 	# whole directory into a single symlink whenever the target does not exist
@@ -148,18 +151,21 @@ stow_pkg() {
 		echo "✅ $dir stowed successfully!"
 	else
 		echo "❌ Failed to stow $dir (see warnings above)."
+		return 1
 	fi
 }
 
+stowed=()
+failures=()
 for dir in "${directories[@]}"; do
 	if [ -d "$dir" ]; then
 		if [[ "$stow_all" =~ ^[Yy]$ ]]; then
-			stow_pkg "$dir"
+			if stow_pkg "$dir"; then stowed+=("$dir"); else failures+=("$dir: stow"); fi
 		else
 			read -p "Do you want to stow $dir? (y/n): " choice
 			case "$choice" in
 			y | Y)
-				stow_pkg "$dir"
+				if stow_pkg "$dir"; then stowed+=("$dir"); else failures+=("$dir: stow"); fi
 				;;
 			*)
 				echo "⏭️ Skipping $dir."
@@ -168,18 +174,24 @@ for dir in "${directories[@]}"; do
 		fi
 	else
 		echo "☹️ Directory $dir does not exist."
+		failures+=("$dir: missing directory")
 	fi
 	echo ""
 done
 
 echo "Running install scripts..."
-for dir in "${directories[@]}"; do
+for dir in "${stowed[@]}"; do
 	if [ -f "$dir/install.sh" ]; then
 		echo "🔧 Running $dir/install.sh..."
-		bash "$dir/install.sh"
+		bash "$dir/install.sh" || failures+=("$dir: install")
 		echo ""
 	fi
 done
 
 echo ""
+if [ "${#failures[@]}" -gt 0 ]; then
+	echo "Setup finished with failures:" >&2
+	printf '  %s\n' "${failures[@]}" >&2
+	exit 1
+fi
 echo "🥳 Setup complete!"

@@ -25,7 +25,15 @@ return {
 			require("tree-sitter-rstml").init()
 
 			local ts = require("nvim-treesitter")
-			ts.install(parsers)
+			local installation = ts.install(parsers)
+			if vim.env.DOTFILES_NVIM_BOOTSTRAP == "1" then
+				local ok, success = pcall(installation.wait, installation, 300000)
+				if not ok or not success then
+					vim.api.nvim_err_writeln("Treesitter parser installation failed: " .. tostring(success))
+					vim.cmd("cquit 1")
+					return
+				end
+			end
 
 			local patterns = {}
 			for _, parser in ipairs(parsers) do

@@ -32,10 +32,17 @@ export FZF_ALT_C_OPTS="$_FZF_UI_OPTS"
 
 # Ctrl+F: file picker excluding hidden files
 _fzf_file_no_hidden() {
-  local cmd result
-  cmd="${FZF_DEFAULT_COMMAND/--hidden /}"
-  result=$(eval "${cmd:-find . -type f}" | fzf "${(@Qz)_FZF_UI_OPTS}" --preview "$_FZF_PREVIEW_CMD") \
-    && LBUFFER+="$result"  # LBUFFER is the text left of the cursor
+  local result
+  local -a cmd
+  if (( $+commands[fd] )); then
+    cmd=(fd --type f)
+  elif (( $+commands[fdfind] )); then
+    cmd=(fdfind --type f)
+  else
+    cmd=(find . -type d -name '.*' ! -name . -prune -o -type f ! -name '.*' -print)
+  fi
+  result=$("${cmd[@]}" | fzf "${(@Qz)_FZF_UI_OPTS}" --preview "$_FZF_PREVIEW_CMD" --no-multi) \
+    && [[ -n "$result" ]] && LBUFFER+="${(q)result}"
   zle reset-prompt
 }
 zle -N _fzf_file_no_hidden

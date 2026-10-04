@@ -22,19 +22,28 @@ else
 	warn "brew unavailable — install bettercmdtab manually; still applying its config"
 fi
 
-# Copy config.json as a regular file (not symlink), so BetterCmdTab can
-# modify it freely (live two-way sync) without dirtying the dotfiles repo.
+# Copy config and schema as regular files so app writes stay outside the repo.
 # Re-run install.sh to reset from the repo version.
-config_target="$HOME/.config/bettercmdtab/config.json"
-mkdir -p "$(dirname "$config_target")"
-tmp_config=$(mktemp "$config_target.XXXXXX")
-if /bin/cp "$(dirname "$0")/.config/bettercmdtab/config.json" "$tmp_config"; then
-    chmod 644 "$tmp_config"
-    mv "$tmp_config" "$config_target"
-else
+config_dir="$HOME/.config/bettercmdtab"
+for parent in "$HOME/.config" "$config_dir"; do
+    if [ -L "$parent" ]; then
+        warn "$parent is a directory symlink; unstow and re-stow bettercmdtab with --no-folding first"
+        exit 1
+    fi
+done
+mkdir -p "$config_dir" || exit 1
+for file in config.json schema.json; do
+    config_target="$config_dir/$file"
+    [ ! -d "$config_target" ] || { warn "$config_target is a directory"; exit 1; }
+    tmp_config=$(mktemp "$config_target.XXXXXX") || exit 1
+    if /bin/cp "$(dirname "$0")/.config/bettercmdtab/$file" "$tmp_config" &&
+        chmod 644 "$tmp_config" && mv -f "$tmp_config" "$config_target"; then
+        continue
+    fi
     rm -f "$tmp_config"
-    echo "bettercmdtab/install.sh: failed to copy config.json — leaving existing $config_target untouched" >&2
-fi
+    warn "failed to copy $file — leaving existing $config_target untouched"
+    exit 1
+done
 
 # Write settings directly to UserDefaults (more reliable than config file sync).
 # The app may not read config.json on first launch; defaults write ensures

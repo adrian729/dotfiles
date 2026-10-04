@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+// Safe to invoke directly as well as through the Python fixture.
+const home = mkdtempSync(join(tmpdir(), 'dotfiles-fallback-test-'))
+process.env.HOME = home
+process.env.XDG_CONFIG_HOME = join(home, '.config')
+delete process.env.DOTFILES_OPENCODE_NO_FALLBACK
+process.on('exit', () => rmSync(home, { recursive: true, force: true }))
+mkdirSync(join(home, '.local/config'), { recursive: true })
 const path = fileURLToPath(new URL('../opencode/.config/opencode/plugins/model-fallback.js', import.meta.url))
 const { ModelFallbackPlugin } = await import('data:text/javascript;base64,' + readFileSync(path).toString('base64'))
 const cfgPath = `${process.env.HOME}/.local/config/opencode-models.json`

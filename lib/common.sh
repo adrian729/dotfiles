@@ -302,17 +302,20 @@ ensure_build_tools() {
 	esac || warn "no C toolchain — treesitter parsers will fail to compile"
 }
 
-# Clipboard bridge for the current display server. tmux-clipboard probes
-# pbcopy → wl-copy → xclip → xsel at runtime and nvim's clipboard=unnamedplus
-# needs one of them; macOS has pbcopy built in, Linux has nothing by default.
+# Clipboard bridges for tmux and Neovim; macOS has pbcopy built in.
 # Both Wayland and X11 helpers are installed because the session type at
 # install time need not match the session the user ends up running.
 ensure_clipboard() {
 	is_macos && return 0
-	if have wl-copy || have xclip || have xsel; then return 0; fi
-	info "Installing clipboard bridges (wl-clipboard, xclip)..."
-	pkg_install wl-clipboard xclip ||
-		warn "no clipboard tool — tmux copy and nvim's system clipboard will silently do nothing"
+	local missing=()
+	have wl-copy || missing+=(wl-clipboard)
+	have xclip || have xsel || missing+=(xclip)
+	[ "${#missing[@]}" -gt 0 ] || return 0
+	info "Installing clipboard bridges (${missing[*]})..."
+	pkg_install "${missing[@]}" || {
+		warn "clipboard bridge installation failed: ${missing[*]}"
+		return 1
+	}
 }
 
 # starship.toml, `eza --icons`, lf's icons file and the tmux status bar all

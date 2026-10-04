@@ -47,8 +47,8 @@ fi
 # racing a second one onto PATH.
 ensure_node || warn "node/npm unavailable — nvm-backed tooling will not work"
 
-mkdir -p ~/.local/state/zsh
-mkdir -p ~/.cache/zsh
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/zsh"
+mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
 
 # starship's prompt, `eza --icons`, lf's icons and the tmux status bar are all
 # Nerd Font glyphs — without a patched font every one of them renders as tofu.
