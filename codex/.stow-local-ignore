@@ -1,3 +1,6 @@
 ^/install\.sh
+^/install_playwright\.sh
+^/merge_config\.py
+^/__pycache__
 ^/README\.md
 ^/\.codex/config\.toml
