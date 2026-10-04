@@ -1,9 +1,6 @@
 # `claude-wt` — one command per parallel Claude session
 
-One command that creates (or resumes) a Claude Code session in its own git
-worktree — an extra working directory of the same repo, on its own branch —
-with its own pane color. Run several sessions on one repo in parallel, with
-zero cross-contamination.
+One command that creates (or resumes) a Claude Code session in its own git worktree — an extra working directory of the same repo, on its own branch — with its own pane color. Sessions get separate checkouts; a worktree does not restrict an agent's access to other directories.
 
 ```bash
 claude-wt <name> [color]    # start OR resume session <name>
@@ -28,7 +25,8 @@ guide) tries to do all of the below automagically.
 - **Claude Code** (required) — same installer on both OSes:
 
   ```bash
-  curl -fsSL https://claude.ai/install.sh | bash
+  installer=$(mktemp) && curl -fsSL https://claude.ai/install.sh -o "$installer" && bash "$installer"
+  rm -f "$installer"
   ```
 
   Then run `claude` once to log in.
@@ -51,27 +49,22 @@ them executable:
 
 ```bash
 mkdir -p ~/.local/scripts
-cp claude-wt git-wt ~/.local/scripts/
+cp -i claude-wt git-wt ~/.local/scripts/
 chmod +x ~/.local/scripts/claude-wt ~/.local/scripts/git-wt
 command -v claude-wt git-wt   # should print both paths
 ```
 
 `~/.local/scripts` is also where `stow` puts them, so both install routes land in the same place.
 
-If `command -v` prints nothing, add the directory to your PATH — in
-`~/.zshrc` (macOS default shell) or `~/.bashrc` (most Linux distros):
+If `command -v` prints nothing, put the PATH addition in `~/.local/.local_profile`. The repo's zsh configuration sources this local file. Other shell setups need to source it from their existing local startup configuration; source it directly to use it in the current shell:
 
 ```bash
-export PATH="$HOME/.local/scripts:$PATH"
+mkdir -p ~/.local
+printf '%s\n' 'export PATH="$HOME/.local/scripts:$HOME/.local/bin:$PATH"' >> ~/.local/.local_profile
+source ~/.local/.local_profile
 ```
 
-Alternatively, via the dotfiles repo it ships in
-([github.com/adrian729/dotfiles](https://github.com/adrian729/dotfiles)):
-install GNU stow (`brew install stow` / `sudo apt install stow`), clone,
-and run `./install.sh` — or `stow claude` for just this package. That
-places the scripts in `~/.local/scripts/`, which is on PATH only if you
-also use the repo's zsh config; otherwise add that directory to PATH as
-above.
+Alternatively, via the [dotfiles repo](https://github.com/adrian729/dotfiles): install GNU stow (`brew install stow` / `sudo apt install stow`), clone, and run `./install.sh`. To link only the Claude package from the repo root, run `bash claude/pre_stow.sh && stow --no-folding claude`. This links scripts into `~/.local/scripts/`; add that directory to PATH as above if you do not use the repo's zsh config. The standalone setup backs up differing existing scripts and adds the local PATH entry idempotently.
 
 ### 3. Smoke test
 
@@ -216,9 +209,7 @@ from your main checkout. Nothing to sync, pull, or push between them.
   that branch: `cd` into it to run tests or commit by hand.
   If you ever do want it in the main folder, `claude-wt -d <name>` first
   (the branch survives), then `git checkout <name>` works.
-- **Parallel PRs are independent:** each worktree/branch/PR knows nothing
-  about the others. Your main checkout's own uncommitted work is never
-  touched by any of it.
+- **Parallel branches have separate files:** edits made inside a worktree stay in that checkout. Git history and configuration are shared, and an agent can still access files outside its worktree.
 
 ## Niceties it handles for you
 

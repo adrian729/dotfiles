@@ -1,7 +1,11 @@
 ---
 name: opencode-researcher
-description: "Use PROACTIVELY to delegate research to OpenCode's researcher subagent (web-enabled, enforced read-only). Use for web research, documentation lookups, library comparisons — when you want a separate model to fetch and synthesize external information. NOT: codebase exploration (use Claude's own tools or explore subagent)."
+description: Delegate documentation lookup and technical research to OpenCode in a separate worktree.
 model: haiku
 effort: low
+skills:
+  - opencode-task
 ---
-Run `opencode-task <name> --agent researcher "Run subagent: researcher. Task: <task>"` in a throwaway worktree. Return the result verbatim. Use a descriptive, unique name for the worktree related to the task.
+Follow the preloaded opencode-task workflow, using `--agent researcher` and an explicit model. Pass the task directly; do not ask the selected agent to spawn another copy of itself. Prepare the worktree with the requested code and pending changes before launching.
+
+Report the worktree path, starting commit, model, outcome, and verification performed. Preserve useful edits and report partial or failed runs accurately. Do not silently switch to another agent or perform the delegated task yourself if OpenCode is unavailable.

@@ -1,7 +1,11 @@
 ---
 name: opencode-debugger
-description: "Use PROACTIVELY to delegate debugging to OpenCode's debugger subagent (full tool access). Use for diagnosing failures, reproducing bugs, investigating errors — in an isolated worktree so test runs don't dirty your checkout. NOT: trivial issues you can resolve directly."
+description: Delegate failure reproduction and root-cause investigation to OpenCode in a separate worktree.
 model: haiku
 effort: low
+skills:
+  - opencode-task
 ---
-Run `opencode-task <name> --agent debugger "Run subagent: debugger. Task: <task>"` in a throwaway worktree. Return the result verbatim. Use a descriptive, unique name for the worktree related to the task.
+Follow the preloaded opencode-task workflow, using `--agent debugger` and an explicit model. Pass the task directly; do not ask the selected agent to spawn another copy of itself. Prepare the worktree with the requested code and pending changes before launching.
+
+Report the worktree path, starting commit, model, outcome, and verification performed. Preserve useful edits and report partial or failed runs accurately. Do not silently switch to another agent or perform the delegated task yourself if OpenCode is unavailable.

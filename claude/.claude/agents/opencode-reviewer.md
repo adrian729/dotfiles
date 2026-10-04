@@ -1,7 +1,11 @@
 ---
 name: opencode-reviewer
-description: "Use PROACTIVELY to delegate code review to OpenCode's reviewer subagent (enforced read-only, edit:deny). Use when you want an isolated review pass with tool-enforced file immutability, or to submit code for review without touching it yourself. NOT: security audits (opencode-auditor), catch-all delegation (opencode-general)."
+description: Delegate code review to OpenCode in a separate worktree; use opencode-auditor for security audits.
 model: haiku
 effort: low
+skills:
+  - opencode-task
 ---
-Run `opencode-task <name> --agent reviewer "Run subagent: reviewer. Task: <task>"` in a throwaway worktree. Return the result verbatim. Use a descriptive, unique name for the worktree related to the task.
+Follow the preloaded opencode-task workflow, using `--agent reviewer` and an explicit model. Pass the task directly; do not ask the selected agent to spawn another copy of itself. Prepare the worktree with the requested code and pending changes before launching.
+
+Report the worktree path, starting commit, model, outcome, and verification performed. Preserve useful edits and report partial or failed runs accurately. Do not silently switch to another agent or perform the delegated task yourself if OpenCode is unavailable.

@@ -67,8 +67,10 @@ if have_claude; then
   echo "claude - ok"
 else
   echo "Claude Code missing."
-  if ask "Install it (curl -fsSL https://claude.ai/install.sh | bash)?"; then
-    curl -fsSL https://claude.ai/install.sh | bash ||
+  if ask "Install it from https://claude.ai/install.sh?"; then
+    installer=$(mktemp)
+    trap 'rm -f "${installer:-}"' EXIT
+    { curl -fsSL https://claude.ai/install.sh -o "$installer" && bash "$installer"; } ||
       echo "setup: warning: Claude Code install failed — install it manually later" >&2
   else
     echo "setup: warning: claude-wt cannot start sessions without it" >&2
@@ -105,30 +107,34 @@ done
 [ -n "$scripts_dir" ] || die "claude-wt + git-wt not found next to this script"
 
 mkdir -p "$SCRIPTS_DIR"
-# rm first: cp would write THROUGH an existing symlink (stow users) and die
-# outright on a dangling one.
-rm -f "$SCRIPTS_DIR/claude-wt" "$SCRIPTS_DIR/git-wt"
-cp "$scripts_dir/claude-wt" "$scripts_dir/git-wt" "$SCRIPTS_DIR/"
-chmod +x "$SCRIPTS_DIR/claude-wt" "$SCRIPTS_DIR/git-wt"
+for script in claude-wt git-wt; do
+  source_file="$scripts_dir/$script"
+  target_file="$SCRIPTS_DIR/$script"
+  # Also handles running a flat setup from the destination itself.
+  if [ -e "$target_file" ] && cmp -s "$source_file" "$target_file"; then
+    continue
+  fi
+  if [ -e "$target_file" ] || [ -L "$target_file" ]; then
+    backup_root="$HOME/.local/state/dotfiles/backups"
+    mkdir -p "$backup_root"
+    backup_dir=$(mktemp -d "$backup_root/claude-setup.XXXXXX")
+    mv "$target_file" "$backup_dir/"
+    echo "Preserved $target_file in $backup_dir"
+  fi
+  cp "$source_file" "$target_file"
+  chmod +x "$target_file"
+done
 echo "installed to $SCRIPTS_DIR"
 
-case ":$PATH:" in
-  *":$SCRIPTS_DIR:"*) echo "$SCRIPTS_DIR already on PATH - ok" ;;
-  *)
-    rc="$HOME/.bashrc"
-    case "${SHELL:-}" in */zsh) rc="$HOME/.zshrc" ;; esac
-    line='export PATH="$HOME/.local/scripts:$PATH"'
-    # Match $HOME/${HOME}/~ forms and skip commented lines.
-    if grep -qsE '^[^#]*(\$\{?HOME\}?|~)/\.local/scripts([:"/ ]|$)' "$rc"; then
-      echo "$rc already puts ~/.local/scripts on PATH — restart your shell to pick it up"
-    elif ask "$SCRIPTS_DIR is not on PATH — append the export to $rc?"; then
-      printf '\n%s # claude-wt setup\n' "$line" >>"$rc"
-      echo "added to $rc — restart your shell (or run: $line)"
-    else
-      echo "add it yourself: $line"
-    fi
-    ;;
-esac
+# This file is sourced by the dotfiles shell configuration. Keep machine-local
+# additions here, even when a shell rc file is a symlink into a repository.
+profile="$HOME/.local/.local_profile"
+line='export PATH="$HOME/.local/scripts:$HOME/.local/bin:$PATH"'
+if ! grep -qxF "$line # claude-wt setup" "$profile" 2>/dev/null; then
+  printf '\n%s # claude-wt setup\n' "$line" >> "$profile"
+fi
+echo "PATH setup saved in $profile; load it with: . \"\$HOME/.local/.local_profile\""
+echo "For a shell without the dotfiles setup, arrange to source that local profile at startup."
 
 say "Manual steps (logins can't be scripted)"
 have_claude && echo "- run 'claude' once in any folder to log in (if you haven't)"

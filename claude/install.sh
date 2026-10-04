@@ -6,17 +6,20 @@ brew_shellenv 2>/dev/null
 
 ensure_cmd jq
 
+# Recognize an existing native install even before the login shell adds its PATH.
+if ! have claude && [ -x "$HOME/.local/bin/claude" ]; then
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
 # The claude-code cask does now ship arm64_linux/x86_64_linux variants, but
 # Linux still goes through the official installer (drops the binary in
 # ~/.local/bin): it is Anthropic's documented Linux path and self-updates,
 # whereas the cask would pin upgrades to `brew upgrade`.
-if [ "$(uname)" = Darwin ]; then
-	claude_native_fmt="Mach-O"
+if is_macos; then
 	install_claude() { brew install --cask claude-code@latest; }
 	reinstall_claude() { brew reinstall --cask claude-code@latest; }
 	claude_install_desc="Homebrew"
 else
-	claude_native_fmt="ELF"
 	install_claude() { run_remote_installer https://claude.ai/install.sh; }
 	reinstall_claude() { install_claude; }
 	claude_install_desc="claude.ai/install.sh"
@@ -24,14 +27,17 @@ fi
 
 if ! command -v claude &>/dev/null; then
 	echo "Installing Claude Code CLI via $claude_install_desc..."
-	install_claude
+	install_claude || warn "Claude Code installation failed"
 else
-	# Verify binary is a real native executable, not a stub (e.g. from failed
-	# npm postinstall). -L so a symlinked binary reports the target's format.
-	if ! file -L "$(command -v claude)" 2>/dev/null | grep -q "$claude_native_fmt"; then
-		echo "claude binary is a stub — reinstalling via $claude_install_desc..."
-		reinstall_claude
+	# A working npm install or wrapper need not be a native executable.
+	if ! claude --version >/dev/null 2>&1; then
+		echo "claude --version failed — reinstalling via $claude_install_desc..."
+		reinstall_claude || warn "Claude Code reinstallation failed"
 	fi
+fi
+# Make the fresh native install available to the plugin setup below.
+if ! have claude && [ -x "$HOME/.local/bin/claude" ]; then
+    export PATH="$HOME/.local/bin:$PATH"
 fi
 
 # nvim's claude_code ACP adapter execs `claude-agent-acp` directly, so without it
@@ -61,15 +67,15 @@ CLAUDE_JSON="$HOME/.claude.json"
 
 if [ -f "$CLAUDE_JSON" ]; then
     echo "Setting vim mode in $CLAUDE_JSON..."
-    tmp_json=$(mktemp "$CLAUDE_JSON.XXXXXX")
-    if jq '.editorMode = "vim"' "$CLAUDE_JSON" > "$tmp_json"; then
-        chmod 644 "$tmp_json"
-        mv "$tmp_json" "$CLAUDE_JSON"
+    tmp_json=""
+    if tmp_json=$(mktemp "$CLAUDE_JSON.XXXXXX") &&
+        jq '.editorMode = "vim"' "$CLAUDE_JSON" > "$tmp_json" &&
+        chmod 600 "$tmp_json" && mv "$tmp_json" "$CLAUDE_JSON"; then
+        echo "Done."
     else
         rm -f "$tmp_json"
         echo "claude/install.sh: failed to set editorMode in $CLAUDE_JSON — leaving it untouched" >&2
     fi
-    echo "Done."
 else
     echo "~/.claude.json not found, skipping (run claude once first)."
 fi
@@ -79,7 +85,7 @@ fi
 # the filtered catalog. Non-fatal in every case.
 probe="$HOME/.local/scripts/llm-models-probe"
 if [ -x "$probe" ]; then
-    "$probe" || echo "llm-models-probe failed — using static catalog"
+    "$probe" || warn "llm-models-probe failed — existing model state may be stale"
 else
     echo "llm-models-probe not stowed yet — skipping"
 fi
@@ -98,12 +104,11 @@ fi
 # modify it freely without dirtying the dotfiles repo.  Re-run install.sh
 # to reset from the repo version.
 settings_target="$HOME/.claude/settings.json"
-mkdir -p "$(dirname "$settings_target")"
-tmp_settings=$(mktemp "$settings_target.XXXXXX")
-if /bin/cp "$(dirname "$0")/.claude/settings.json" "$tmp_settings"; then
-    chmod 644 "$tmp_settings"
-    mv "$tmp_settings" "$settings_target"
-else
+tmp_settings=""
+if ! { mkdir -p "$(dirname "$settings_target")" &&
+    tmp_settings=$(mktemp "$settings_target.XXXXXX") &&
+    /bin/cp "$(dirname "$0")/.claude/settings.json" "$tmp_settings" &&
+    chmod 644 "$tmp_settings" && mv "$tmp_settings" "$settings_target"; }; then
     rm -f "$tmp_settings"
     echo "claude/install.sh: failed to copy settings.json — leaving existing $settings_target untouched" >&2
 fi
@@ -123,4 +128,3 @@ if command -v claude &>/dev/null; then
         claude plugin install ty-lsp@dotfiles >/dev/null ||
         echo "claude/install.sh: failed to install ty-lsp plugin — Claude Code will have no Python LSP" >&2
 fi
-

@@ -41,6 +41,8 @@ root=$(dirname "$common")
 
 name=$1
 shift
+case "$name" in *'@{'*) die "invalid worktree name: $name" ;; esac
+git check-ref-format --branch "$name" >/dev/null 2>&1 || die "invalid worktree name: $name"
 wt_dir="$root/.worktrees/$name"
 [ -d "$wt_dir" ] || die "no worktree named '$name' (see claude-wt -l)"
 # A live worktree always has a .git *file*; in a leftover folder without one,

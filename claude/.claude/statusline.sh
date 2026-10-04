@@ -14,10 +14,10 @@ export LC_ALL=C
 # - cost.total_cost_usd is present even when rate_limits is not (credit-billed sessions, e.g.
 #   Fable): kept unfloored since it's a dollar figure, not a percentage.
 parsed=$(jq -r '
-  (.model.display_name // "?" | gsub("[[:cntrl:]]";"")),
-  (.workspace.current_dir // "" | gsub("[[:cntrl:]]";"")),
-  (.session_id // "" | gsub("[[:cntrl:]]";"")),
-  (.effort.level // ""), (.thinking.enabled // false),
+  ((.model.display_name | strings) // "?" | gsub("[[:cntrl:]]";"")),
+  ((.workspace.current_dir | strings) // "" | gsub("[[:cntrl:]]";"")),
+  ((.session_id | strings) // "" | gsub("[[:cntrl:]]";"")),
+  ((.effort.level | strings) // "" | gsub("[[:cntrl:]]";"")), (.thinking.enabled // false),
   ((.context_window.used_percentage | numbers) // 0 | floor), (.exceeds_200k_tokens // false),
   ((.rate_limits.five_hour.used_percentage | numbers) // -1 | floor), ((.rate_limits.five_hour.resets_at | numbers) // 0 | floor),
   ((.rate_limits.seven_day.used_percentage | numbers) // -1 | floor), ((.rate_limits.seven_day.resets_at | numbers) // 0 | floor),
@@ -40,8 +40,10 @@ parsed=$(jq -r '
 # Private per-user cache dir — avoids predictable shared /tmp paths (symlink-follow
 # clobber vector, spoofable reads on multi-user hosts).
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ai-status"
-mkdir -p -m 700 "$CACHE_DIR"
-chmod 700 "$CACHE_DIR" 2>/dev/null
+if ! mkdir -p -m 700 "$CACHE_DIR" 2>/dev/null || ! chmod 700 "$CACHE_DIR" 2>/dev/null; then
+    printf '[%s] %s%% %s\n' "$MODEL" "$PCT" "$DIR"
+    exit 0
+fi
 
 # Portable mtime age in seconds. GNU `stat -c %Y` tried first: on Linux `stat -f` is
 # filesystem-status mode, treats %m as a file and still prints a filesystem block for
@@ -75,13 +77,15 @@ fi
 # conflicted/ahead/behind) off one `git status --porcelain=v1 --branch` call, so a file
 # that's both staged and deleted etc. gets counted the same way the prompt counts it.
 if cache_is_stale; then
-    if git rev-parse --git-dir > /dev/null 2>&1; then
+    if [ -n "$DIR" ] && git -C "$DIR" rev-parse --git-dir > /dev/null 2>&1; then
         BRANCH=""; STAGED=0; MODIFIED=0; UNTRACKED=0; DELETED=0; CONFLICTED=0; AHEAD=0; BEHIND=0
         while IFS= read -r line; do
             case "$line" in
                 "## "*)
                     branch_line="${line#"## "}"
                     BRANCH="${branch_line%%...*}"
+                    BRANCH="${BRANCH#No commits yet on }"
+                    BRANCH="${BRANCH#Initial commit on }"
                     [ "$BRANCH" = "HEAD (no branch)" ] && BRANCH=""
                     [[ "$branch_line" =~ ahead\ ([0-9]+) ]]  && AHEAD="${BASH_REMATCH[1]}"
                     [[ "$branch_line" =~ behind\ ([0-9]+) ]] && BEHIND="${BASH_REMATCH[1]}"
@@ -98,7 +102,7 @@ if cache_is_stale; then
                     fi
                     ;;
             esac
-        done < <(git status --porcelain=v1 --branch 2>/dev/null)
+        done < <(git -C "$DIR" status --porcelain=v1 --branch 2>/dev/null)
         tmp=$(mktemp "${CACHE_FILE}.XXXXXX") && printf '%s|%s|%s|%s|%s|%s|%s|%s\n' \
             "$STAGED" "$MODIFIED" "$UNTRACKED" "$DELETED" "$CONFLICTED" "$AHEAD" "$BEHIND" "$BRANCH" > "$tmp" && mv -f "$tmp" "$CACHE_FILE"
     else
@@ -115,6 +119,7 @@ IFS='|' read -r STAGED MODIFIED UNTRACKED DELETED CONFLICTED AHEAD BEHIND BRANCH
 CLAUDE_USAGE_URL="${CLAUDE_USAGE_URL:-https://api.anthropic.com/api/oauth/usage}"
 USAGE_CACHE="$CACHE_DIR/claude-usage.json"
 USAGE_CACHE_TTL=60
+USAGE_ATTEMPT="$CACHE_DIR/claude-usage-attempt"
 USAGE_LOCK_DIR="$CACHE_DIR/claude-usage-refresh.lock"
 USAGE_LOCK_PID_FILE="${USAGE_LOCK_DIR}.pid"
 USAGE_LOCK_MAX_AGE=60
@@ -145,6 +150,7 @@ refresh_usage_cache() {
         fi
     fi
     mkdir "$USAGE_LOCK_DIR" 2>/dev/null || return
+    touch "$USAGE_ATTEMPT"
     (
         local token; token=$(get_claude_token)
         if [ -n "$token" ]; then
@@ -178,6 +184,7 @@ USAGE_NO_CREDIT_MARKER="$CACHE_DIR/claude-usage-no-credit"
 USAGE_NO_CREDIT_TTL=300
 
 usage_cache_stale() {
+    [ -f "$USAGE_ATTEMPT" ] && [ "$(mtime_age "$USAGE_ATTEMPT")" -le "$USAGE_CACHE_TTL" ] && return 1
     [ ! -f "$USAGE_CACHE" ] && return 0
     local ttl="$USAGE_CACHE_TTL"
     # Confirmed-absent accounts (no credit balance/limit ever reported) get a much
@@ -195,7 +202,7 @@ usage_cache_stale && refresh_usage_cache
 # `// null` (not `// empty`) on every field keeps the line count fixed so the positional
 # `read`s below never desync.
 E5H=-1; E5H_RESET=0; E7D=-1; E7D_RESET=0
-CREDIT_BAL=""; CREDIT_USED=""; CREDIT_LIMIT=""; CREDIT_PCT=""; CREDIT_CUR="USD"; CREDIT_ON="false"
+CREDIT_BAL=""; CREDIT_USED=""; CREDIT_LIMIT=""; CREDIT_PCT=""; CREDIT_CUR=""; CREDIT_ON="false"
 if [ -f "$USAGE_CACHE" ]; then
     eparsed=$(jq -r '
       ((.extra_usage.decimal_places | numbers) // 2) as $dp |
@@ -302,13 +309,16 @@ FX_CUR="${CREDIT_CUR:-USD}"
 case "$FX_CUR" in [A-Z][A-Z][A-Z]) ;; *) FX_CUR=USD ;; esac
 FX_CACHE="$CACHE_DIR/fx-usd-${FX_CUR}"
 FX_CACHE_TTL=86400
+FX_ATTEMPT="${FX_CACHE}.attempt"
 FX_LOCK_DIR="$CACHE_DIR/fx-refresh.lock"
 refresh_fx_cache() {
     if [ -d "$FX_LOCK_DIR" ]; then
         local lock_age; lock_age=$(mtime_age "$FX_LOCK_DIR")
         [ "$lock_age" -gt "$USAGE_LOCK_MAX_AGE" ] && rmdir "$FX_LOCK_DIR" 2>/dev/null
     fi
+    [ -f "$FX_ATTEMPT" ] && [ "$(mtime_age "$FX_ATTEMPT")" -le 300 ] && return
     mkdir "$FX_LOCK_DIR" 2>/dev/null || return
+    touch "$FX_ATTEMPT"
     (
         local tmp; tmp=$(mktemp "${FX_CACHE}.XXXXXX")
         local code; code=$(curl -sS --max-time 5 -o "$tmp" -w '%{http_code}' "https://api.frankfurter.dev/v1/latest?base=USD&symbols=${FX_CUR}" 2>/dev/null)
@@ -350,6 +360,8 @@ fi
 case "$PCT"   in ''|*[!0-9]*) PCT=0 ;;   esac
 case "$HOURS" in ''|*[!0-9]*) HOURS=0 ;; esac
 case "$WEEK"  in ''|*[!0-9]*) WEEK=0 ;;  esac
+case "$HOURS_RESET" in ''|*[!0-9]*) HOURS_RESET=0 ;; esac
+case "$WEEK_RESET" in ''|*[!0-9]*) WEEK_RESET=0 ;; esac
 
 # Catppuccin Mocha (true color), matching zsh/.config/zsh/starship.toml's palette.
 # RED is git-status's deleted/conflicted red (matches starship's own "bold red"). CRIT is
@@ -482,14 +494,14 @@ elif [ -n "$THINK_MARK" ];                      then EFFORT_SEG=" ${LAVENDER}${T
 fi
 MODEL_COLOR=$(model_color "$MODEL"); MODEL_BOLD=$(model_bold "$MODEL")
 
-# Credits this session actually drew: the account's spend.used minus the value first seen for
+# Account credit change since this session was first observed: the account's spend.used minus the value first seen for
 # this session id. The payload's total_cost_usd can't give this — it prices every token at API
 # list rates, including subagent turns on models that bill to the plan windows, not credits.
 # Account-level, so concurrent sessions each see the combined draw. A drop below the baseline
 # means the monthly cap reset: re-baseline at zero rather than showing a negative.
 # Gated on CREDIT_USED alone (not CREDIT_ON): CREDIT_USED already carries forward the last
 # known value via CREDIT_STATE_CACHE above, so a temporarily-disabled reporting toggle still
-# shows the real credits figure instead of falling back to the USD list-price estimate.
+# shows the account-level credit change instead of falling back to the USD list-price estimate.
 SESSION_CREDITS=""
 case "$SESSION_ID" in *[!A-Za-z0-9_-]*|'') ;; *)
     if [ -n "$CREDIT_USED" ]; then
@@ -505,7 +517,7 @@ case "$SESSION_ID" in *[!A-Za-z0-9_-]*|'') ;; *)
     fi
 ;; esac
 
-# Line-1 money segment: the real credits draw when available, colored the same way as the
+# Line-1 money segment: the approximate session credit draw when available, colored the same way as the
 # line-3 total (red = a live reading this render, dim gray = a carried-over last-known figure
 # while reporting is currently disabled — see the CREDIT_SEG comment above); otherwise the
 # list-price estimate converted to the billing currency when a rate is cached, dimmed to mark
@@ -513,7 +525,7 @@ case "$SESSION_ID" in *[!A-Za-z0-9_-]*|'') ;; *)
 # blank the whole line.
 if [ -n "$SESSION_CREDITS" ]; then
     SESSION_CREDITS_COLOR="$OVERLAY0"; [ "$CREDIT_ON" = "true" ] && SESSION_CREDITS_COLOR="$CRIT"
-    COST_SEG=" ${SESSION_CREDITS_COLOR}$(currency_symbol "${CREDIT_CUR:-USD}")${SESSION_CREDITS}${RESET}"
+    COST_SEG=" ${SESSION_CREDITS_COLOR}~$(currency_symbol "${CREDIT_CUR:-USD}")${SESSION_CREDITS}${RESET}"
 else
     case "$SESSION_COST" in ''|*[!0-9.]*) SESSION_COST=0 ;; esac
     COST_CUR="USD"; COST_VAL="$SESSION_COST"

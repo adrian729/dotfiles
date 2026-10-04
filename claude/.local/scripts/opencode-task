@@ -15,12 +15,13 @@ usage() {
 Usage: opencode-task NAME PROMPT...
   NAME         worktree/branch/session name (same convention as opencode-wt)
   -m MODEL     provider/model (overrides the agent's pinned model in opencode.json)
-  --agent A    agent to run (default: task — bash/edit/read, confined to --dir)
+  --agent A    agent to run (default: task — bash/edit/read; worktree is not a sandbox)
   -T SECS      timeout (default 1800)
 Runs in <repo>/.worktrees/NAME; re-running the same NAME resumes that
-session. Never pushes, never merges into your checkout — inspect with
-`opencode-git-wt NAME diff`, clean up with `opencode-wt -d NAME`.
-Exit: 0 ok · 1 usage · 2 bad name · 3 opencode/git/jq missing · 6 API error · 124 timeout
+session when a session ID was saved. The wrapper does not push or merge;
+the delegated agent can perform external actions through its tools. Review
+all changes against the reported starting commit before integration or cleanup.
+Exit: 0 ok · 1 usage · 2 bad name · 3 opencode/git/jq missing · 5 no free candidate · 6 API error · 124 timeout
 EOF
   exit 1
 }
@@ -47,20 +48,37 @@ PROMPT="${PROMPT_PARTS[*]}"
 [ -n "$AGENT_ARG" ] && AGENT="$AGENT_ARG"
 [ -n "$TIMEOUT_ARG" ] && TIMEOUT="$TIMEOUT_ARG"
 
-case "$TIMEOUT" in *[!0-9]*|'') die "invalid -T (seconds): $TIMEOUT" ;; esac
+case "$TIMEOUT" in *[!0-9]*|''|0|0*) die "invalid -T (seconds): $TIMEOUT" ;; esac
 
 command -v opencode >/dev/null 2>&1 || { echo "opencode-task: opencode CLI not found" >&2; exit 3; }
 command -v git >/dev/null 2>&1 || { echo "opencode-task: git required" >&2; exit 3; }
 command -v jq >/dev/null 2>&1 || { echo "opencode-task: jq required" >&2; exit 3; }
 
-if [ "$AGENT" != "task" ]; then
-  agent_mode=$(opencode agent list 2>/dev/null | grep -E "^${AGENT} " | head -1 | sed 's/.*(\(.*\))/\1/')
-  case "$agent_mode" in
-    subagent) die "agent '$AGENT' is mode:subagent — cannot be invoked via 'opencode run --agent'. Change its mode to 'all' in the agent .md frontmatter." ;;
-    '') die "agent '$AGENT' not found in 'opencode agent list'" ;;
-  esac
+case "$AGENT" in ''|*[!A-Za-z0-9_-]*) die "invalid agent name: $AGENT" ;; esac
+agent_list=$(opencode agent list 2>/dev/null) || die "could not list OpenCode agents"
+agent_mode=$(printf '%s\n' "$agent_list" | awk -v name="$AGENT" '$1 == name {gsub(/[()]/, "", $2); print $2; exit}')
+case "$agent_mode" in
+  primary|all) ;;
+  subagent) die "agent '$AGENT' is mode:subagent; opencode run requires primary or all" ;;
+  *) die "agent '$AGENT' is unavailable for opencode run" ;;
+esac
+
+# No explicit model: select from the configured free set and the live catalog.
+# Never fall through to OpenCode's ambient (possibly paid) default.
+if [ -z "$MODEL" ]; then
+  config="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode-models.json"
+  [ -f "$config" ] || config="$HOME/.local/config/opencode-models.json"
+  [ -f "$config" ] || { echo "opencode-task: no model catalog; pass -m MODEL explicitly" >&2; exit 5; }
+  candidates=$(jq -r --arg agent "$AGENT" '. as $cfg | .agents[$agent][]? | select(. as $m | $cfg.free_models | index($m))' "$config") || die "invalid model catalog"
+  available=$(opencode models opencode 2>/dev/null) || die "could not query available models"
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    if printf '%s\n' "$available" | grep -qxF "$candidate"; then MODEL="$candidate"; break; fi
+  done <<< "$candidates"
+  [ -n "$MODEL" ] || { echo "opencode-task: no configured free model available for $AGENT; refresh the catalog or pass -m MODEL" >&2; exit 5; }
 fi
 
+case "$NAME" in *'@{'*) echo "opencode-task: invalid worktree name: $NAME" >&2; exit 2 ;; esac
 git check-ref-format --branch "$NAME" >/dev/null 2>&1 || { echo "opencode-task: '$NAME' is not a valid branch name" >&2; exit 2; }
 
 ROOT_COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
@@ -91,28 +109,38 @@ copy_worktreeinclude() {
 run_timed() { # run_timed SECS CMD...  — returns 124 on timeout
   local secs="$1"; shift
   if [ -n "$TIMEOUT_BIN" ]; then
-    "$TIMEOUT_BIN" "$secs" "$@"
-    return $?
+    "$TIMEOUT_BIN" -k 2 "$secs" "$@"
+    local timed_rc=$?
+    [ "$timed_rc" -eq 137 ] && timed_rc=124
+    return "$timed_rc"
   fi
-  local marker; marker=$(mktemp "${TMPDIR:-/tmp}/opencode-task.timeout.XXXXXX")
-  rm -f "$marker"
+  local marker_dir marker
+  marker_dir=$(mktemp -d "${TMPDIR:-/tmp}/opencode-task.timeout.XXXXXX") || return 6
+  marker="$marker_dir/expired"
   set -m
   "$@" &
   local pid=$!
   set +m
   ( sleep "$secs" 2>/dev/null
     if kill -0 "$pid" 2>/dev/null; then
+      : > "$marker"
       if kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null; then
-        : > "$marker"
+        sleep 2
+        kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
       fi
     fi
   ) &
   local watcher=$!
   wait "$pid" 2>/dev/null
   local rc=$?
-  kill "$watcher" 2>/dev/null || true
+  if [ -f "$marker" ]; then
+    wait "$watcher" 2>/dev/null || true
+  else
+    kill "$watcher" 2>/dev/null || true
+  fi
   wait "$watcher" 2>/dev/null || true
-  if [ -f "$marker" ]; then rm -f "$marker"; return 124; fi
+  if [ -f "$marker" ]; then rm -rf "$marker_dir"; return 124; fi
+  rmdir "$marker_dir"
   return "$rc"
 }
 
@@ -143,6 +171,9 @@ else
 fi
 
 
+START_SHA=$(git -C "$WT_DIR" rev-parse HEAD)
+echo "opencode-task: starting commit $START_SHA; existing status:" >&2
+git -C "$WT_DIR" status --short >&2
 echo "opencode-task: running in $WT_DIR (agent=$AGENT${MODEL:+, model=$MODEL}, timeout=${TIMEOUT}s) ..." >&2
 
 OC_ARGS=()
@@ -157,22 +188,27 @@ run_timed "$TIMEOUT" opencode run "${OC_ARGS[@]+"${OC_ARGS[@]}"}" --agent "$AGEN
 rc=$?
 set -e
 
+# Save a complete session event even if a timeout left a truncated final line.
+sid=$(jq -Rrs 'split("\n") | map(fromjson? | select(.sessionID | type == "string") | .sessionID) | first // empty' "$RESP_FILE" 2>/dev/null) || sid=""
+[ -n "$sid" ] && git -C "$ROOT" config "wt.$NAME.session" "$sid"
+
 if [ "$rc" -eq 124 ]; then
-  echo "opencode-task: timed out after ${TIMEOUT}s — worktree left at $WT_DIR for inspection" >&2
+  echo "opencode-task: timed out after ${TIMEOUT}s — worktree left at $WT_DIR (start $START_SHA) for inspection" >&2
   exit 124
 fi
 
-sid=$(jq -rs 'map(select(.sessionID != null) | .sessionID) | first // empty' "$RESP_FILE" 2>/dev/null)
-[ -n "$sid" ] && git -C "$ROOT" config "wt.$NAME.session" "$sid"
-
-errmsg=$(jq -r 'select(.type=="error") | (.error.data.message // .error.name // "unknown error")' "$RESP_FILE" 2>/dev/null | head -1)
+errmsg=$(jq -rs '[.[] | select(.type=="error") | (.error.data.message // .error.name // "unknown error")] | first // empty' "$RESP_FILE" 2>/dev/null) || errmsg="malformed JSON response"
+if [ -z "$errmsg" ] && ! jq -es '[.[] | select(.type=="step_finish")][-1].part.reason == "stop"' "$RESP_FILE" >/dev/null 2>&1; then
+  errmsg="response did not finish normally"
+fi
 # Dedupe by part.id, keeping the last (assumed-cumulative) text per id, in
 # first-seen order — safe whether or not a part streams multiple snapshots.
 resp=$(jq -rs '
-  [.[] | select(.type=="text")]
+  [.[] | select(.type=="text" and (.part.id | type)=="string" and (.part.text | type)=="string")]
   | reduce .[] as $e ({}; .[$e.part.id] = $e.part.text)
   | to_entries | .[].value
-' "$RESP_FILE" 2>/dev/null)
+' "$RESP_FILE" 2>/dev/null) || resp=""
+[ -n "$resp" ] || errmsg="${errmsg:-no final text response}"
 
 echo ""
 echo "=== opencode-task: '$NAME' finished (exit $rc) ==="
@@ -186,9 +222,10 @@ fi
 echo ""
 echo "--- changes in $WT_DIR ---"
 git -C "$WT_DIR" status --short
-git -C "$WT_DIR" diff --shortstat
+git -C "$WT_DIR" diff "$START_SHA" --shortstat
+git -C "$WT_DIR" log --oneline "$START_SHA..HEAD"
 echo ""
-echo "Inspect:   opencode-git-wt $NAME diff"
+echo "Inspect:   opencode-git-wt $NAME diff $START_SHA --"
 echo "Resume:    opencode-wt $NAME       (interactive, same session)"
 echo "Discard:   opencode-wt -d $NAME"
 

@@ -198,6 +198,8 @@ cmd_list() {
 
 cmd_done() {
   local root=$1 name=$2 wt_dir ans state="" parent
+  case "$name" in *'@{'*) die "invalid worktree name: $name" ;; esac
+  git check-ref-format --branch "$name" >/dev/null 2>&1 || die "invalid worktree name: $name"
   wt_dir="$root/.worktrees/$name"
   [ -d "$wt_dir" ] || die "no worktree named '$name' (see claude-wt -l)"
   [ -f "$wt_dir/.git" ] ||
@@ -215,6 +217,7 @@ cmd_done() {
     git -C "$root" worktree remove "$wt_dir"
   fi
   git -C "$root" config --unset "wt.$name.color" 2>/dev/null || true
+  git -C "$root" config --unset "wt.$name.session" 2>/dev/null || true
   # Slashed names (feat/x) leave empty parent dirs behind — remove them up to
   # the worktrees root so they can't shadow future session names.
   parent=$(dirname "$wt_dir")
@@ -241,11 +244,11 @@ cmd_done() {
 
 cmd_start() {
   local root=$1 name=$2 color=$3 wt_dir tint="" created="" base
-  git check-ref-format --branch "$name" >/dev/null 2>&1 ||
-    die "'$name' is not a valid branch name"
   if [ -n "$color" ]; then
     tint=$(tint_for "$color") || die "unknown color '$color' (valid: $COLOR_NAMES)"
   fi
+  case "$name" in *'@{'*) die "invalid worktree name: $name" ;; esac
+  git check-ref-format --branch "$name" >/dev/null 2>&1 || die "invalid worktree name: $name"
   wt_dir="$root/.worktrees/$name"
 
   ensure_excluded "$root"
@@ -296,12 +299,16 @@ cmd_start() {
   [ -n "$tint" ] && trap reset_color EXIT
 
   if [ -z "$created" ] && has_session "$wt_dir"; then
-    claude --continue || true
+    claude --continue || return $?
   else
-    claude -n "$name" || true
+    claude -n "$name" || return $?
   fi
 
-  offer_push_pr "$name"
+  if [ "$(git branch --show-current)" = "$name" ]; then
+    offer_push_pr "$name"
+  else
+    echo "claude-wt: branch changed during the session; review it before pushing" >&2
+  fi
 }
 
 case "${1:-}" in

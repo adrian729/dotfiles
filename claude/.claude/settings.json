@@ -78,10 +78,6 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/agent-guard.sh"
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/agent-skill-nudge.sh"
           }
         ]
       }

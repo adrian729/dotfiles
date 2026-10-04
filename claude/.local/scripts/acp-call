@@ -1,178 +1,144 @@
 #!/usr/bin/env python3
-"""One-shot ACP JSON-RPC call — spawn agent, send request(s), print response(s), exit.
+"""Send newline-delimited ACP requests to AGENT_CMD [TIMEOUT_SECS].
 
-Usage: echo '<json-request>' | acp-call AGENT_CMD [TIMEOUT]
-
-Each line on stdin is a separate JSON-RPC request sent to the agent in sequence.
-Each response line is printed to stdout as it arrives. Non-matching notifications
-(session/update, etc.) are printed too.
-
-The agent process is killed after all requests have been processed or on timeout.
-
-If the request is a session/prompt, the helper also reads session/update
-notifications and accumulates content, printing the final result.
-
-For multiple dependent requests (e.g. initialize → session/new → get_config_options),
-pipe them all at once:
-
-  printf '%s\n' '{"jsonrpc":"2.0","id":1,...}' '{"jsonrpc":"2.0","id":2,...}' | acp-call claude-agent-acp
+Requests run sequentially; responses and notifications are printed as JSON lines.
+A session/new response supplies missing sessionId fields on later session requests.
+Prompt text chunks are also collected in the response's result.content (a helper
+extension, not an ACP field). Timeout applies to each request, including prompts.
+This minimal client does not expose filesystem/terminal tools or grant permissions.
+Exit codes: 2 invalid input, 6 protocol/process error, 124 timeout.
 """
-
-import sys
 import json
-import subprocess
-import select
+import math
 import os
+import queue
 import signal
+import subprocess
+import sys
+import threading
 import time
 
-TIMEOUT = 30
-
-def read_line_nonblock(fd):
-    r, _, _ = select.select([fd], [], [], 0.1)
-    if not r:
-        return None
-    line = fd.readline()
-    if not line:
-        return None
-    return line.rstrip("\r\n")
 
 def main():
-    global TIMEOUT
-    if len(sys.argv) < 2:
-        print("usage: acp-call AGENT_CMD [TIMEOUT_SECS]", file=sys.stderr)
-        sys.exit(1)
-
-    agent_cmd = sys.argv[1]
-    if len(sys.argv) > 2:
-        TIMEOUT = int(sys.argv[2])
-
-    requests = []
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            requests.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-
+    if not 2 <= len(sys.argv) <= 3:
+        raise ValueError("usage: acp-call AGENT_CMD [TIMEOUT_SECS]")
+    timeout = float(sys.argv[2]) if len(sys.argv) == 3 else 30
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("timeout must be positive and finite")
+    requests = [json.loads(line) for line in sys.stdin if line.strip()]
+    for req in requests:
+        if not isinstance(req, dict) or not isinstance(req.get("method"), str):
+            raise ValueError("each input line must be a JSON-RPC request or notification")
+        if "params" in req and not isinstance(req["params"], dict):
+            raise ValueError("ACP params must be an object")
+        req.setdefault("jsonrpc", "2.0")
     if not requests:
-        sys.exit(0)
+        return 0
+    proc = subprocess.Popen(sys.argv[1], shell=True, stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, bufsize=1, start_new_session=True)
+    lines = queue.Queue()
 
-    proc = subprocess.Popen(
-        agent_cmd,
-        shell=True,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-        preexec_fn=os.setsid if hasattr(os, "setsid") else None,
-    )
+    def read_stdout():
+        try:
+            for line in proc.stdout:
+                lines.put(line)
+        finally:
+            lines.put(None)
 
-    import threading
-    def forward_stderr():
+    def read_stderr():
         for line in proc.stderr:
             print(line, end="", file=sys.stderr, flush=True)
-    t = threading.Thread(target=forward_stderr, daemon=True)
-    t.start()
 
-    dead = False
+    def send(value):
+        proc.stdin.write(json.dumps(value) + "\n")
+        proc.stdin.flush()
 
+    threading.Thread(target=read_stdout, daemon=True).start()
+    threading.Thread(target=read_stderr, daemon=True).start()
+    session_id = None
     try:
         for req in requests:
-            if dead:
-                break
-
-            req_id = req.get("id")
-            is_prompt = req.get("method") == "session/prompt"
-
-            proc.stdin.write(json.dumps(req) + "\n")
-            proc.stdin.flush()
-
-            content_buf = []
-            deadline = time.time() + TIMEOUT
-            if is_prompt:
-                deadline = time.time() + 120
-
-            while time.time() < deadline:
-                line = read_line_nonblock(proc.stdout)
-                if line is None:
-                    if proc.poll() is not None:
-                        dead = True
-                        break
-                    continue
-
+            method = req["method"]
+            if session_id and method in {"session/prompt", "session/cancel", "session/set_mode",
+                                         "session/set_config_option", "session/set_model"}:
+                req.setdefault("params", {}).setdefault("sessionId", session_id)
+            send(req)
+            if "id" not in req:
+                continue
+            content = []
+            deadline = time.monotonic() + timeout
+            while True:
                 try:
-                    resp = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                resp_id = resp.get("id")
-
-                if is_prompt and resp_id is None:
-                    method = resp.get("method", "")
-                    if method == "session/update":
-                        params = resp.get("params", {})
-                        content = params.get("content")
-                        stop_reason = params.get("stopReason")
-                        if content:
-                            content_buf.append(content)
-                        if stop_reason:
-                            # Assemble final result
-                            result = {
-                                "jsonrpc": "2.0",
-                                "id": req_id,
-                                "result": {
-                                    "content": "".join(content_buf),
-                                    "stopReason": stop_reason,
-                                },
-                            }
-                            print(json.dumps(result), flush=True)
-                            break
-                    # Also print the notification for tool-call detection
-                    print(json.dumps(resp), flush=True)
-                    continue
-
-                if resp_id == req_id:
-                    if is_prompt and content_buf:
-                        # Merge accumulated content into the result
-                        existing_content = resp.get("result", {}).get("content", "")
-                        if existing_content and existing_content != "".join(content_buf):
-                            content_buf.append(existing_content)
-                        resp["result"]["content"] = "".join(content_buf)
-                    print(json.dumps(resp), flush=True)
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise queue.Empty
+                    line = lines.get(timeout=remaining)
+                except queue.Empty:
+                    print(f"acp-call: {method} timed out after {timeout:g}s", file=sys.stderr)
+                    return 124
+                if line is None:
+                    raise RuntimeError(f"agent closed stdout before responding to {method}")
+                msg = json.loads(line)
+                if not isinstance(msg, dict):
+                    raise RuntimeError("agent sent a non-object message")
+                if "params" in msg and not isinstance(msg["params"], dict):
+                    raise RuntimeError("agent sent non-object params")
+                # Agent-to-client requests use the other direction's id namespace.
+                if "method" in msg and "id" in msg:
+                    reply = {"jsonrpc": "2.0", "id": msg["id"]}
+                    if msg["method"] == "session/request_permission":
+                        options = msg.get("params", {}).get("options", [])
+                        if not isinstance(options, list):
+                            raise RuntimeError("permission options must be an array")
+                        reject = next((o["optionId"] for o in options
+                                       if isinstance(o, dict) and o.get("kind") == "reject_once"
+                                       and isinstance(o.get("optionId"), str)), None)
+                        outcome = ({"outcome": "selected", "optionId": reject} if reject
+                                   else {"outcome": "cancelled"})
+                        reply["result"] = {"outcome": outcome}
+                    else:
+                        reply["error"] = {"code": -32601, "message": "Client method not supported"}
+                    send(reply)
+                elif "method" not in msg and msg.get("id") == req["id"]:
+                    if "error" in msg:
+                        print(json.dumps(msg), flush=True)
+                        raise RuntimeError(f"{method}: {msg['error']}")
+                    if not isinstance(msg.get("result"), dict):
+                        raise RuntimeError(f"{method}: missing object result")
+                    if method == "session/new":
+                        session_id = msg["result"].get("sessionId")
+                    if method == "session/prompt" and content:
+                        msg["result"]["content"] = [{"type": "text", "text": "".join(content)}]
+                    print(json.dumps(msg), flush=True)
                     break
-
-                # Other messages — print them
-                print(json.dumps(resp), flush=True)
-
-                if proc.poll() is not None:
-                    dead = True
-                    break
-            else:
-                # Timeout
-                print(json.dumps({
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {"code": -32000, "message": "timeout"},
-                }), flush=True)
-
-    except (BrokenPipeError, KeyboardInterrupt):
-        pass
+                elif method == "session/prompt" and msg.get("method") == "session/update":
+                    params = msg.get("params", {})
+                    update = params.get("update", {})
+                    if not isinstance(update, dict):
+                        raise RuntimeError("session update must be an object")
+                    block = update.get("content", {})
+                    if (params.get("sessionId") == req.get("params", {}).get("sessionId")
+                            and update.get("sessionUpdate") == "agent_message_chunk"
+                            and isinstance(block, dict) and block.get("type") == "text"
+                            and isinstance(block.get("text"), str)):
+                        content.append(block["text"])
+                print(json.dumps(msg), flush=True)
+        return 0
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        print(f"acp-call: {exc}", file=sys.stderr)
+        return 6
     finally:
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-        try:
-            proc.wait(timeout=2)
-        except Exception:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
             pass
+        proc.wait()
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        sys.exit(main())
+    except (ValueError, OSError) as exc:
+        print(f"acp-call: {exc}", file=sys.stderr)
+        sys.exit(2)

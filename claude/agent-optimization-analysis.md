@@ -1,4 +1,6 @@
-# Agent optimization analysis
+# Agent optimization analysis (archived)
+
+Historical proposal: the mandatory pre-passes described below have been removed from the active configuration. These estimates were not validated by measurements. Use the current agent definitions and `agents-reference.md` for active behavior.
 
 Cost/savings analysis of cheap pre-passes in front of our most expensive agents. Figures are modeled estimates (assumed token volumes + scenario weights), not measured — validate before relying on them. "Expected" = probability-weighted average across likely scenarios, not a midpoint.
 

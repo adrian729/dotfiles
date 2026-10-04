@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # opencode-llm — delegate token-heavy micro-task to free-tier cloud model via OpenCode relay.
-# Same contract as `llm`. Prefer `llm` first (free, offline); use this when local disabled.
+# Same text-in/text-out contract as `llm`; the caller chooses local or cloud delegation.
 set -euo pipefail
 
 AGENT="relay"
@@ -8,8 +8,7 @@ NEUTRAL_DIR="$HOME/.local/state/agents/opencode-llm-cwd"
 STATE_FILE="$HOME/.local/state/agents/opencode-llm.json"
 CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode-models.json"
 if [ ! -f "$CONFIG_FILE" ]; then
-  SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  CONFIG_FILE="$SELF_DIR/../config/opencode-models.json"
+  CONFIG_FILE="$HOME/.local/config/opencode-models.json"
 fi
 
 die() { echo "opencode-llm: $*" >&2; exit 1; }
@@ -44,7 +43,7 @@ done
 [ ${#PROMPT_PARTS[@]} -gt 0 ] || usage
 PROMPT="${PROMPT_PARTS[*]}"
 
-case "$TIMEOUT" in *[!0-9]*|'') die "invalid -T (seconds): $TIMEOUT" ;; esac
+case "$TIMEOUT" in *[!0-9]*|''|0|0*) die "invalid -T (seconds): $TIMEOUT" ;; esac
 
 command -v opencode >/dev/null 2>&1 || { echo "opencode-llm: opencode CLI not found" >&2; exit 3; }
 command -v jq >/dev/null 2>&1 || { echo "opencode-llm: jq required" >&2; exit 3; }
@@ -65,34 +64,45 @@ fi
 run_timed() { # run_timed SECS CMD...  — returns 124 on timeout
   local secs="$1"; shift
   if [ -n "$TIMEOUT_BIN" ]; then
-    "$TIMEOUT_BIN" "$secs" "$@"
-    return $?
+    "$TIMEOUT_BIN" -k 2 "$secs" "$@"
+    local timed_rc=$?
+    [ "$timed_rc" -eq 137 ] && timed_rc=124
+    return "$timed_rc"
   fi
-  local marker; marker=$(mktemp "${TMPDIR:-/tmp}/opencode-llm.timeout.XXXXXX")
-  rm -f "$marker"
+  local marker_dir marker
+  marker_dir=$(mktemp -d "${TMPDIR:-/tmp}/opencode-llm.timeout.XXXXXX") || return 6
+  marker="$marker_dir/expired"
   set -m
   "$@" &
   local pid=$!
   set +m
   ( sleep "$secs" 2>/dev/null
     if kill -0 "$pid" 2>/dev/null; then
+      : > "$marker"
       if kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null; then
-        : > "$marker"
+        sleep 2
+        kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
       fi
     fi
   ) &
   local watcher=$!
   wait "$pid" 2>/dev/null
   local rc=$?
-  kill "$watcher" 2>/dev/null || true
+  if [ -f "$marker" ]; then
+    wait "$watcher" 2>/dev/null || true
+  else
+    kill "$watcher" 2>/dev/null || true
+  fi
   wait "$watcher" 2>/dev/null || true
-  if [ -f "$marker" ]; then rm -f "$marker"; return 124; fi
+  if [ -f "$marker" ]; then rm -rf "$marker_dir"; return 124; fi
+  rmdir "$marker_dir"
   return "$rc"
 }
 
 STDIN_FILE=$(mktemp "${TMPDIR:-/tmp}/opencode-llm.stdin.XXXXXX")
 RESP_FILE=$(mktemp "${TMPDIR:-/tmp}/opencode-llm.resp.XXXXXX")
-trap 'rm -f "$STDIN_FILE" "$RESP_FILE"' EXIT
+ERR_FILE=$(mktemp "${TMPDIR:-/tmp}/opencode-llm.err.XXXXXX")
+trap 'rm -f "$STDIN_FILE" "$RESP_FILE" "$ERR_FILE"' EXIT
 if [ ! -t 0 ]; then
   cat > "$STDIN_FILE"
 fi
@@ -110,11 +120,8 @@ fi
 [ -n "$FULL_PROMPT" ] || { echo "opencode-llm: empty prompt and empty stdin" >&2; exit 2; }
 
 
-# opencode/big-pickle is solid but runs ~70-80s per call (heavy hidden
-# reasoning) — kept only as a last resort. deepseek-v4-flash-free /
-# mimo-v2.5-free answer in ~2s; hy3-free ~10s.
-# The model list is tuned per-machine by opencode-llm-probe at install time
-# from opencode-models.json's relay list.
+# The probe orders candidates per machine. Only explicitly configured free
+# models participate in the default walk; -m is an explicit model choice.
 MODELS=()
 load_models() {
   if [ -n "$FORCE_MODEL" ]; then
@@ -123,11 +130,11 @@ load_models() {
   fi
   if [ -f "$STATE_FILE" ]; then
     while IFS= read -r m; do [ -n "$m" ] && MODELS+=("$m"); done \
-      < <(jq -r '.models[]?' "$STATE_FILE" 2>/dev/null)
+      < <(jq -r --slurpfile cfg "$CONFIG_FILE" '.models[]? | select(. as $m | $cfg[0].free_models | index($m))' "$STATE_FILE" 2>/dev/null)
   fi
   if [ ${#MODELS[@]} -eq 0 ] && [ -f "$CONFIG_FILE" ]; then
     while IFS= read -r m; do [ -n "$m" ] && MODELS+=("$m"); done \
-      < <(jq -r '.relay[]?' "$CONFIG_FILE" 2>/dev/null)
+      < <(jq -r '. as $cfg | .relay[]? | select(. as $m | $cfg.free_models | index($m))' "$CONFIG_FILE" 2>/dev/null)
   fi
   if [ ${#MODELS[@]} -eq 0 ]; then
     echo "opencode-llm: no relay models found in $CONFIG_FILE or $STATE_FILE" >&2
@@ -145,7 +152,7 @@ while [ "$i" -lt "$n" ]; do
   tried="${tried:+$tried, }$model"
 
   set +e
-  run_timed "$TIMEOUT" opencode run -m "$model" --agent "$AGENT" --dir "$NEUTRAL_DIR" --format json -- "$FULL_PROMPT" >"$RESP_FILE" 2>/dev/null
+  run_timed "$TIMEOUT" opencode run -m "$model" --agent "$AGENT" --dir "$NEUTRAL_DIR" --format json -- "$FULL_PROMPT" >"$RESP_FILE" 2>"$ERR_FILE"
   rc=$?
   set -e
 
@@ -154,14 +161,17 @@ while [ "$i" -lt "$n" ]; do
     exit 124
   fi
 
-  errmsg=$(jq -r 'select(.type=="error") | (.error.data.message // .error.name // "unknown error")' "$RESP_FILE" 2>/dev/null | head -1)
+  errmsg=$(jq -rs '[.[] | select(.type=="error") | (.error.data.message // .error.name // "unknown error")] | first // empty' "$RESP_FILE" 2>/dev/null) || errmsg="malformed JSON response"
+  if [ -z "$errmsg" ] && ! jq -es '[.[] | select(.type=="step_finish")][-1].part.reason == "stop"' "$RESP_FILE" >/dev/null 2>&1; then
+    errmsg="response did not finish normally"
+  fi
 
   if [ "$rc" -eq 0 ] && [ -z "$errmsg" ] && [ -s "$RESP_FILE" ]; then
     resp=$(jq -rs '
-      [.[] | select(.type=="text")]
+      [.[] | select(.type=="text" and (.part.id | type)=="string" and (.part.text | type)=="string")]
       | reduce .[] as $e ({}; .[$e.part.id] = $e.part.text)
       | to_entries | .[].value
-    ' "$RESP_FILE" 2>/dev/null)
+    ' "$RESP_FILE" 2>/dev/null) || resp=""
     if [ -n "$resp" ]; then
       if [ -n "$OUTFILE" ]; then
         printf '%s\n' "$resp" > "$OUTFILE" || die "could not write $OUTFILE"
@@ -173,6 +183,7 @@ while [ "$i" -lt "$n" ]; do
     fi
   fi
 
+  [ ! -s "$ERR_FILE" ] || cat "$ERR_FILE" >&2
   if [ -n "$FORCE_MODEL" ]; then
     echo "opencode-llm: request failed (model $model): ${errmsg:-exit $rc}" >&2
     exit 6

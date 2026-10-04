@@ -1,10 +1,6 @@
 # `claude-wt` + `git-wt` — quickstart
 
-`claude-wt` runs several Claude Code sessions on the same repo in
-parallel, each in its own **git worktree**: an extra working folder of
-the repo (`.worktrees/<name>`), on its own branch (`<name>`), so
-sessions never touch each other's files — or your main checkout. One
-name = one branch = one worktree = one Claude session = one color.
+`claude-wt` runs several Claude Code sessions on the same repo in parallel, each in its own **git worktree**: an extra working folder of the repo (`.worktrees/<name>`), on its own branch (`<name>`). Edits inside each checkout stay separate, but agents can still access other directories. One name = one branch = one worktree = one Claude session = one color.
 
 New machine? `./standalone_quick_setup.sh` tries to set everything up
 automagically.

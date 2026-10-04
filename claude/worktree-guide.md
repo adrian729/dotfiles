@@ -1,7 +1,6 @@
 # Parallel Claude Code sessions with git worktrees
 
-Run several Claude Code sessions on the same repo at once — each in its own
-folder, on its own branch, with zero cross-contamination.
+Run several Claude Code sessions on the same repo at once, each in its own folder and branch. This guide covers Claude's built-in `--worktree`; the repo's shared `.worktrees/` helpers are described in `claude-wt-guide.md`. Separate checkouts do not restrict agents' access to other directories.
 
 ## The 30-second mental model
 
@@ -44,7 +43,7 @@ commit early.
 
 ## Session lifecycle
 
-- **During:** work normally; sessions can't touch each other's files.
+- **During:** work inside the session's checkout so its edits stay separate.
 - **On exit:** no changes → worktree and branch are auto-deleted (unless
   you named the session — then Claude asks); changes → Claude asks whether
   to keep or delete.

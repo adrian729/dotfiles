@@ -11,12 +11,14 @@ die() {
   exit 1
 }
 
+command -v jq >/dev/null 2>&1 || die "missing dependency: jq"
+
 # Exit 0 on any successful state write (including enabled:false) — install.sh
 # relies on this so low-RAM/no-ollama machines aren't install errors.
 write_state() {
   local json="$1" tmp
   mkdir -p "$STATE_DIR" || die "could not create $STATE_DIR"
-  tmp="$STATE_FILE.$$.tmp"
+  tmp=$(mktemp "$STATE_FILE.XXXXXX") || die "could not create state file"
   printf '%s\n' "$json" >"$tmp" || die "could not write $tmp"
   mv -f "$tmp" "$STATE_FILE" || die "could not move state file into place"
 }
@@ -44,9 +46,16 @@ CATALOG_FILE=""
 
 footprint_gb() {
   local raw
+  if [ -z "$CATALOG_FILE" ]; then
+    case "$1" in
+      qwen3.6:35b) echo 24 ;; gemma4:26b) echo 18 ;; qwen3:14b) echo 12 ;;
+      qwen3:8b) echo 7 ;; qwen3-coder:30b) echo 22 ;; qwen2.5-coder:7b) echo 6 ;;
+    esac
+    return 0
+  fi
   raw=$(jq -r --arg n "$1" '.models[$n].footprint_gb // empty' "$CATALOG_FILE" 2>/dev/null || true)
   [ -n "$raw" ] || return 0
-  printf '%.0f' "$raw" 2>/dev/null || echo "$raw"
+  awk -v n="$raw" 'BEGIN {if(n+0>0) print int(n)+(n>int(n))}'
 }
 
 # Does coder $1 genuinely out-code generalist $2?
@@ -80,7 +89,7 @@ case "$OS" in
     RAM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
     ;;
   Linux)
-    CHIP=$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -n1)
+    CHIP=$(awk -F ': ' '/^model name/ {print $2; exit}' /proc/cpuinfo 2>/dev/null)
     [ -z "$CHIP" ] && CHIP=unknown
     RAM_GB=$(( $(sed -n 's/^MemTotal:[[:space:]]*\([0-9]*\).*/\1/p' /proc/meminfo 2>/dev/null || echo 0) / 1048576 ))
     ;;
@@ -88,6 +97,7 @@ case "$OS" in
 esac
 # Test override for system RAM.
 if [ -n "${LLM_PROBE_RAM_GB:-}" ]; then
+  case "$LLM_PROBE_RAM_GB" in *[!0-9]*|0?*) die "invalid LLM_PROBE_RAM_GB" ;; esac
   RAM_GB="$LLM_PROBE_RAM_GB"
 fi
 
@@ -96,10 +106,9 @@ OLLAMA_VERSION=""
 if command -v ollama >/dev/null 2>&1; then
   OLLAMA_INSTALLED=true
   # `ollama --version` prints "ollama version is X.Y.Z" and works offline.
-  OLLAMA_VERSION=$(ollama --version 2>/dev/null | sed -n 's/.*version is //p' | head -n1)
+  OLLAMA_VERSION=$(ollama --version 2>/dev/null | sed -n 's/.*version is //p' | head -n1) || OLLAMA_VERSION=""
 fi
 $OLLAMA_INSTALLED || disabled "missing dependency: ollama"
-command -v jq   >/dev/null 2>&1 || disabled "missing dependency: jq"
 command -v curl >/dev/null 2>&1 || disabled "missing dependency: curl"
 
 # Detect the fast-memory tier ollama will actually run in.
@@ -131,6 +140,7 @@ NOTE=""
 VRAM_GB=""
 if [ -n "${LLM_PROBE_VRAM_GB:-}" ]; then
   # Test override: force the discrete-GPU branch on any machine.
+  case "$LLM_PROBE_VRAM_GB" in *[!0-9]*|0?*) die "invalid LLM_PROBE_VRAM_GB" ;; esac
   VRAM_GB="$LLM_PROBE_VRAM_GB"
   BUDGET_BASIS="vram-forced"
   MODEL_BUDGET_GB=$((VRAM_GB * 9 / 10))

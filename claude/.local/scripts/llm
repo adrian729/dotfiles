@@ -54,7 +54,11 @@ done
 [ ${#PROMPT_PARTS[@]} -gt 0 ] || usage
 PROMPT="${PROMPT_PARTS[*]}"
 
-case "$TIMEOUT" in *[!0-9]*|'') die "invalid -T (seconds): $TIMEOUT" ;; esac
+case "$TIMEOUT" in *[!0-9]*|''|0|0*) die "invalid -T (seconds): $TIMEOUT" ;; esac
+
+command -v jq >/dev/null 2>&1 || die "jq required"
+command -v curl >/dev/null 2>&1 || die "curl required"
+jq -en --argjson temp "$TEMP" '$temp | type == "number" and . >= 0' >/dev/null 2>&1 || die "--temp must be a nonnegative number"
 
 if [ ! -f "$STATE_FILE" ]; then
   # Safe to auto-run: the probe is static — no server contact, no pulls.
@@ -76,6 +80,8 @@ if [ -n "$CTX_OVERRIDE" ]; then
   case "$CTX_OVERRIDE" in *[!0-9]*|'') die "invalid -c (num_ctx): $CTX_OVERRIDE" ;; esac
   NUM_CTX="$CTX_OVERRIDE"
 fi
+case "$NUM_CTX" in ''|*[!0-9]*|0*) die "invalid context window: $NUM_CTX" ;; esac
+[ "$NUM_CTX" -gt 2048 ] || die "context window must exceed the 2048-token output reserve"
 if [ "$NUM_CTX" -gt "$CTX_CAP" ]; then
   echo "llm: -c $NUM_CTX exceeds cap $CTX_CAP — using $CTX_CAP" >&2
   NUM_CTX="$CTX_CAP"
@@ -93,7 +99,7 @@ if [ ! -t 0 ]; then
 fi
 STDIN_BYTES=$(wc -c < "$STDIN_FILE" | tr -d ' ')
 
-# Silent truncation is exactly the failure this design exists to prevent.
+# Reject obviously oversized inputs; this byte estimate is not a tokenizer guarantee.
 PROMPT_BYTES=${#PROMPT}
 EST_TOKENS=$(( (STDIN_BYTES + PROMPT_BYTES) * 10 / 35 ))   # ~/3.5 chars per token
 LIMIT=$(( NUM_CTX - 2048 ))
@@ -147,7 +153,7 @@ while [ "$i" -lt "$n" ]; do
 
     set +e
     http=$(curl -sS -m "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
-      -X POST "$HOST/api/generate" -d "$body" 2>/dev/null)
+      -X POST "$HOST/api/generate" -H "Content-Type: application/json" -d "$body" 2>/dev/null)
     cexit=$?
     set -e
 
@@ -172,7 +178,12 @@ while [ "$i" -lt "$n" ]; do
     fi
 
     if [ "$http" = "200" ] && [ -z "$errmsg" ]; then
-      resp=$(strip_think "$(jq -r '.response // ""' "$RESP_FILE")")
+      if ! jq -e '.done == true and (.response | type == "string") and (.done_reason != "length")' "$RESP_FILE" >/dev/null 2>&1; then
+        echo "llm: incomplete or malformed response (model $model)" >&2
+        exit 6
+      fi
+      resp=$(strip_think "$(jq -r '.response' "$RESP_FILE")")
+      [ -n "$resp" ] || { echo "llm: empty response (model $model)" >&2; exit 6; }
       if [ -n "$OUTFILE" ]; then
         printf '%s\n' "$resp" > "$OUTFILE" || die "could not write $OUTFILE"
         echo "wrote $(printf '%s\n' "$resp" | wc -l | tr -d ' ') lines to $OUTFILE"
