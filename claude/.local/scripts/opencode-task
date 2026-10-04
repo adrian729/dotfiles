@@ -184,7 +184,7 @@ RESP_FILE=$(mktemp "${TMPDIR:-/tmp}/opencode-task.resp.XXXXXX")
 trap 'rm -f "$RESP_FILE"' EXIT
 
 set +e
-run_timed "$TIMEOUT" opencode run "${OC_ARGS[@]+"${OC_ARGS[@]}"}" --agent "$AGENT" --dir "$WT_DIR" --auto --format json -- "$PROMPT" </dev/null >"$RESP_FILE"
+DOTFILES_OPENCODE_NO_FALLBACK=1 run_timed "$TIMEOUT" opencode run "${OC_ARGS[@]+"${OC_ARGS[@]}"}" --agent "$AGENT" --dir "$WT_DIR" --auto --format json -- "$PROMPT" </dev/null >"$RESP_FILE"
 rc=$?
 set -e
 

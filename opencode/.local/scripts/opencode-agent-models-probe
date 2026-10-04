@@ -1,152 +1,51 @@
 #!/usr/bin/env bash
-# opencode-agent-models-probe — assign best free model to each agent. Non-fatal.
-set -eo pipefail
-
+# Resolve exact configured free IDs against the catalog. No inference requests.
+set -euo pipefail
 STATE_DIR="$HOME/.local/state/agents"
-STATE_FILE="$STATE_DIR/opencode-agent-models.json"
 CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode-models.json"
+[ -f "$CONFIG_FILE" ] || CONFIG_FILE="$HOME/.local/config/opencode-models.json"
 if [ ! -f "$CONFIG_FILE" ]; then
   SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   CONFIG_FILE="$SELF_DIR/../config/opencode-models.json"
 fi
-
 die() { echo "opencode-agent-models-probe: $*" >&2; exit 1; }
-mkdir -p "$STATE_DIR" || die "could not create $STATE_DIR"
-PROBED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+command -v jq >/dev/null 2>&1 || die "jq is required"
+jq -e '
+  (.free_models | type == "array" and length > 0 and all(.[]; type == "string" and startswith("opencode/"))) and
+  (.agents | type == "object" and length > 0 and all(.[]; type == "array" and all(.[]; type == "string")))
+' "$CONFIG_FILE" >/dev/null || die "invalid model configuration: $CONFIG_FILE"
 
-# bash 3.2 compat: no mapfile, no associative arrays
-
-# Read agent names from config
-AGENT_NAMES=()
-while IFS= read -r line; do
-  [ -n "$line" ] && AGENT_NAMES+=("$line")
-done < <(jq -r '.agents | keys[]' "$CONFIG_FILE" 2>/dev/null || true)
-[ ${#AGENT_NAMES[@]} -gt 0 ] || die "no agents found in $CONFIG_FILE"
-
-# Read free_models from config
-FREE_MODELS=()
-while IFS= read -r line; do
-  [ -n "$line" ] && FREE_MODELS+=("$line")
-done < <(jq -r '.free_models[]?' "$CONFIG_FILE" 2>/dev/null || true)
-
-# Query available models from both providers
-ALL_MODELS=()
-NOTE=""
-
-collect_models() {
-  local prov="$1" out line
-  out=$(opencode models "$prov" 2>/dev/null || true)
-  if [ -z "$out" ]; then return 1; fi
-  while IFS= read -r line; do
-    line="${line%% *}"
-    [ -n "$line" ] && ALL_MODELS+=("$line")
-  done <<<"$out"
-}
-
-AVAILABLE_ANY=false
-collect_models opencode && AVAILABLE_ANY=true
-collect_models opencode-go 2>/dev/null && AVAILABLE_ANY=true
-collect_models ollama-cloud 2>/dev/null || true
-
-if ! $AVAILABLE_ANY; then
-  NOTE="opencode CLI not reachable (auth?) — using preferred lists unchanged"
-  echo "opencode-agent-models-probe: $NOTE" >&2
+catalog=""
+if ! catalog=$(opencode models opencode 2>/dev/null); then
+  echo "opencode-agent-models-probe: catalog unavailable; pins below are unverified" >&2
+  catalog=""
 fi
-
-# Strip provider prefix inline as "${1##*/}" for cross-provider matching — same model
-# (e.g. deepseek-v4-flash) often appears on multiple providers and the agent's ranked
-# list may name any provider's variant. Do NOT wrap this in a helper function that
-# echoes: the comparisons below are O(agents x list x models), so each $(...) call
-# forks a subshell and a helper cost this script ~29s per run.
-
-# For each agent, find first free+available model
-mkdir -p "$STATE_DIR" || true
-OVERRIDES_TMP=$(mktemp "${TMPDIR:-/tmp}/opencode-agent-overrides.XXXXXX")
-i=0
-n="${#AGENT_NAMES[@]}"
-UNPINNED=""
-while [ "$i" -lt "$n" ]; do
-  agent="${AGENT_NAMES[$i]}"
-  models_str=$(jq -r ".agents[\"$agent\"][]?" "$CONFIG_FILE" 2>/dev/null | tr '\n' ' ')
-  found=""
-  for m in $models_str; do
-    p="${m##*/}"
-    is_free=0
-    for f in "${FREE_MODELS[@]}"; do
-      [ "${f##*/}" = "$p" ] && { is_free=1; break; }
-    done
-    [ "$is_free" -eq 0 ] && continue
-    for a in "${ALL_MODELS[@]}"; do
-      # Guard the free-only invariant on the real pick, not just the requested
-      # name: bare IDs collide across providers (opencode/big-pickle and
-      # opencode-go/big-pickle share one), so if the free provider was
-      # unreachable the first match could be the paid variant.
-      case "$a" in
-        opencode/*)
-          if [ "${a##*/}" = "$p" ]; then
-            found="$a"
-            break
-          fi
-          ;;
-      esac
-    done
-    [ -n "$found" ] && break
-  done
-  if [ -n "$found" ]; then
-    printf '{"%s":{"model":"%s"}}\n' "$agent" "$found" >> "$OVERRIDES_TMP"
-  else
-    UNPINNED="${UNPINNED:+$UNPINNED, }$agent"
-  fi
-  i=$(( i + 1 ))
-done
-
-# An agent with no free+available pick gets no override at all, so it silently
-# falls back to whatever ambient model the provider picks — possibly a paid one.
-# That is the failure this probe exists to prevent, so surface it loudly.
-if [ -n "$UNPINNED" ]; then
-  echo "opencode-agent-models-probe: WARNING no available free model for: $UNPINNED" >&2
-  echo "opencode-agent-models-probe: those agents will use the ambient default model (may be paid)" >&2
-  NOTE="${NOTE:+$NOTE · }no free model available for: $UNPINNED"
+available=$(printf '%s\n' "$catalog" | jq -Rsc 'split("\n") | map(select(test("^opencode/[^[:space:]]+$"))) | unique')
+# If a model rotates out, keep an explicit configured free pin. It may fail to
+# load until the list is refreshed, but never silently inherits a paid default.
+resolved=$(jq --argjson available "$available" '
+  . as $cfg | [.agents | to_entries[] |
+    .key as $name | [.value[] | select(. as $m | $cfg.free_models | index($m))] as $free |
+    ([$free[] | select(. as $m | $available | index($m))][0]) as $live |
+    if ($free | length) == 0 then error("no configured free model for " + $name)
+    else {name: $name, model: ($live // $free[0]), verified: ($live != null)} end]
+' "$CONFIG_FILE") || die "every agent needs at least one configured free model"
+unverified=$(printf '%s\n' "$resolved" | jq -r '[.[] | select(.verified | not) | .name] | join(", ")')
+stale=$(jq -r --argjson available "$available" '[.free_models[] | select(. as $m | $available | index($m) | not)] | join(", ")' "$CONFIG_FILE")
+[ -z "$stale" ] || echo "opencode-agent-models-probe: configured but not listed: $stale" >&2
+note=""
+if [ -n "$unverified" ]; then
+  note="unverified free pins: $unverified; refresh the model lists before use"
+  echo "opencode-agent-models-probe: $note" >&2
 fi
-
-# Report free models configured but absent from the live catalog, so a rotated
-# free tier is caught here rather than by a subagent failing to spawn.
-STALE=""
-for f in "${FREE_MODELS[@]}"; do
-  p="${f##*/}"
-  seen=false
-  for a in "${ALL_MODELS[@]}"; do
-    if [ "${a##*/}" = "$p" ]; then seen=true; break; fi
-  done
-  $seen || STALE="${STALE:+$STALE, }$f"
-done
-if [ -n "$STALE" ]; then
-  echo "opencode-agent-models-probe: WARNING configured but not available: $STALE" >&2
-fi
-
-OVERRIDES=$(jq -s '{agent: (add // {})}' "$OVERRIDES_TMP" 2>/dev/null || echo '{"agent":{}}')
-rm -f "$OVERRIDES_TMP"
-
-AVAIL_JSON=$([ ${#ALL_MODELS[@]} -gt 0 ] && printf '%s\n' "${ALL_MODELS[@]}" | jq -R . | jq -s . 2>/dev/null || echo '[]')
-
-STATE_JSON=$(jq -n \
-  --arg at "$PROBED_AT" \
-  --arg note "${NOTE:-}" \
-  --argjson available "$AVAIL_JSON" \
-  --argjson overrides "$OVERRIDES" \
-  '{
-    probed_at: $at,
-    available: $available,
-    agent_overrides: $overrides,
-    note: ($note | if . == "" then null else . end)
-  }'
-)
-
-tmp="$STATE_FILE.$$.tmp"
-printf '%s\n' "$STATE_JSON" >"$tmp" || die "could not write $tmp"
-mv -f "$tmp" "$STATE_FILE" || die "could not move state file into place"
-
-OVERRIDES_FILE="$STATE_DIR/opencode-agent-model-overrides.json"
-printf '%s\n' "$OVERRIDES" >"$OVERRIDES_FILE" || die "could not write overrides file"
-
-echo "opencode-agent-models: ${AGENT_NAMES[0]}..${AGENT_NAMES[$((n-1))]} probed ${NOTE:+· $NOTE}"
+mkdir -p "$STATE_DIR"
+state_tmp=$(mktemp "$STATE_DIR/opencode-agent-models.XXXXXX")
+overrides_tmp=$(mktemp "$STATE_DIR/opencode-agent-overrides.XXXXXX")
+trap 'rm -f "$state_tmp" "$overrides_tmp"' EXIT
+printf '%s\n' "$resolved" | jq '{agent: (map({key: .name, value: {model: .model}}) | from_entries)}' > "$overrides_tmp"
+jq -n --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg note "$note" --argjson available "$available" --slurpfile overrides "$overrides_tmp" \
+  '{probed_at: $at, available: $available, agent_overrides: $overrides[0], note: (if $note == "" then null else $note end)}' > "$state_tmp"
+mv -f "$overrides_tmp" "$STATE_DIR/opencode-agent-model-overrides.json"
+mv -f "$state_tmp" "$STATE_DIR/opencode-agent-models.json"
+echo "opencode-agent-models: $(printf '%s\n' "$resolved" | jq length) agents pinned to configured free models"
+[ -z "$unverified" ]

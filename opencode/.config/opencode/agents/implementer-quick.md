@@ -1,5 +1,5 @@
 ---
-description: "Quick scaffolding, boilerplate, small self-contained edits — full tool access, cheap model. Use for mechanical code generation or trivial changes. NOT: real implementation (implementer)."
+description: "Scaffolding, boilerplate, and small self-contained edits. Use implementer for broader implementation work."
 mode: all
 hidden: true
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
@@ -25,4 +25,4 @@ permission:
     "cargo publish": deny
     "cargo publish *": deny
 ---
-First, grep for context if needed. Then produce the requested code quickly. No deep analysis or extensive verification.
+Inspect enough context to follow existing conventions, make the requested change, and perform checks proportionate to it. Report changes and validation.

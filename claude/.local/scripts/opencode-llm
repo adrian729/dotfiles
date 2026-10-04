@@ -152,7 +152,7 @@ while [ "$i" -lt "$n" ]; do
   tried="${tried:+$tried, }$model"
 
   set +e
-  run_timed "$TIMEOUT" opencode run -m "$model" --agent "$AGENT" --dir "$NEUTRAL_DIR" --format json -- "$FULL_PROMPT" >"$RESP_FILE" 2>"$ERR_FILE"
+  DOTFILES_OPENCODE_NO_FALLBACK=1 run_timed "$TIMEOUT" opencode run -m "$model" --agent "$AGENT" --dir "$NEUTRAL_DIR" --format json -- "$FULL_PROMPT" >"$RESP_FILE" 2>"$ERR_FILE"
   rc=$?
   set -e
 

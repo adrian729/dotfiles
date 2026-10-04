@@ -1,9 +1,6 @@
 # `opencode-wt` — one command per parallel OpenCode session
 
-One command that creates (or resumes) an OpenCode session in its own git
-worktree — an extra working directory of the same repo, on its own branch —
-with its own pane color. Run several sessions on one repo in parallel, with
-zero cross-contamination.
+Creates or resumes an OpenCode session in a named git worktree with its own branch and pane color. Worktrees separate working files but share git metadata; they do not restrict shell access to other checkouts.
 
 ```bash
 opencode-wt <name> [color]      # start OR resume session <name>
@@ -17,12 +14,11 @@ Tmux: `prefix+w t` opens an fzf picker over worktrees — select one, then choos
 
 ## Setup (one-time)
 
-Works on macOS and Linux. The scripts are plain bash — nothing to build.
-In a hurry? `./standalone_quick_setup.sh` (ships in the same folder as this
-guide) tries to do all of the below automagically.
+Works on macOS and Linux. The scripts use Bash. `standalone_quick_setup.sh`, next to this guide, installs the worktree helpers and their dependencies.
 
 ### 1. Dependencies
 
+- **jq** (required) — parses the OpenCode session list.
 - **git** (required) — `brew install git` / `sudo apt install git`.
 - **OpenCode** (required) — https://opencode.ai — `npm install -g opencode-ai`
   or `brew install anomalyco/tap/opencode`. Run `opencode` once to log in.
@@ -36,19 +32,18 @@ guide) tries to do all of the below automagically.
 ### 2. Install the scripts
 
 ```bash
-mkdir -p ~/.local/scripts
-cp opencode-wt opencode-git-wt opencode-open-wt ~/.local/scripts/
-chmod +x ~/.local/scripts/opencode-wt ~/.local/scripts/opencode-git-wt ~/.local/scripts/opencode-open-wt
-export PATH="$HOME/.local/scripts:$PATH"  # add to ~/.zshrc or ~/.bashrc
+# From the dotfiles repo:
+bash opencode/standalone_quick_setup.sh
+. "$HOME/.local/.local_profile"
 ```
 
-Or via GNU Stow from the dotfiles repo: `stow opencode` places the scripts in the same `~/.local/scripts/`.
+Standalone setup backs up differing local scripts and writes PATH additions to `~/.local/.local_profile`. The dotfiles shell loads this file; other shell setups need to source it.
+
+For the complete configuration, run root `install.sh` and select `agents` and `opencode`. A manual Stow install from the repo root must use `stow --no-folding --target="$HOME" agents opencode`, followed by `bash opencode/install.sh` to copy settings and resolve model pins. If standalone script copies already exist, run `bash opencode/pre_stow.sh` before stowing.
 
 ### 3. Permissions
 
-No permission config is required. OpenCode's default bash policy is permissive,
-and the wrapper still offers to push and open/update a draft PR after the
-session exits (with your consent).
+The wrapper leaves OpenCode permissions to your configuration. After a successful session exit on the original branch, it can offer to push and open/update a draft PR with your consent.
 
 ## The 30-second mental model
 
@@ -79,8 +74,7 @@ cd my-repo && opencode-wt bugfix-login red
 `prefix+w t` in tmux opens a picker over all worktrees — select one, then
 choose claude or opencode at the follow-up prompt.
 
-Two isolated sessions, each pane tinted with its color. The tint resets when
-the session ends.
+Two sessions in separate working directories, each pane tinted with its color. The tint resets when the session ends.
 
 ## Colors
 
@@ -95,14 +89,11 @@ Outside tmux the terminal background is recolored instead (ghostty, kitty).
 - **Start:** `opencode-wt feature-auth blue` — fetches origin, creates
   worktree + branch + session, tints the pane. The session ID is captured
   after exit and saved to git config.
-- **Stop:** exit OpenCode. If the branch has unpushed commits, offers to
-  push and create/update a draft PR. The worktree survives.
+- **Stop:** after a successful exit on the original branch, offers to push unpushed commits and create/update a draft PR. Failed sessions retain their exit status and worktree without offering a push.
 - **Resume:** `opencode-wt feature-auth` — same worktree, same conversation
   (`opencode --session <saved-id>`), same color. Review rounds are just:
   resume → work → exit → Enter.
-- **Crash recovery:** if the terminal closes before clean exit, next resume
-  scans opencode's DB for any orphaned session matching the worktree
-  directory and saves the mapping — no conversation lost.
+- **Crash recovery:** if the saved session ID is missing, the next start looks for the latest top-level session matching the worktree directory. This is best-effort recovery; inspect OpenCode history if it chooses the wrong conversation.
 - **Finish (PR merged):** `opencode-wt -d feature-auth` — removes worktree,
   deletes the orphaned session from opencode's DB, unset config, offers
   branch deletion if PR merged.
@@ -141,7 +132,7 @@ windows into it. Commits are visible from your main checkout immediately.
 - **Raw `opencode`** — throwaway experiments, no worktree needed.
 
 Worktree caveats apply: each worktree needs its own `npm install`, two
-sessions starting dev servers fight over ports, and isolation doesn't
+sessions starting dev servers can compete for ports, and separate checkouts do not
 prevent merge conflicts when two sessions edit the same files.
 
 ## Troubleshooting

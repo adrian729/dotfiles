@@ -26,58 +26,7 @@
     "webfetch": "allow",
     "websearch": "allow",
     "bash": {
-      "*": "allow",
-      "llm": "allow",
-      "llm *": "allow",
-      "llm-probe": "allow",
-      "llm-probe *": "allow",
-      "ollama ps": "allow",
-      "ollama ps *": "allow",
-      "ollama list": "allow",
-      "ollama list *": "allow",
-      "ollama run": "allow",
-      "ollama run *": "allow",
-      "ollama show": "allow",
-      "ollama show *": "allow",
-      "opencode-models *": "allow",
-      "opencode-agent-models-probe *": "allow",
-      "opencode-ollama-models-probe *": "allow",
-      "opencode-ollama-models-sync *": "allow",
-      "cat *": "allow",
-      "bat *": "allow",
-      "ls *": "allow",
-      "find *": "allow",
-      "rg *": "allow",
-      "grep *": "allow",
-      "head *": "allow",
-      "tail *": "allow",
-      "awk *": "allow",
-      "sed *": "allow",
-      "wc *": "allow",
-      "sort *": "allow",
-      "uniq *": "allow",
-      "du *": "allow",
-      "df *": "allow",
-      "pwd *": "allow",
-      "which *": "allow",
-      "type *": "allow",
-      "whoami *": "allow",
-      "date *": "allow",
-      "ps *": "allow",
-      "printenv *": "allow",
-      "git diff *": "allow",
-      "git log *": "allow",
-      "git status *": "allow",
-      "git show *": "allow",
-      "npm *": "allow",
-      "gh *": "allow",
-      "node *": "allow",
-      "set *": "allow",
-      "cut *": "allow",
-      "printf *": "allow",
-      "test *": "allow",
-      "[ *": "allow",
-      "exit *": "allow"
+      "*": "allow"
     }
   },
   "agent": {
@@ -86,23 +35,12 @@
       "mode": "primary",
       "hidden": true,
       "permission": {
-        "edit": "deny",
-        "bash": "deny",
-        "read": "deny",
-        "glob": "deny",
-        "grep": "deny",
-        "webfetch": "deny",
-        "websearch": "deny",
-        "task": "deny",
-        "todowrite": "deny",
-        "lsp": "deny",
-        "skill": "deny",
-        "external_directory": "deny"
+        "*": "deny"
       },
-      "prompt": "You are a text-only relay. Answer the request using only the text given to you in the message. You have no tools and no file, repo, or web access — never claim to check or fetch anything, just answer directly."
+      "prompt": "You are a text-only relay. Answer the request using only the text given to you in the message. You have no tools and no file, repo, or web access \u2014 never claim to check or fetch anything, just answer directly."
     },
     "task": {
-      "description": "Full coding agent (bash/edit/read) for headless, unattended runs (see opencode-task) — edit/read/glob tools confined to its --dir; the bash tool is not sandboxed by this setting.",
+      "description": "Coding agent for headless runs via opencode-task. Denies external-directory tool requests; shell commands are not sandboxed.",
       "mode": "primary",
       "hidden": true,
       "permission": {
@@ -112,16 +50,29 @@
   },
   "lsp": {
     "lua-ls": {
-      "command": ["lua-language-server"],
-      "extensions": [".lua"],
+      "command": [
+        "lua-language-server"
+      ],
+      "extensions": [
+        ".lua"
+      ],
       "initialization": {
-        "runtime": { "version": "LuaJIT" },
-        "workspace": { "checkThirdParty": false }
+        "runtime": {
+          "version": "LuaJIT"
+        },
+        "workspace": {
+          "checkThirdParty": false
+        }
       }
     },
     "marksman": {
-      "command": ["marksman"],
-      "extensions": [".md", ".markdown"]
+      "command": [
+        "marksman"
+      ],
+      "extensions": [
+        ".md",
+        ".markdown"
+      ]
     }
   }
 }

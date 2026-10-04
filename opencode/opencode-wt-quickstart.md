@@ -1,13 +1,8 @@
 # `opencode-wt` + `opencode-git-wt` — quickstart
 
-`opencode-wt` runs several OpenCode sessions on the same repo in parallel,
-each in its own **git worktree** (`.worktrees/<name>`), on its own
-branch (`<name>`), so sessions never touch each other's files — or your main
-checkout. One name = one branch = one worktree = one OpenCode session = one
-color.
+`opencode-wt` runs OpenCode sessions in separate git worktrees (`.worktrees/<name>`), each with a branch, saved conversation, and color. Worktrees separate working files but share git metadata and do not restrict shell access to other directories.
 
-New machine? `./standalone_quick_setup.sh` tries to set everything up
-automagically.
+For standalone setup, run `bash opencode/standalone_quick_setup.sh` from the dotfiles repo. See the guide for Stow installation.
 
 ## Commands
 
@@ -31,9 +26,7 @@ tmux) — pass it once, it sticks to the name.
 1. **Start:** `cd your-repo && opencode-wt feature-auth blue` — worktree,
    branch, and tinted OpenCode session are created. Work in OpenCode; commits
    land on branch `feature-auth`.
-2. **Stop:** exit OpenCode. If the branch has unpushed commits, it offers to
-   push and open/update a **draft PR** — Enter = yes, `n` = keep local. The
-   worktree survives either way.
+2. **Stop:** after a successful exit on the original branch, unpushed commits trigger an offer to push and open/update a **draft PR** — Enter = yes, `n` = keep local. The worktree survives either way.
 3. **Resume:** `opencode-wt feature-auth` — same worktree, same conversation,
    same color. Repeat 1–3 for review rounds.
 4. **Finish (PR merged):** `opencode-wt -d feature-auth` — removes worktree;

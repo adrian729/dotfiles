@@ -12,7 +12,7 @@ BIN_DIR="$HOME/.local/bin"
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 die() { echo "setup: $*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
-have_opencode() { have opencode || [ -x "$BIN_DIR/opencode" ]; }
+have_opencode() { have opencode || [ -x "$HOME/.opencode/bin/opencode" ] || [ -x "$BIN_DIR/opencode" ]; }
 
 ask() {
   local ans
@@ -50,6 +50,8 @@ else
   pkg_install git || die "git is required"
 fi
 
+have jq || pkg_install jq || die "jq is required for session tracking"
+
 if have_opencode; then
   echo "opencode - ok"
 else
@@ -79,7 +81,7 @@ say "Scripts"
 src=$(cd "$(dirname "$0")" && pwd)
 scripts_dir=""
 for d in "$src" "$src/.local/scripts"; do
-  if [ -f "$d/opencode-wt" ] && [ -f "$d/opencode-git-wt" ]; then
+  if [ -f "$d/opencode-wt" ] && [ -f "$d/opencode-git-wt" ] && [ -f "$d/opencode-open-wt" ]; then
     scripts_dir=$d
     break
   fi
@@ -87,27 +89,34 @@ done
 [ -n "$scripts_dir" ] || die "opencode-wt scripts not found next to this one"
 
 mkdir -p "$SCRIPTS_DIR"
-# rm first: cp would write THROUGH an existing symlink (stow users) and die
-# outright on a dangling one.
-rm -f "$SCRIPTS_DIR/opencode-wt" "$SCRIPTS_DIR/opencode-git-wt" "$SCRIPTS_DIR/opencode-open-wt"
-cp "$scripts_dir/opencode-wt" "$scripts_dir/opencode-git-wt" "$scripts_dir/opencode-open-wt" "$SCRIPTS_DIR/"
-chmod +x "$SCRIPTS_DIR/opencode-wt" "$SCRIPTS_DIR/opencode-git-wt" "$SCRIPTS_DIR/opencode-open-wt"
+for script in opencode-wt opencode-git-wt opencode-open-wt; do
+  source_file="$scripts_dir/$script"
+  target_file="$SCRIPTS_DIR/$script"
+  # Also handles running a flat setup from the destination itself.
+  if [ -e "$target_file" ] && cmp -s "$source_file" "$target_file"; then
+    continue
+  fi
+  if [ -e "$target_file" ] || [ -L "$target_file" ]; then
+    backup_root="$HOME/.local/state/dotfiles/backups"
+    mkdir -p "$backup_root"
+    backup_dir=$(mktemp -d "$backup_root/opencode-setup.XXXXXX")
+    mv "$target_file" "$backup_dir/"
+    echo "Preserved $target_file in $backup_dir"
+  fi
+  cp "$source_file" "$target_file"
+  chmod +x "$target_file"
+done
 echo "installed to $SCRIPTS_DIR"
 
-case ":$PATH:" in
-  *":$SCRIPTS_DIR:"*) echo "$SCRIPTS_DIR already on PATH - ok" ;;
-  *)
-    rc="$HOME/.bashrc"
-    case "${SHELL:-}" in */zsh) rc="$HOME/.zshrc" ;; esac
-    line='export PATH="$HOME/.local/scripts:$PATH"'
-    if grep -qsE '^[^#]*(\$\{?HOME\}?|~)/\.local/scripts([:"/ ]|$)' "$rc"; then
-      echo "$rc already puts ~/.local/scripts on PATH — restart your shell"
-    elif ask "$SCRIPTS_DIR is not on PATH — append to $rc?"; then
-      printf '\n%s # opencode-wt setup\n' "$line" >>"$rc"
-      echo "added to $rc — restart shell or run: $line"
-    fi
-    ;;
-esac
+# This file is sourced by the dotfiles shell configuration. Keep machine-local
+# additions here, even when a shell rc file is a symlink into a repository.
+profile="$HOME/.local/.local_profile"
+line='export PATH="$HOME/.local/scripts:$HOME/.local/bin:$HOME/.opencode/bin:$PATH"'
+if ! grep -qxF "$line # opencode-wt setup" "$profile" 2>/dev/null; then
+  printf '\n%s # opencode-wt setup\n' "$line" >> "$profile"
+fi
+echo "PATH setup saved in $profile; load it with: . \"\$HOME/.local/.local_profile\""
+echo "For a shell without the dotfiles setup, arrange to source that local profile at startup."
 
 say "Manual steps"
 have_opencode && echo "- run 'opencode' once to log in (if you haven't)"

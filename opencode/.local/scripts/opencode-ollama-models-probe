@@ -1,33 +1,23 @@
 #!/usr/bin/env bash
-# opencode-ollama-models-probe — populate provider.ollama.models from locally
-# pulled Ollama models (queried live from the daemon, not opencode.json).
-# Non-fatal: no Ollama / daemon down / zero models all resolve to {}.
-set -eo pipefail
-
+# Record locally pulled models. Failed queries preserve the previous catalog.
+set -euo pipefail
 STATE_DIR="$HOME/.local/state/agents"
 OUT_FILE="$STATE_DIR/opencode-ollama-models.json"
-
+die() { echo "opencode-ollama-models-probe: $*" >&2; exit 1; }
+command -v curl >/dev/null 2>&1 || die "curl is required"
+command -v jq >/dev/null 2>&1 || die "jq is required"
 HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
-case "$HOST" in
-  http://*|https://*) : ;;
-  *) HOST="http://$HOST" ;;
-esac
-
+case "$HOST" in http://*|https://*) : ;; *) HOST="http://$HOST" ;; esac
+TAGS=$(curl -fsS --connect-timeout 3 --max-time 10 "${HOST%/}/api/tags") || die "Ollama unavailable; catalog unchanged"
+MODELS_JSON=$(printf '%s\n' "$TAGS" | jq -e '
+  if (.models | type) != "array" then error("missing models array")
+  elif all(.models[]; (.name | type == "string" and length > 0)) | not then error("invalid model name")
+  else [.models[] | .name |
+    {key: ., value: {name: (. + " (local)")}}] | from_entries end
+') || die "invalid Ollama response; catalog unchanged"
 mkdir -p "$STATE_DIR"
-
-MODELS_JSON='{}'
-if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-  TAGS=$(curl -sf "$HOST/api/tags" 2>/dev/null || true)
-  if [ -n "$TAGS" ]; then
-    MODELS_JSON=$(echo "$TAGS" | jq '
-      [.models[]?.name] | map(select(. != null)) |
-      map({(.): {name: (. + " (local)")}}) | add // {}
-    ' 2>/dev/null || echo '{}')
-  fi
-fi
-
-printf '%s\n' "$MODELS_JSON" >"$OUT_FILE"
-
-count=$(echo "$MODELS_JSON" | jq 'length' 2>/dev/null || echo 0)
-names=$(echo "$MODELS_JSON" | jq -r 'keys | join(", ")' 2>/dev/null || true)
-echo "opencode-ollama-models-probe: $count local Ollama model(s) found${names:+: $names}"
+tmp=$(mktemp "$STATE_DIR/opencode-ollama-models.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+printf '%s\n' "$MODELS_JSON" > "$tmp"
+mv -f "$tmp" "$OUT_FILE"
+echo "opencode-ollama-models-probe: $(printf '%s\n' "$MODELS_JSON" | jq length) local model(s) found"

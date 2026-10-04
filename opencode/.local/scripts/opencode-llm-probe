@@ -1,98 +1,31 @@
 #!/usr/bin/env bash
-# opencode-llm-probe — verify relay models against what the CLI offers. Non-fatal.
+# Filter the configured relay order against the catalog; no inference requests.
 set -euo pipefail
-
 STATE_DIR="$HOME/.local/state/agents"
-STATE_FILE="$STATE_DIR/opencode-llm.json"
 CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode-models.json"
+[ -f "$CONFIG_FILE" ] || CONFIG_FILE="$HOME/.local/config/opencode-models.json"
 if [ ! -f "$CONFIG_FILE" ]; then
   SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   CONFIG_FILE="$SELF_DIR/../config/opencode-models.json"
 fi
-
 die() { echo "opencode-llm-probe: $*" >&2; exit 1; }
-
-mkdir -p "$STATE_DIR" || die "could not create $STATE_DIR"
-PROBED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-# Read relay models from unified config
-if [ -f "$CONFIG_FILE" ]; then
-  PREFERRED=()
-  while IFS= read -r line; do
-    [ -n "$line" ] && PREFERRED+=("$line")
-  done < <(jq -r '.relay[]?' "$CONFIG_FILE" 2>/dev/null)
-else
-  echo "opencode-llm-probe: $CONFIG_FILE not found — no relay models" >&2
-  PREFERRED=()
+command -v jq >/dev/null 2>&1 || die "jq is required"
+preferred=$(jq -ce '. as $cfg | [.relay[] | select(type == "string") | select(. as $m | $cfg.free_models | index($m))] | select(length > 0)' "$CONFIG_FILE") || die "no configured free relay models"
+catalog=""
+if ! catalog=$(opencode models opencode 2>/dev/null); then catalog=""; fi
+available=$(printf '%s\n' "$catalog" | jq -Rsc 'split("\n") | map(select(test("^opencode/[^[:space:]]+$")))')
+models=$(jq -n --argjson preferred "$preferred" --argjson available "$available" '$preferred | map(select(. as $m | $available | index($m)))')
+count=$(printf '%s\n' "$models" | jq length)
+note="catalog checked; this does not test whether requests complete"
+if [ "$count" -eq 0 ]; then
+  note="no configured free relay model could be verified; wrapper will try the configured free list"
+  echo "opencode-llm-probe: $note" >&2
 fi
-
-[ ${#PREFERRED[@]} -gt 0 ] || die "no relay models defined in $CONFIG_FILE"
-
-AVAILABLE=()
-NOTE=""
-DISCOVERED=()
-
-if ! command -v opencode >/dev/null 2>&1; then
-  NOTE="opencode CLI not found — using relay list"
-  FINAL=("${PREFERRED[@]}")
-
-elif ! output=$(opencode models opencode 2>/dev/null); then
-  NOTE="could not reach OpenCode (auth?) — using relay list; run 'opencode providers login'"
-  FINAL=("${PREFERRED[@]}")
-
-else
-  ALL_MODELS=()
-  while IFS= read -r line; do
-    line="${line%% *}"
-    [ -n "$line" ] && ALL_MODELS+=("$line")
-  done <<<"$output"
-
-  if [ ${#ALL_MODELS[@]} -eq 0 ]; then
-    NOTE="opencode models returned no parseable output — using relay list"
-    FINAL=("${PREFERRED[@]}")
-  else
-    MATCHES=()
-    MISSING=()
-    for m in "${PREFERRED[@]}"; do
-      found=0
-      for a in "${ALL_MODELS[@]}"; do
-        if [ "$m" = "$a" ] || [ "${m#opencode/}" = "${a#opencode/}" ]; then
-          MATCHES+=("$m")
-          found=1
-          break
-        fi
-      done
-      [ "$found" -eq 0 ] && MISSING+=("$m")
-    done
-
-    if [ ${#MATCHES[@]} -gt 0 ]; then
-      FINAL=("${MATCHES[@]}")
-      REMOVED=""
-      [ ${#MISSING[@]} -gt 0 ] && REMOVED=" (removed: ${MISSING[*]})"
-      NOTE="verified${REMOVED}"
-    else
-      for a in "${ALL_MODELS[@]}"; do
-        case "$a" in *free*|*Free*|*FREE*) DISCOVERED+=("$a") ;; esac
-      done
-      if [ ${#DISCOVERED[@]} -gt 0 ]; then
-        FINAL=("${DISCOVERED[@]}")
-        NOTE="no relay models available — using discovered: ${DISCOVERED[*]}"
-      else
-        FINAL=("${PREFERRED[@]}")
-        NOTE="no recognized models found — using relay list anyway"
-      fi
-    fi
-  fi
-fi
-
-json=$(jq -n \
-  --arg at "$PROBED_AT" \
-  --arg note "${NOTE:-null}" \
-  --argjson models "$(printf '%s\n' "${FINAL[@]}" | jq -R . | jq -s .)" \
-  '{probed_at:$at, models:$models, note:($note|if .=="" then null else . end)}')
-
-tmp="$STATE_FILE.$$.tmp"
-printf '%s\n' "$json" >"$tmp" || die "could not write $tmp"
-mv -f "$tmp" "$STATE_FILE" || die "could not move state file into place"
-
-echo "opencode-llm-models: ${NOTE:-verified} (${#FINAL[@]} models)"
+mkdir -p "$STATE_DIR"
+tmp=$(mktemp "$STATE_DIR/opencode-llm.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+jq -n --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg note "$note" --argjson models "$models" \
+  '{probed_at: $at, models: $models, note: $note}' > "$tmp"
+mv -f "$tmp" "$STATE_DIR/opencode-llm.json"
+echo "opencode-llm-models: $count listed free relay models"
+[ "$count" -gt 0 ]

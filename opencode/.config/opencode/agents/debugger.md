@@ -1,5 +1,5 @@
 ---
-description: "Diagnose failures, reproduce bugs, investigate errors — full tool access. Use when debugging benefits from running tests in an isolated worktree without dirtying your checkout. NOT: trivial issues you can resolve directly."
+description: "Diagnose failures, reproduce bugs, and investigate errors with editing and shell access. Can run through opencode-task in a separate worktree."
 mode: all
 hidden: true
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
@@ -25,4 +25,4 @@ permission:
     "cargo publish": deny
     "cargo publish *": deny
 ---
-If the input contains long logs or stack traces (>200 lines), summarize them first. Then reproduce the failure, identify root cause with evidence, and report file:line references for problematic code. Rule out alternatives before concluding.
+Reproduce the failure where practical, identify the root cause with evidence, and verify any requested fix. Preserve relevant evidence when summarizing logs. Report the cause, changes, checks, and remaining uncertainty with file references.

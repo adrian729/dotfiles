@@ -2,11 +2,14 @@
 set -euo pipefail
 
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode-models.json"
-# fallback: read from repo if deployed config doesn't exist yet
+# Prefer the deployed catalog, then the adjacent repo copy.
+[ -f "$CONFIG" ] || CONFIG="$HOME/.local/config/opencode-models.json"
 if [ ! -f "$CONFIG" ]; then
   SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   CONFIG="$SELF_DIR/../config/opencode-models.json"
 fi
+
+command -v jq >/dev/null 2>&1 || { echo "opencode-models: jq is required" >&2; exit 1; }
 
 USAGE="Usage: opencode-models {relay|free|agents [--list|<name>]}"
 
@@ -23,7 +26,7 @@ case "$cmd" in
     if [ "$key" = "--list" ]; then
       jq -r '.agents | keys[]' "$CONFIG"
     elif [ -n "$key" ]; then
-      jq -r --arg k "$key" '.agents[$k][] // empty' "$CONFIG"
+      jq -r --arg k "$key" '.agents[$k][]?' "$CONFIG"
     else
       echo "$USAGE" >&2
       exit 1

@@ -79,17 +79,12 @@ copy_worktreeinclude() {
     done
 }
 
-# Find an opencode session running in the given directory by parsing the JSON
-# session list — bash-only, no python/jq needed. Returns the first session ID
-# matching the directory, or empty string.
+# The CLI sorts sessions by latest update. Parse JSON without depending on its
+# whitespace, and ignore child sessions when recovering the interactive one.
 find_session_for() {
   local dir=$1
   opencode session list --format json 2>/dev/null |
-    tr '\n' ' ' |
-    sed 's/}, */}\n/g' |
-    grep -F "\"directory\": \"$dir\"" |
-    sed 's/.*"id": "\([^"]*\)".*/\1/' |
-    head -1 || true
+    jq -r --arg dir "$dir" '[.[] | select(.directory == $dir and (.parentID // "") == "")][0].id // empty' || true
 }
 
 apply_color() {
@@ -195,6 +190,8 @@ cmd_list() {
 
 cmd_done() {
   local root=$1 name=$2 wt_dir ans state="" parent sid
+  case "$name" in *'@{'*) die "invalid worktree name: $name" ;; esac
+  git check-ref-format --branch "$name" >/dev/null 2>&1 || die "invalid worktree name: $name"
   wt_dir="$root/.worktrees/$name"
   [ -d "$wt_dir" ] || die "no worktree named '$name' (see opencode-wt -l)"
   [ -f "$wt_dir/.git" ] ||
@@ -246,12 +243,13 @@ cmd_done() {
 
 cmd_start() {
   local root=$1 name=$2 color=$3 wt_dir tint="" created="" base
-  local saved="" new
-  git check-ref-format --branch "$name" >/dev/null 2>&1 ||
-    die "'$name' is not a valid branch name"
+  local saved="" new cli_rc=0
+  command -v jq >/dev/null 2>&1 || die "jq is required for session tracking"
   if [ -n "$color" ]; then
     tint=$(tint_for "$color") || die "unknown color '$color' (valid: $COLOR_NAMES)"
   fi
+  case "$name" in *'@{'*) die "invalid worktree name: $name" ;; esac
+  git check-ref-format --branch "$name" >/dev/null 2>&1 || die "invalid worktree name: $name"
   wt_dir="$root/.worktrees/$name"
 
   ensure_excluded "$root"
@@ -313,9 +311,9 @@ cmd_start() {
   fi
 
   if [ -z "$created" ] && [ -n "$saved" ]; then
-    OPENCODE_TUI_CONFIG="${_temp_tui:-}" opencode --session "$saved" || true
+    OPENCODE_TUI_CONFIG="${_temp_tui:-}" opencode --session "$saved" || cli_rc=$?
   else
-    OPENCODE_TUI_CONFIG="${_temp_tui:-}" opencode || true
+    OPENCODE_TUI_CONFIG="${_temp_tui:-}" opencode || cli_rc=$?
   fi
 
   [ -n "$_temp_tui" ] && rm -f "$_temp_tui"
@@ -326,7 +324,12 @@ cmd_start() {
     git -C "$root" config "wt.$name.session" "$new"
   fi
 
-  offer_push_pr "$name"
+  [ "$cli_rc" -eq 0 ] || return "$cli_rc"
+  if [ "$(git branch --show-current)" = "$name" ]; then
+    offer_push_pr "$name"
+  else
+    echo "opencode-wt: branch changed during the session; review it before pushing" >&2
+  fi
 }
 
 case "${1:-}" in

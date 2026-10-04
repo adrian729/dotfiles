@@ -1,5 +1,5 @@
 ---
-description: "Implement features, fix bugs, write tests, refactor — full tool access. Use when coding work benefits from an isolated worktree with its own model. NOT: quick scaffolding (implementer-quick)."
+description: "Implement features, fix bugs, write tests, and refactor with editing and shell access. Use implementer-quick for small mechanical changes."
 mode: all
 hidden: true
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
@@ -27,4 +27,4 @@ permission:
   webfetch: ask
   websearch: ask
 ---
-First, grep for the target symbol across the codebase to understand existing patterns and conventions. Then implement the requested change and verify it (lint, test). Return a summary of what was done and key files changed.
+Inspect the relevant code and conventions, implement the requested change, and verify it with appropriate checks. Report changes, validation, and unresolved issues.

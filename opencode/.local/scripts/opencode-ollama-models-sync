@@ -15,11 +15,23 @@ command -v jq >/dev/null 2>&1 || die "jq not found"
 [ -x "$PROBE" ] || die "probe not found at $PROBE"
 [ -f "$CONFIG" ] || die "no config at $CONFIG"
 
+# Atomic replacement protects a file symlink, but not a folded parent directory.
+if [ -L "${XDG_CONFIG_HOME:-$HOME/.config}" ] || [ -L "$(dirname "$CONFIG")" ]; then
+  die "config directory is symlinked; unstow and restow with --no-folding first"
+fi
+# Query the configured provider unless the caller explicitly selects a daemon.
+# Keep the model catalog and inference endpoint pointed at the same server.
+OLLAMA_HOST="${OLLAMA_HOST:-$(jq -er '.provider.ollama.options.baseURL // "http://127.0.0.1:11434/v1"' "$CONFIG")}" || die "invalid provider config"
+case "$OLLAMA_HOST" in http://*|https://*) : ;; *) OLLAMA_HOST="http://$OLLAMA_HOST" ;; esac
+OLLAMA_HOST="${OLLAMA_HOST%/}"
+OLLAMA_HOST="${OLLAMA_HOST%/v1}"
+export OLLAMA_HOST
 "$PROBE"
 
 tmp=$(mktemp "$CONFIG.XXXXXX")
-if jq --slurpfile m "$STATE_FILE" '.provider.ollama.models = $m[0]' "$CONFIG" >"$tmp"; then
-  chmod 644 "$tmp"
+trap 'rm -f "$tmp"' EXIT
+if jq --slurpfile m "$STATE_FILE" --arg url "$OLLAMA_HOST/v1" 'if (.provider.ollama | type) != "object" then error("Ollama provider is not configured") else .provider.ollama.models = $m[0] | .provider.ollama.options.baseURL = $url end' "$CONFIG" >"$tmp"; then
+  chmod 600 "$tmp"
   mv "$tmp" "$CONFIG"
   echo "opencode-ollama-models-sync: updated $CONFIG"
 else

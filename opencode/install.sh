@@ -14,50 +14,60 @@ if ! have opencode; then
 		warn "opencode install failed — see https://opencode.ai/docs"
 fi
 
-config_target="$HOME/.config/opencode/opencode.json"
-mkdir -p "$(dirname "$config_target")"
-tmp_config=$(mktemp "$config_target.XXXXXX")
-if /bin/cp "$(dirname "$0")/.config/opencode/opencode.json" "$tmp_config"; then
-    chmod 644 "$tmp_config"
-    mv "$tmp_config" "$config_target"
-else
-    rm -f "$tmp_config"
-    echo "opencode/install.sh: failed to copy opencode.json — leaving existing $config_target untouched" >&2
+config_target="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json"
+config_dir=$(dirname "$config_target")
+# Old folded Stow links must be removed before any copied config is written.
+if [ -L "${XDG_CONFIG_HOME:-$HOME/.config}" ] || [ -L "$config_dir" ]; then
+    warn "OpenCode config directory is symlinked; unstow and restow with --no-folding first"
+    exit 1
+fi
+mkdir -p "$config_dir" || exit 1
+tmp_config=$(mktemp "$config_target.XXXXXX") || exit 1
+trap 'rm -f "$tmp_config" "${tmp_merged:-}"' EXIT
+model_config="$(dirname "$0")/.local/config/opencode-models.json"
+# Always install explicit free pins, even offline or before scripts are stowed.
+# Retired pins fail visibly instead of inheriting an ambient paid model.
+if ! jq --slurpfile models "$model_config" '
+    $models[0] as $cfg |
+    ([$cfg.agents | to_entries[] | .key as $name |
+      ([.value[] | select(. as $m | $cfg.free_models | index($m))][0]) as $pick |
+      if $pick == null then error("no configured free model for " + $name)
+      else {key: $name, value: {model: $pick}} end] | from_entries) as $pins |
+    .agent = ((.agent // {}) * $pins) |
+    .small_model = ($pins.relay.model // error("missing relay pin"))
+' "$(dirname "$0")/.config/opencode/opencode.json" > "$tmp_config"; then
+    warn "could not prepare OpenCode settings; existing config left untouched"
+    exit 1
 fi
 
-# Probe opencode's free-tier model availability and record the per-machine
-# filtered list for the opencode-llm script. Non-fatal.
 probe="$HOME/.local/scripts/opencode-llm-probe"
 if [ -x "$probe" ]; then
-    "$probe" || echo "opencode-llm-probe failed — using default model list"
-else
-    echo "opencode-llm-probe not stowed yet — skipping"
+    "$probe" || warn "relay catalog could not be verified; keeping configured free candidates"
 fi
-
-# Probe available models and assign per-agent model overrides.
-# Merges into the copied opencode.json so the Markdown agent defaults get
-# upgraded to the best available free model per agent. Non-fatal.
 probe_agent="$HOME/.local/scripts/opencode-agent-models-probe"
-if [ -x "$probe_agent" ]; then
-    "$probe_agent" || echo "opencode-agent-models-probe failed — using Markdown defaults"
+if [ -x "$probe_agent" ] && "$probe_agent"; then
     overrides="$HOME/.local/state/agents/opencode-agent-model-overrides.json"
-    if [ -f "$overrides" ] && command -v jq >/dev/null 2>&1 && jq -e '.agent != null' "$overrides" >/dev/null 2>&1; then
-        tmp_merged=$(mktemp "$config_target.XXXXXX")
-        if jq -s '.[0] * .[1]' "$config_target" "$overrides" > "$tmp_merged"; then
-            chmod 644 "$tmp_merged"
-            mv "$tmp_merged" "$config_target"
-        else
-            rm -f "$tmp_merged"
-        fi
+    tmp_merged=$(mktemp "$config_target.XXXXXX") || exit 1
+    # Only accept complete free pins from this successful probe invocation.
+    if jq -e --slurpfile pins "$overrides" --slurpfile models "$model_config" '
+        $models[0] as $cfg | $pins[0].agent as $agents |
+        if all($cfg.agents | keys[]; . as $name |
+            ($agents[$name].model as $m | $cfg.free_models | index($m)) != null)
+        then .agent *= $agents | .small_model = $agents.relay.model
+        else error("incomplete or non-free probe result") end
+    ' "$tmp_config" > "$tmp_merged"; then
+        mv "$tmp_merged" "$tmp_config" || exit 1
+    else
+        warn "model overrides invalid; keeping explicit configured free pins"
     fi
 else
-    echo "opencode-agent-models-probe not stowed yet — skipping"
+    warn "agent catalog not verified; installed free pins may need a model-list refresh"
 fi
+chmod 600 "$tmp_config" && mv "$tmp_config" "$config_target" || exit 1
 
 # Sync provider.ollama.models in the copied opencode.json with whatever's
 # actually pulled in the local Ollama daemon right now (live query, not a
-# static list). Non-fatal: no Ollama / daemon down / zero models all resolve
-# to an empty models map. Same script is meant to be re-run manually after
+# static list). A failed query preserves the current map; a successful empty catalog clears it. Same script is meant to be re-run manually after
 # `ollama pull`/`ollama rm` — see opencode-ollama-models-sync.
 sync_ollama="$HOME/.local/scripts/opencode-ollama-models-sync"
 if [ -x "$sync_ollama" ]; then

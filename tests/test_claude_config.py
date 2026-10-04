@@ -245,6 +245,7 @@ if args[:2] == ['agent', 'list']:
     print('task (primary)'); sys.exit(0)
 if args[:2] == ['models', 'opencode']:
     print('opencode/free-fixture'); sys.exit(0)
+assert os.environ.get('DOTFILES_OPENCODE_NO_FALLBACK') == '1'
 with open(os.environ['CALL_LOG'], 'a') as f: f.write(json.dumps(args)+'\\n')
 print(json.dumps({'type':'text','sessionID':'session-fixture','part':{'id':'part1','text':'answer'}}), flush=True)
 mode = os.environ.get('OC_MODE')
