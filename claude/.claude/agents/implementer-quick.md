@@ -1,6 +1,6 @@
 ---
 name: implementer-quick
-description: "Use for scaffolding, boilerplate, stubs/skeletons, and small self-contained code edits or tweaks. NOT: features/fixes/tests (implementer), migrations or risky changes (implementer-deep), mechanical cleanup (cleaner)."
+description: "Make small self-contained edits, stubs, and scaffolding."
 model: sonnet
 effort: low
 ---

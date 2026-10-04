@@ -1,6 +1,6 @@
 ---
 name: cleaner
-description: "Use PROACTIVELY for mechanical code cleanup — lint fixes, formatting, dead-code removal, import sorting, renames. NOT: refactoring or changes requiring judgment (implementer)."
+description: "Apply requested mechanical cleanup: formatting, imports, dead code, and straightforward renames."
 model: haiku
 effort: low
 ---

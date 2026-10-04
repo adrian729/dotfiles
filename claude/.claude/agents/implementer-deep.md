@@ -1,6 +1,6 @@
 ---
 name: implementer-deep
-description: "Use for thorough implementation — cover everything implementer does AND additionally framework migrations/major upgrades, rewrites, performance optimization (make it faster, too slow), and cross-cutting or risky code changes. NOT: routine coding (implementer)."
+description: "Implement migrations, substantial rewrites, performance improvements, and cross-cutting changes."
 model: opus
 effort: high
 ---

@@ -1,6 +1,6 @@
 ---
 name: writer
-description: "Use PROACTIVELY to write, write up, or document — READMEs, reports, diagrams (draw, mermaid), charts, dashboards, visualizations. NOT: short routine text (writer-quick), ADRs or high-stakes documents (writer-deep)."
+description: "Write documentation, reports, diagrams, and explanations."
 model: sonnet
 effort: medium
 ---

@@ -3,7 +3,6 @@ description: "Implement features, fix bugs, write tests, and refactor with editi
 mode: all
 hidden: true
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
-steps: 30
 permission:
   edit: allow
   # deny list below fully replaces (doesn't merge with) opencode.json's top-level
@@ -24,7 +23,5 @@ permission:
     "kubectl apply *": deny
     "cargo publish": deny
     "cargo publish *": deny
-  webfetch: ask
-  websearch: ask
 ---
 Inspect the relevant code and conventions, implement the requested change, and verify it with appropriate checks. Report changes, validation, and unresolved issues.

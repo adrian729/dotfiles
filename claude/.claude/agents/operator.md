@@ -1,6 +1,6 @@
 ---
 name: operator
-description: "Use PROACTIVELY to install/set up/configure environment, CI, tooling, docker, pipelines — get X working locally — and batch data processing. NOT: just running or watching things (operator-quick), diagnosing failures (debugger)."
+description: "Set up environments, tooling, CI, and pipelines; perform requested operational tasks."
 model: sonnet
 effort: medium
 ---

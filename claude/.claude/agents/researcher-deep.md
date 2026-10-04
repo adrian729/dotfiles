@@ -1,6 +1,6 @@
 ---
 name: researcher-deep
-description: "Use for thorough research — cover everything researcher does AND additionally deep multi-source verified research (deep dive, verify claims, cite sources) or explicitly thorough research. NOT: routine lookups (researcher)."
+description: "Research a complex question across sources and verify consequential claims."
 model: opus
 effort: high
 ---

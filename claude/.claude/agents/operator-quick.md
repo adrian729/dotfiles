@@ -1,6 +1,6 @@
 ---
 name: operator-quick
-description: "Use to run/kick off builds, tests, or scripts, and to monitor/watch/poll long-running jobs or CI (is CI green, check pipeline status). NOT: environment/CI/tooling setup or data processing (operator), diagnosing failures (debugger)."
+description: "Run builds, tests, or scripts and monitor their results."
 model: sonnet
 effort: low
 ---

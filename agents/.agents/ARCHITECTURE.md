@@ -1,31 +1,18 @@
-# Unified config architecture — rationale
+# Shared configuration layout
 
-Living rationale for how this dotfiles repo shares config across Claude Code, OpenCode, and Codex (and, later, tools such as Cursor). Not deployed by stow (see `.stow-local-ignore`) — it's the *why* behind the layout when adding another tool.
+This document explains the repository layout; Stow does not deploy it.
 
-## 1. Per-layer unifiability verdict
+- Shared rules live in `agents/.agents/AGENTS.md`. Claude imports them from its global `CLAUDE.md`; OpenCode links to them from its global `AGENTS.md`. Codex deliberately has no global rules link.
+- Shared skills belong in `agents/.agents/skills/`. Codex discovers them there; Claude can link to them from its skills directory. Existing Claude and delegation skills remain under `claude/.claude/skills/`, which OpenCode also discovers.
+- Agent definitions are tool-specific: Claude has its role/tier agents, effort carriers, and OpenCode delegation wrappers; OpenCode has eight agent files plus `relay` and `task` in its JSON configuration. Do not assume one tool reads the other's agent files.
+- Native discovery selects skills and agents. Claude has no active orchestration hooks; the old hook paths remain as no-op stubs because previously copied settings may still call them. Explicitly requested workflow skills retain their process instructions.
+- Permissions use different schemas and are maintained separately. Follow the root `AGENTS.md` rule when mirroring permission changes. OpenCode's configured model lists and installer keep delegation on explicit free models unless paid usage is explicitly requested.
+- LSP integrations, model/effort defaults, and status displays remain tool-specific.
 
-- **Memory / instructions — unified.** The genuinely tool-agnostic behavior rules live once in `agents/.agents/AGENTS.md` (stows to `~/.agents/AGENTS.md`). Each tool's own expected memory file points at it: Claude Code's `claude/.claude/CLAUDE.md` uses a relative `@import` (`@../../agents/.agents/AGENTS.md`) plus a Claude-only addendum; OpenCode's `~/.config/opencode/AGENTS.md` is a git-tracked relative symlink to the same file. Cursor (later) reads project-root `AGENTS.md` natively.
-- **Skills — shared originals in `agents/`, tool discovery through links.** Tool-agnostic skills belong in `agents/.agents/skills/`, deployed to `~/.agents/skills/` for Codex discovery. Claude's `.claude/skills/` links to those originals when needed; OpenCode natively discovers the Claude directory using the same `name`+`description` frontmatter. `markdown-no-wrap` follows this layout; other existing skills remain in place until explicitly migrated. Cursor reads `.cursor/skills/` — same file format, different path, so a per-project symlink works unmodified.
-- **Agents — unified for Claude ↔ Cursor only.** Cursor natively reads `.claude/agents/*.md` (ignores the extra `effort` field harmlessly). OpenCode does **not** read `.claude/agents/` at all — its subagents live only under `opencode/.config/opencode/agents/` or the `agent` key in `opencode.json`, a structurally different schema (`mode`, `temperature`, `permission` vs `model`, `effort`). See accepted gap (a).
-- **Hooks — not unifiable.** Claude Code's `settings.json` hooks have no cross-tool equivalent worth translating. OpenCode's plugin system *can* block a tool call (`tool.execute.before` throwing) — a real `PreToolUse`-deny analogue — but has **no** per-turn context-injection hook (nothing like `UserPromptSubmit` + `additionalContext`). Of this repo's 4 hooks: `skill-eval.sh` and `agent-skill-nudge.sh` are moot in OpenCode by design (its native `skill` tool is always visible); `agent-eval.sh` and `agent-guard.sh` depend on the OpenCode-subagent-roster gap (a), so they ride along with it. Nothing to build now.
-- **Permissions — mirrored by hand, not shared.** OpenCode's permission schema is genuinely three-state (`allow`/`ask`/`deny`) with arg-pattern matching, rich enough to express Claude's rules — but differently shaped (top-level tool categories + bash sub-command patterns vs Claude's `Tool(pattern)` list). Not auto-translated; the standing directive in the repo-root `AGENTS.md` says to mirror changes by hand into `opencode.json`'s `permission` block.
-- **LSP — hand-maintained separately.** Claude's `enabledPlugins` references its plugin marketplace (`ty-lsp`, `rust-analyzer-lsp`, `lua-lsp`, `clangd-lsp`); OpenCode's `lsp` key directly defines server commands (`lua-ls`, `marksman`). Different server sets even today, low churn — a translator isn't worth it.
-- **Effort / model dials, statusline — Claude-only.** No analog elsewhere; not shared.
+## Imports and deployment
 
-## 2. Accepted gaps, with reasoning
+Claude's global `CLAUDE.md` imports `@../../agents/.agents/AGENTS.md`. This resolves from its real repository location, `claude/.claude/`, rather than the deployed symlink's directory. That behavior was observed in this setup in July 2026; preserve the relative path unless rechecking the deployed import. The project-level `.claude/CLAUDE.md` separately imports `@../AGENTS.md`.
 
-- **(a) OpenCode has no general-purpose tiered subagent roster.** `opencode.json`'s `agent` key defines only `relay` and `task` — the two narrow delegation targets `opencode-llm`/`opencode-task` call into — nothing like Claude's full tiered roster (implementer/planner/reviewer/…, each with quick/base/deep tiers). Decided: leave this documented rather than hand-author a parallel OpenCode-native set now. Revisit if standalone OpenCode use grows enough to want it. Hooks `agent-eval.sh`/`agent-guard.sh` ride along with this gap.
-- **(b) Cursor has no global/personal memory-file concept** — it's project-scoped by design. Inherent tool limit, not a gap in this architecture. In other projects, add a per-project `AGENTS.md` (optionally symlinked to `~/.agents/AGENTS.md` if no project-specific addenda are needed) only when actually working there in Cursor.
-- **(c) Hooks / permissions / effort / statusline have no cross-tool equivalent** — checked, not assumed (see §1). Nothing to build until gap (a) is revisited.
+Stow uses `--no-folding` so target directories remain real directories. Mutable Claude, OpenCode, and Codex settings are copied by their installers, allowing local tool state without writes into Git. Re-running an installer replaces those copied settings with the repository baseline; edits to stowed agent and skill files are visible through their symlinks.
 
-## 3. Why relative imports, not `~`-prefixed
-
-Claude Code's `@import` uses a **relative** path (`@../../agents/.agents/AGENTS.md`), resolved from `claude/.claude/`'s real repo location, not the stowed `~/.agents/...` path. This is deliberate: Claude Code's docs document relative imports as the reliable primary mechanism, while `@~/...` tilde-prefixed imports hit a confirmed, currently-unfixed bug (GitHub issue #8765: silently ignored, closed by Anthropic as "not planned"). Do **not** "simplify" the import back to a tilde path — it will silently stop loading.
-
-## 4. The symlink-resolution mechanic — now verified
-
-Claude's global-memory pointer (`claude/.claude/CLAUDE.md`, deployed as the `~/.claude/CLAUDE.md` stow symlink) is read from *any* project's cwd. Claude Code's `@import` resolver computes the relative path against the symlink's **real target directory**, not the symlink path itself — confirmed directly (2026-07-15/16): the deployed `CLAUDE.md` had drifted to `@../.agents/AGENTS.md` (one level short of this doc's §3 spec), which resolves to a nonexistent file under the real directory but *would* have resolved successfully under the symlink path (`~/.agents/AGENTS.md`, itself stow-deployed). The import sat unexpanded — no injected content block for the shared-rules file appeared in-session, confirming real-path resolution — until corrected back to `@../../agents/.agents/AGENTS.md`. The project-level import (`@../AGENTS.md`, both files plain, never via a symlink) and OpenCode's OS-level symlink have zero exposure to this either way.
-
-## 5. Naming note
-
-`agents/` is the shared Stow package, deployed to `~/.agents/`, and owns general rules and tool-agnostic skills. `claude/.claude/agents/` holds Claude Code's own subagent definitions. Their ownership and purpose are separate despite the shared word "agents".
+The `agents/` package owns shared rules and skills. The similarly named `claude/.claude/agents/` directory owns Claude subagent definitions.

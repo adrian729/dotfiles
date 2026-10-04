@@ -1,6 +1,6 @@
 ---
 name: reviewer-quick
-description: "Use for quick review or sanity/gut check on small work or diffs (\"quick look\", \"is this fine\"), or to triage/classify issues and failures. NOT: standard review (reviewer), audits or risky changes (auditor)."
+description: "Check a small change for clear problems or triage reported issues."
 model: sonnet
 effort: medium
 ---

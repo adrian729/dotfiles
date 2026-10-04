@@ -1,6 +1,6 @@
 ---
 name: explorer-deep
-description: "Use for thorough or exhaustive codebase exploration — find all/every place/all callers, make sure nothing is missed — across many locations or naming conventions, or when a quick lookup missed things. NOT: simple lookups (explorer)."
+description: "Trace references and discover relevant code across a large or unfamiliar codebase."
 model: sonnet
 effort: medium
 ---

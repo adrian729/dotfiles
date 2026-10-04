@@ -1,6 +1,6 @@
 ---
 name: planner-quick
-description: "Use for writing specs, tickets/user stories, acceptance criteria, or effort estimates (how long would X take). NOT: implementation plans or design (planner)."
+description: "Draft specifications, tickets, acceptance criteria, and effort estimates."
 model: sonnet
 effort: medium
 ---

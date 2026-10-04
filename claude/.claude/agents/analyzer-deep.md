@@ -1,6 +1,6 @@
 ---
 name: analyzer-deep
-description: "Use for thorough code analysis — cover everything analyzer does AND additionally architecture mapping, dependency maps, impact/blast-radius assessment, complex cross-cutting analysis, or explicitly thorough analysis. NOT: routine behavior tracing (analyzer)."
+description: "Analyze architecture, dependencies, and the impact of cross-cutting changes."
 model: opus
 effort: high
 ---

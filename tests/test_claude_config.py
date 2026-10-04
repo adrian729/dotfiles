@@ -70,26 +70,13 @@ class Fixture(unittest.TestCase):
 
 
 class HooksAndSetup(Fixture):
-    def test_legacy_hook_does_not_override_permissions(self):
-        p = subprocess.run([str(CLAUDE / '.claude/hooks/agent-skill-nudge.sh')], env=self.env,
-                           input='{}', text=True, capture_output=True, timeout=3)
-        self.assertEqual((p.returncode, p.stdout, p.stderr), (0, '', ''))
-
-    def guard(self, agent, model, cwd=None):
-        return subprocess.run([str(CLAUDE / '.claude/hooks/agent-guard.sh')], env=self.env,
-                              input=json.dumps({'cwd': str(cwd or self.home),
-                              'tool_input': {'subagent_type': agent, 'model': model}}),
-                              text=True, capture_output=True, timeout=3)
-
-    def test_pin_guard_scope(self):
-        for name in ('Explore', 'unknown', 'plugin:reviewer', 'effort-high'):
-            self.assertEqual(self.guard(name, 'haiku').returncode, 0, name)
-        self.assertEqual(self.guard('implementer', 'sonnet').returncode, 0)
-        self.assertEqual(self.guard('implementer', 'haiku').returncode, 2)
-        self.write('.claude/agents/implementer.md', '---\nmodel: haiku\n---\n')
-        child = self.home / 'child'
-        child.mkdir()
-        self.assertEqual(self.guard('implementer', 'haiku', child).returncode, 0)
+    def test_legacy_hooks_neither_steer_nor_block_old_installs(self):
+        payload = {'cwd': str(self.home),
+                   'tool_input': {'subagent_type': 'implementer', 'model': 'haiku'}}
+        for name in ('agent-skill-nudge', 'agent-eval', 'skill-eval', 'agent-guard'):
+            p = subprocess.run([str(CLAUDE / f'.claude/hooks/{name}.sh')], env=self.env,
+                               input=json.dumps(payload), text=True, capture_output=True, timeout=3)
+            self.assertEqual((p.returncode, p.stdout, p.stderr), (0, '', ''), name)
 
     def test_pre_stow_preserves_different_scripts(self):
         target = self.write('.local/scripts/claude-wt', 'local edits\n')

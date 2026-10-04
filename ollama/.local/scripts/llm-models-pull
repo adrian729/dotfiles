@@ -1,117 +1,128 @@
 #!/usr/bin/env bash
-# llm-models-pull — manually install the local-LLM lineup for this machine.
-# Lineup comes from the catalog (~/.local/config/local-llm-models.json:
-# pull_lineup, or pull_extras with --all). Idempotent: skips installed models,
-# pulls only what fits the memory budget (same basis llm-probe uses), then
-# refreshes probe state. Run on a fresh machine when install.sh warns about
-# missing models, or after a lineup change.
-set -euo pipefail
+# Pull the catalog's local models that fit this machine's estimated memory budget.
+# Downloads require confirmation or --yes; no inference is performed.
+set -eo pipefail
+
+usage() {
+  cat <<'USAGE'
+usage: llm-models-pull [--all] [--yes]
+  --all   include pull_extras from ~/.local/config/local-llm-models.json
+  --yes   skip download confirmation (for unattended workflows)
+
+Uses the last llm-probe budget, or estimates 90% of GPU VRAM / 75% of RAM.
+Footprints are runtime memory estimates, not download sizes or fit guarantees.
+The budget describes this machine; use this helper with a local Ollama server.
+USAGE
+}
+ALL=false
+YES=false
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --all) ALL=true ;;
+    --yes) YES=true ;;
+    *) echo "llm-models-pull: unknown option: $arg" >&2; usage >&2; exit 2 ;;
+  esac
+done
+for tool in jq ollama; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "llm-models-pull: $tool is required" >&2; exit 1; }
+done
 
 CATALOG="$HOME/.local/config/local-llm-models.json"
 PROBE_STATE="$HOME/.local/state/agents/local-llm.json"
-
-# Last resort when the catalog is missing or lacks the keys (mirrors the
-# fallback catalogs in llm-probe / llm-models-probe).
-FALLBACK_LINEUP=(qwen3.6:35b gemma4:26b qwen3-coder:30b qwen3:14b)
-FALLBACK_EXTRAS=(qwen3:8b qwen2.5-coder:7b)
-
-read_list() {
-  local key="$1"
-  if [ -f "$CATALOG" ]; then
-    jq -r --arg k "$key" '.[$k][]?' "$CATALOG" 2>/dev/null || true
-  fi
-}
-
-lineup=()
-while IFS= read -r m; do [ -n "$m" ] && lineup+=("$m"); done < <(read_list pull_lineup)
-[ ${#lineup[@]} -gt 0 ] || lineup=("${FALLBACK_LINEUP[@]}")
-extras=()
-while IFS= read -r m; do [ -n "$m" ] && extras+=("$m"); done < <(read_list pull_extras)
-[ ${#extras[@]} -gt 0 ] || extras=("${FALLBACK_EXTRAS[@]}")
-
-usage() {
-  cat <<'EOF'
-usage: llm-models-pull [--all] [--yes]
-
-Pulls the curated local-LLM lineup for this machine (idempotent).
-  --all   also pull the catalog's pull_extras (small-machine fallbacks)
-  --yes   skip the confirmation prompt
-EOF
-}
-
-[ $# -gt 0 ] && case "$1" in
-  -h|--help) usage; exit 0 ;;
-  --all) ALL=1 ;;
-  --yes) YES=1 ;;
-  *) echo "llm-models-pull: unknown option: $1" >&2; usage; exit 2 ;;
-esac
-
-footprint_gb() {
-  [ -f "$CATALOG" ] || return 0
-  jq -r --arg n "$1" '.models[$n].footprint_gb // empty' "$CATALOG" 2>/dev/null || true
-}
-
-# Memory budget from the last llm-probe run; falls back to a quick estimate
-# (llm-probe's rules: unified RAM on Apple Silicon / Linux, VRAM on NVIDIA).
-budget_gb() {
-  if [ -f "$PROBE_STATE" ]; then
-    local b
-    b=$(jq -r '.model_budget_gb // empty' "$PROBE_STATE" 2>/dev/null || true)
-    [ -n "$b" ] && { echo "$b"; return 0; }
-  fi
-  local ram vram
-  if command -v nvidia-smi >/dev/null 2>&1; then
-    vram=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null \
-      | awk '{s+=$1} END {print int(s/1024)}')
-    [ -n "$vram" ] && [ "$vram" -gt 0 ] 2>/dev/null && { echo $((vram * 9 / 10)); return 0; }
-  fi
-  ram=$(sysctl -n hw.memsize 2>/dev/null | awk '{print int($1/1073741824)}')
-  [ -z "$ram" ] && ram=$(awk '/MemTotal/{print int($2/1048576)}' /proc/meminfo 2>/dev/null)
-  echo $((ram * 3 / 4))
-}
-
-command -v ollama >/dev/null 2>&1 || { echo "llm-models-pull: ollama not installed — run install.sh first" >&2; exit 1; }
-ollama list >/dev/null 2>&1 || { echo "llm-models-pull: cannot reach the ollama server — start it (Ollama.app or 'ollama serve')" >&2; exit 1; }
-
-PULL=("${lineup[@]}")
-[ "${ALL:-0}" = 1 ] && PULL+=("${extras[@]}")
-
-BUDGET=$(budget_gb)
-TO_PULL=()
-for m in "${PULL[@]}"; do
-  if ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$m"; then
-    echo "llm-models-pull: $m already installed"
-    continue
-  fi
-  fp=$(footprint_gb "$m")
-  if [ -n "$fp" ] && [ "$fp" -gt "$BUDGET" ]; then
-    echo "llm-models-pull: skipping $m (${fp}GB > ${BUDGET}GB budget)"
-    continue
-  fi
-  TO_PULL+=("$m")
-done
-
-[ ${#TO_PULL[@]} -eq 0 ] && { echo "llm-models-pull: nothing to pull"; exit 0; }
-
-total=0
-for m in "${TO_PULL[@]}"; do
-  fp=$(footprint_gb "$m")
-  [ -n "$fp" ] && total=$((total + fp))
-done
-echo "llm-models-pull: pulling ${#TO_PULL[@]} model(s): ${TO_PULL[*]} (~${total}GB)"
-
-if [ "${YES:-0}" != 1 ]; then
-  printf 'Proceed? [y/N] '
-  read -r ans
-  case "$ans" in y|Y) ;; *) echo "aborted"; exit 1 ;; esac
+# Keep usable memory estimates when the optional Claude package is not installed.
+FALLBACK='{"models":{"qwen3.6:35b":{"footprint_gb":24},"gemma4:26b":{"footprint_gb":18},"qwen3-coder:30b":{"footprint_gb":22},"qwen3:14b":{"footprint_gb":12},"qwen3:8b":{"footprint_gb":7},"qwen2.5-coder:7b":{"footprint_gb":6}},"pull_lineup":["qwen3.6:35b","gemma4:26b","qwen3-coder:30b","qwen3:14b"],"pull_extras":["qwen3:8b","qwen2.5-coder:7b"]}'
+CONFIG='{}'
+if [ -e "$CATALOG" ]; then
+  CONFIG=$(cat "$CATALOG")
+fi
+# Missing keys use defaults; explicit empty arrays mean no models in that group.
+if ! SELECTED=$(jq -sce --argjson defaults "$FALLBACK" --argjson all "$ALL" '
+  if length != 1 then error("catalog must contain one JSON object") else .[0] end |
+  if type != "object" then error("catalog must be an object") else . end |
+  ($defaults * .) as $c |
+  if ($c.pull_lineup | type) != "array" or ($c.pull_extras | type) != "array"
+  then error("pull_lineup and pull_extras must be arrays") else $c end |
+  (.pull_lineup + (if $all then .pull_extras else [] end)) |
+  reduce .[] as $name ([]; if index($name) == null then . + [$name] else . end) |
+  map(. as $name |
+    if type != "string" then error("model names must be strings")
+    elif (test("^[A-Za-z0-9][A-Za-z0-9._:/-]*$") | not) then error("invalid model name")
+    else {name: $name, footprint: $c.models[$name].footprint_gb} end |
+    if (.footprint | type) != "number" then error("missing numeric footprint_gb for " + .name)
+    elif .footprint <= 0 then error("footprint_gb must be positive") else . end)
+' <<<"$CONFIG"); then
+  echo "llm-models-pull: invalid catalog: $CATALOG" >&2
+  exit 1
 fi
 
+budget_gb() {
+  local b vram ram bytes file
+  if [ -f "$PROBE_STATE" ]; then
+    b=$(jq -er '.model_budget_gb | numbers | select(. >= 0)' "$PROBE_STATE" 2>/dev/null) || b=''
+    if [ -n "$b" ]; then printf '%s\n' "$b"; return; fi
+  fi
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    if vram=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null); then
+      b=$(awk '/^[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*$/ {s+=$1} END {print s/1024*0.9}' <<<"$vram")
+      if awk -v b="$b" 'BEGIN {exit !(b>0)}'; then echo "$b"; return; fi
+    fi
+  fi
+  case "$(uname -s)" in
+    Darwin) bytes=$(sysctl -n hw.memsize) || return; ram=$(awk -v n="$bytes" 'BEGIN {print n/1073741824}') ;;
+    Linux)
+      vram=0
+      for file in /sys/class/drm/card*/device/mem_info_vram_total; do
+        [ -r "$file" ] || continue
+        bytes=$(cat "$file") || continue
+        vram=$(awk -v a="$vram" -v b="$bytes" 'BEGIN {print a+b}')
+      done
+      if awk -v n="$vram" 'BEGIN {exit !(n>0)}'; then
+        awk -v n="$vram" 'BEGIN {print n/1073741824*0.9}'; return
+      fi
+      ram=$(awk '/MemTotal:/ {print $2/1048576}' /proc/meminfo) || return ;;
+    *) echo "llm-models-pull: cannot estimate memory on this platform" >&2; return 1 ;;
+  esac
+  awk -v n="$ram" 'BEGIN {if (n>0) print n*0.75; else exit 1}'
+}
+
+if ! INSTALLED=$(ollama list); then
+  echo "llm-models-pull: cannot list models — check the Ollama server and OLLAMA_HOST" >&2
+  exit 1
+fi
+INSTALLED=$(awk 'NR>1 {print $1}' <<<"$INSTALLED")
+BUDGET=$(budget_gb) || { echo "llm-models-pull: could not determine a memory budget; run llm-probe" >&2; exit 1; }
+TO_PULL=()
+while IFS=$'\t' read -r model footprint; do
+  installed_name=$model
+  case "${model##*/}" in *:*) ;; *) installed_name="$model:latest" ;; esac
+  if grep -Fqx -- "$installed_name" <<<"$INSTALLED"; then
+    echo "llm-models-pull: $model already installed"
+  elif awk -v f="$footprint" -v b="$BUDGET" 'BEGIN {exit !(f>b)}'; then
+    echo "llm-models-pull: skipping $model (${footprint}GB estimated memory > ${BUDGET}GB budget)"
+  else
+    TO_PULL+=("$model")
+  fi
+done < <(jq -r '.[] | [.name, .footprint] | @tsv' <<<"$SELECTED")
+
 FAILED=0
-for m in "${TO_PULL[@]}"; do
-  ollama pull "$m" || { echo "llm-models-pull: pull of $m failed" >&2; FAILED=1; }
+if [ ${#TO_PULL[@]} -gt 0 ]; then
+  echo "llm-models-pull: pulling ${#TO_PULL[@]} model(s): ${TO_PULL[*]}"
+  if [ "$YES" != true ]; then
+    printf 'Proceed? [y/N] '
+    read -r ans || ans=''
+    case "$ans" in y|Y) ;; *) echo 'aborted (use --yes for unattended downloads)'; exit 1 ;; esac
+  fi
+  for model in "${TO_PULL[@]}"; do
+    ollama pull "$model" || { echo "llm-models-pull: pull of $model failed" >&2; FAILED=1; }
+  done
+else
+  echo "llm-models-pull: nothing to pull"
+fi
+# Also refresh after a no-op: installed models can have stale capability state.
+for probe in llm-models-probe llm-probe; do
+  if command -v "$probe" >/dev/null 2>&1; then
+    "$probe" || { echo "llm-models-pull: $probe failed" >&2; FAILED=1; }
+  fi
 done
-
-# Refresh probe state so the runtime `llm` script sees the new lineup.
-command -v llm-models-probe >/dev/null 2>&1 && { llm-models-probe || true; llm-probe || true; }
-
-[ "$FAILED" = 0 ] || exit 1
+exit "$FAILED"

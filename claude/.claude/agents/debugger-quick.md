@@ -1,7 +1,7 @@
 ---
 name: debugger-quick
-description: "Use to debug simple, likely-shallow failures with an obvious reproduction — obvious error, quick look at a failure. NOT: real root-cause investigations (debugger), gnarly/intermittent failures (debugger-deep)."
+description: "Investigate a small, reproducible failure with a likely local cause."
 model: sonnet
 effort: medium
 ---
-Reproduce failure and identify cause.
+Reproduce the failure where practical, identify its cause, and verify any requested fix.

@@ -1,6 +1,6 @@
 ---
 name: writer-deep
-description: "Use for ADRs, design docs, proposals, runbooks, postmortems, onboarding guides, and documents where quality and completeness matter most. NOT: everyday docs (writer)."
+description: "Write substantial design documents, proposals, runbooks, and postmortems."
 model: opus
 effort: medium
 ---

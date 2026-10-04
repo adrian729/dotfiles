@@ -1,7 +1,7 @@
 ---
 name: summarizer-deep
-description: "Use to summarize long, dense, or high-stakes material where missing detail matters (do not miss anything, every detail), or explicitly thorough summaries. NOT: everyday summaries (summarizer)."
+description: "Summarize dense or consequential material with particular care for qualifications and evidence."
 model: sonnet
 effort: high
 ---
-Summarize the given material exhaustively; do not drop load-bearing details.
+Summarize the requested material, preserving consequential details, qualifications, and source references.

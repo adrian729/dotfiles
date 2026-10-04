@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# tmux-ollama-status — ollama status pill for tmux status bar
-# Called by tmux via #() every status-interval (1s).
-
+# Local Ollama daemon and descendant RSS; refreshed by tmux's status interval.
 ICON="🦙"
 BG="#4f8a8a"
 SURFACE_0="#313244"
@@ -9,38 +7,35 @@ FG="#cdd6f4"
 GREEN="#A6E3A1"
 RED="#F38BA8"
 
-PID=$(pgrep -x ollama | head -1)
-
+# One snapshot avoids races between pgrep and ps. Count only this server's
+# descendants, including current `ollama runner` and older llama-server runners.
+read -r PID RSS < <(ps -axo pid=,ppid=,rss=,args= 2>/dev/null | awk '
+    {parent[$1]=$2; rss[$1]=$3}
+    !server && $4 ~ /(^|\/)ollama$/ && $5 == "serve" {server=$1}
+    END {
+        if (!server) exit
+        child[server]=1
+        do {
+            changed=0
+            for (pid in parent) if (!child[pid] && child[parent[pid]]) {
+                child[pid]=1; changed=1
+            }
+        } while (changed)
+        for (pid in child) if (child[pid]) total+=rss[pid]
+        print server, total
+    }')
 printf '#[fg=%s,bg=%s]#[reverse]#[noreverse]#[fg=%s]%s ' "$SURFACE_0" "$BG" "$FG" "$ICON"
-
 if [[ -z "$PID" ]]; then
     printf '#[fg=%s,bg=%s] ● ' "$RED" "$SURFACE_0"
     exit 0
 fi
-
 printf '#[fg=%s,bg=%s] ● ' "$GREEN" "$SURFACE_0"
 printf '#[fg=%s,bg=%s]id%s' "$FG" "$SURFACE_0" "$PID"
-
-# Model weights live in the spawned llama-server process, not the tiny ollama
-# daemon — sum both RSS values or the pill under-reports loaded models by GBs.
-RSS=$(ps -o rss= -p "$PID" 2>/dev/null | tr -d ' ')
-for child in $(pgrep -x llama-server 2>/dev/null); do
-    RSS=$(( RSS + $(ps -o rss= -p "$child" 2>/dev/null | tr -d ' ') ))
-done
-if [[ -n "$RSS" ]]; then
-    if (( RSS > 1048576 )); then
-        mem=$(echo "scale=1; $RSS / 1048576" | bc -l)"GB"
-    elif (( RSS > 1024 )); then
-        mem="$((RSS / 1024))MB"
-    else
-        mem="${RSS}KB"
-    fi
-    printf '#[fg=%s,bg=%s] %s' "$FG" "$SURFACE_0" "$mem"
-fi
-
-MODEL=$(curl -s --max-time 0.3 http://localhost:11434/api/ps 2>/dev/null | jq -r '.models[0].name // ""' 2>/dev/null)
+mem=$(awk -v n="$RSS" 'BEGIN {if (n>=1048576) printf "%.1fGiB", n/1048576; else printf "%.0fMiB", n/1024}')
+printf '#[fg=%s,bg=%s] %s' "$FG" "$SURFACE_0" "$mem"
+MODEL=$(curl -fsS --max-time 0.3 http://localhost:11434/api/ps 2>/dev/null |
+    jq -r '[.models[]?.name] | join(", ")' 2>/dev/null)
 if [[ -n "$MODEL" ]]; then
     printf '#[fg=%s,bg=%s] %s' "$FG" "$SURFACE_0" "$MODEL"
 fi
-
 printf ' '

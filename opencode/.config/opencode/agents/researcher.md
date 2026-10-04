@@ -3,12 +3,17 @@ description: "Web research, documentation lookups, and library comparisons with 
 mode: all
 hidden: true
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
-steps: 40
 permission:
   edit: deny
   task: deny
   bash:
     "*": deny
+    "git log*": allow
+    "git diff*": allow
+    "git ls-tree*": allow
+    "git ls-files*": allow
+    "git show*": allow
+    "git status*": allow
     "grep *": allow
     "rg *": allow
     "ls *": allow

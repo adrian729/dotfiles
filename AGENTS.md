@@ -27,7 +27,7 @@ Codex deliberately has no global `AGENTS.md` link. Its package copies portable s
 - **`agents/.agents/skills/`** — canonical originals for shared, tool-agnostic skills. Tool-specific discovery directories can link here; `markdown-no-wrap` uses this layout.
 - **`claude/.claude/skills/`** — Claude-specific skills, existing unmigrated skills, and symlinks to shared skills. OpenCode natively discovers these too. Root `.claude/skills/` is not a deployment directory.
 - **`claude/.claude/agents/`** — Claude Code agent definitions (implementer, planner, researcher, writer, debugger, reviewer, auditor, analyzer, summarizer, operator, cleaner, explorer, effort-_, opencode-_ delegation wrappers, most with quick/base/deep tiers). OpenCode does **not** read `.claude/agents/`; its own subagents are separate `.md` files under `opencode/.config/opencode/agents/` (the `agent` key in `opencode.json` itself only holds `relay`/`task`).
-- **`claude/.claude/hooks/`** — guard and eval hooks.
+- **`claude/.claude/hooks/`** — no-op compatibility stubs for older copied settings; the current settings register no hooks.
 - **`claude/.local/scripts/`** — utility scripts for claude worktree management.
 
 ## Rules
@@ -44,7 +44,7 @@ Codex deliberately has no global `AGENTS.md` link. Its package copies portable s
 - Every OpenCode agent that needs a pinned model must have an entry in `opencode/.local/config/opencode-models.json`'s `agents` map: `opencode-agent-models-probe` only iterates that map's keys, and `opencode/install.sh` jq-merges the resulting `{agent: {<name>: {model: …}}}` into the copied `~/.config/opencode/opencode.json`. An agent missing from the map gets no `model` and falls through to OpenCode's ambient default, which may be a paid model. All 10 agents are covered. `relay`'s list duplicates the top-level `relay` key, which is a different mechanism (`opencode-llm` reads that one to build its `-m` fallback walk) — keep the two in sync, or drop the `agents` entry if the duplication ever drifts. Paid (`opencode-go/*`) entries inside a list are inert ranking hints: the probe skips any candidate that isn't also in `free_models`, so a list can express preference order without selecting a paid model. The installer also sets `small_model` to the free relay pin for automatic lightweight tasks.
 - The free tier rotates often. The probe matches exact IDs from `opencode models opencode`. If no configured free candidate is listed for an agent, it retains an explicit configured free pin, warns, and returns nonzero. The installer likewise keeps explicit free pins when probes fail; a retired pin fails visibly rather than inheriting a paid default. **Every agent list must contain at least one free model that `opencode models opencode` actually returns**; when the free tier rotates, update `free_models`, every `agents` list, and `MODELS.md` together, then re-run the probe and confirm all 10 agents got a pin. `MODELS.md` is a dated reference for prices, limits, and specs — refresh it from opencode.ai/docs/zen + /docs/go (limits and Req/mo) and models.dev/api.json (context/output/modality, which the docs pages do not publish).
 - `ollama-cloud` is deliberately absent from `free_models` and every `agents` list: the provider is still upstream but needs `OLLAMA_API_KEY`, and it is not connected on this machine, so the probe cannot see it. `MODELS.md` keeps the full 24-model catalog as reference. Adding it requires an explicit provider-policy change and verified plan limits; the probes and fallback plugin currently accept only configured `opencode/` IDs.
-- The manual-only skill list is duplicated: `skillOverrides` in `claude/.claude/settings.json` (which sets them `name-only` in the harness listing) and `MANUAL_ONLY` in `claude/.claude/hooks/lib/skill-names.sh` (which keeps the skill-eval hook from suggesting them). Both currently hold the same four — `audit-loop`, `autonomous-process`, `best-of-n`, `evaluator-optimizer`. Adding or removing a manual-only skill means editing both; they serve different mechanisms and neither derives from the other.
+- `skillOverrides` in `claude/.claude/settings.json` exposes only the names of `audit-loop`, `autonomous-process`, `best-of-n`, and `evaluator-optimizer`. Their instructions require an explicit request, which can come from another workflow. `name-only` reduces discovery context; it does not enforce manual invocation. No hook nudges skill or agent selection or blocks model overrides; agent definitions retain model and effort defaults.
 
 ## Per-package file layout
 
@@ -57,9 +57,8 @@ claude/
     claude.env.template (claude.env is gitignored — secrets, sourced by zsh's nested .zshenv)
     statusline.sh
     agents/            44 agent defs — YAML-frontmatter .md (incl. 9 opencode-* delegation wrappers)
-    hooks/             agent-eval, agent-guard, skill-eval
-                       lib/skill-names.sh (shared skill listing, sourced by skill-eval)
-                       agent-skill-nudge (no-op for older copied settings)
+    hooks/             agent-eval, agent-guard, skill-eval, agent-skill-nudge
+                       (no-op compatibility stubs for older copied settings)
     skills/            Claude skill dirs + markdown-no-wrap/SKILL.md symlink to agents/.agents/skills/
     tmp/
    .local/
@@ -220,7 +219,7 @@ lib/                   not a stow package — shared installer helpers only
    - **bettercmdtab/install.sh**: macOS-only; brew-installs `bettercmdtab`, copies `config.json` (not symlink → app writes back live), sets trigger hotkeys via `defaults write` (⌥Tab/⌥` to leave ⌘Tab/⌘` native)
    - **ghostty/install.sh**: brew cask on macOS; on Linux tries the distro's own package (official on Arch `extra`, Alpine testing, Gentoo, Void, Solus, NixOS) → the `mkasberg/ghostty-ubuntu` .deb, Debian family only → the `--classic` snap, which upstream builds from Ghostty's own scripts. Fedora has only a community COPR, which is printed as a suggestion rather than enabled automatically; there is no Flathub package, so Flatpak is deliberately not attempted.
    - **kitty/install.sh**: macOS-only by choice, not by packaging limit — ghostty is the sole Linux terminal. Listed in root `install.sh`'s `macos_only`; changing that means changing both.
-   - **ollama/install.sh**: brew on macOS; on Linux the official `ollama.com/install.sh`, which registers the systemd unit and pulls the CUDA/ROCm runtime that the Homebrew build does not set up. Checks `ollama.env` exists and prints a reminder if not.
+   - **ollama/install.sh**: brew on macOS; on Linux the official `ollama.com/install.sh`, which registers the systemd unit and pulls the CUDA/ROCm runtime that the Homebrew build does not set up. `ollama.env` is optional shell client configuration; local inference needs no API key.
    - **zsh/install.sh**: installs `zsh` itself from the distro on Linux (never from brew — a login shell under `/home/linuxbrew` locks the account out if that tree goes missing) and offers `chsh`, since a fresh Linux account is usually on bash and would leave this whole package inert. The offer only ever names an OS-owned zsh (`/bin/zsh`, `/usr/bin/zsh`), never whatever `command -v zsh` resolves to — after `brew_shellenv` that is Homebrew's, and pointing a login shell there is the same lock-out.
 
 Key design: `settings.json`/`opencode.json`/`config.toml`/`config.json` are **copied** so tools can modify freely without dirtying the repo. Re-running install.sh resets from repo version.

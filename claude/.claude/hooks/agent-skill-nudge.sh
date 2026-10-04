@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
-# Compatibility for older copied settings.json files that still invoke this hook.
-# The active reminder is now in agent-eval.sh; this stub grants no permissions.
+# Compatibility stub for older copied settings. Native agent/skill discovery
+# handles selection; this hook injects no instructions and blocks no calls.
 exit 0

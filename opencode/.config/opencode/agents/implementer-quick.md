@@ -3,7 +3,6 @@ description: "Scaffolding, boilerplate, and small self-contained edits. Use impl
 mode: all
 hidden: true
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
-steps: 15
 permission:
   edit: allow
   # deny list below fully replaces (doesn't merge with) opencode.json's top-level

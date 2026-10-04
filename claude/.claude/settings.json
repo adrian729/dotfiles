@@ -56,33 +56,6 @@
     ],
     "additionalDirectories": ["/tmp"]
   },
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/skill-eval.sh"
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/agent-eval.sh"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Agent|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/agent-guard.sh"
-          }
-        ]
-      }
-    ]
-  },
   "statusLine": {
     "type": "command",
     "command": "~/.claude/statusline.sh"

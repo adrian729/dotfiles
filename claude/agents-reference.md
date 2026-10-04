@@ -6,36 +6,36 @@ Inventory of `.claude/agents/`, generated from the frontmatter. The definitions 
 
 | Agent | Model | Effort | Description |
 | --- | --- | --- | --- |
-| `analyzer-deep` | opus | high | Use for thorough code analysis — cover everything analyzer does AND additionally architecture mapping, dependency maps, impact/blast-radius assessment, complex cross-cutting analysis, or explicitly thorough analysis. NOT: routine behavior tracing (analyzer). |
-| `analyzer-quick` | sonnet | low | Use to quickly answer small-scope questions about how code works — what does X do, quick question about behavior. NOT: full behavior tracing (analyzer), architecture/impact analysis (analyzer-deep). |
-| `analyzer` | sonnet | medium | Use PROACTIVELY to analyze or understand code — investigate/look into/figure out how something works, trace behavior, data/control flow, what happens when X, walk through code. NOT: small-scope questions (analyzer-quick), architecture/impact analysis (analyzer-deep), investigating errors/failures (debugger). |
-| `auditor-deep` | opus | xhigh | Use for the most safety-critical or high-stakes audits — cover everything auditor does AND additionally auth/crypto/payment/secret-handling paths, pre-release security sign-off, or explicitly maximum or exhaustive rigor (leave no stone unturned). NOT: routine audits (auditor). |
-| `auditor` | opus | high | Use PROACTIVELY to audit and review work — cover everything reviewer does AND additionally focus on security, vulnerabilities/CVEs, dependencies, licenses, compliance, hardening, and large/risky changes. NOT: everyday reviews (reviewer), most safety-critical or explicitly maximum rigor (auditor-deep). |
-| `cleaner` | haiku | low | Use PROACTIVELY for mechanical code cleanup — lint fixes, formatting, dead-code removal, import sorting, renames. NOT: refactoring or changes requiring judgment (implementer). |
-| `debugger-deep` | opus | xhigh | Use for thorough debugging — cover everything debugger does AND additionally gnarly, intermittent, or high-stakes failures (flaky tests, race conditions, only happens sometimes/in prod) or when prior debugging failed. NOT: routine debugging (debugger). |
-| `debugger-quick` | sonnet | medium | Use to debug simple, likely-shallow failures with an obvious reproduction — obvious error, quick look at a failure. NOT: real root-cause investigations (debugger), gnarly/intermittent failures (debugger-deep). |
-| `debugger` | sonnet | high | Use PROACTIVELY to debug, diagnose, or troubleshoot — why is X failing/broken/not working, reproduce failures, investigate/look into errors/crashes, find root causes. NOT: trivially shallow failures (debugger-quick), gnarly/intermittent/high-stakes failures (debugger-deep), fixing bug once found (implementer). |
-| `explorer-deep` | sonnet | medium | Use for thorough or exhaustive codebase exploration — find all/every place/all callers, make sure nothing is missed — across many locations or naming conventions, or when a quick lookup missed things. NOT: simple lookups (explorer). |
-| `explorer` | haiku | low | Use PROACTIVELY to explore a codebase — find/locate/search files, symbols, definitions, or usages (where is X? show me X, do we have/is there a, which file), read known files, or list/inventory things. NOT: tracing behavior (analyzer), condensing content (summarizer), exhaustive sweeps (explorer-deep). |
-| `implementer-deep` | opus | high | Use for thorough implementation — cover everything implementer does AND additionally framework migrations/major upgrades, rewrites, performance optimization (make it faster, too slow), and cross-cutting or risky code changes. NOT: routine coding (implementer). |
-| `implementer-quick` | sonnet | low | Use for scaffolding, boilerplate, stubs/skeletons, and small self-contained code edits or tweaks. NOT: features/fixes/tests (implementer), migrations or risky changes (implementer-deep), mechanical cleanup (cleaner). |
-| `implementer` | sonnet | medium | Use PROACTIVELY to implement/add/build/create features, change/update code, fix bugs, write tests, refactor, prototype/spike, or port/translate code. NOT: boilerplate (implementer-quick), migrations/optimization/risky cross-cutting changes (implementer-deep), lint/format cleanup (cleaner). |
-| `operator-quick` | sonnet | low | Use to run/kick off builds, tests, or scripts, and to monitor/watch/poll long-running jobs or CI (is CI green, check pipeline status). NOT: environment/CI/tooling setup or data processing (operator), diagnosing failures (debugger). |
-| `operator` | sonnet | medium | Use PROACTIVELY to install/set up/configure environment, CI, tooling, docker, pipelines — get X working locally — and batch data processing. NOT: just running or watching things (operator-quick), diagnosing failures (debugger). |
-| `planner-deep` | opus | xhigh | Use for thorough planning — cover everything planner does AND additionally large or high-stakes architecture/design decisions (rearchitecting, RFCs) or explicitly maximum planning rigor. NOT: everyday plans (planner). |
-| `planner-quick` | sonnet | medium | Use for writing specs, tickets/user stories, acceptance criteria, or effort estimates (how long would X take). NOT: implementation plans or design (planner). |
-| `planner` | opus | high | Use PROACTIVELY for implementation plans (plan out X, how should we approach), API/schema/component design, proposals, and trade-off analysis (which option, pros and cons). NOT: specs/estimates (planner-quick), high-stakes architecture (planner-deep). |
-| `researcher-deep` | opus | high | Use for thorough research — cover everything researcher does AND additionally deep multi-source verified research (deep dive, verify claims, cite sources) or explicitly thorough research. NOT: routine lookups (researcher). |
-| `researcher-quick` | sonnet | low | Use to fetch/get specific external resources — tickets, PRs, issues, given URL, known docs page, what does this ticket/PR say. NOT: open-ended research (researcher). |
-| `researcher` | sonnet | medium | Use PROACTIVELY to research, look up, or search the web/docs — best practices, library comparisons/which library to use, current/latest way to do X, error lookups. NOT: fetching specific known resource (researcher-quick), multi-source verified research (researcher-deep). |
-| `reviewer-quick` | sonnet | medium | Use for quick review or sanity/gut check on small work or diffs ("quick look", "is this fine"), or to triage/classify issues and failures. NOT: standard review (reviewer), audits or risky changes (auditor). |
-| `reviewer` | sonnet | xhigh | Use PROACTIVELY to review work — check/look over changes, plans, docs; does this look right; feedback on X; verifying something works; critiquing/judging alternatives. NOT: quick sanity checks or triage (reviewer-quick), audits/security/large or risky changes or explicit thoroughness (auditor). For small/routine code diffs not on sensitive paths, consider reviewer-quick first. |
-| `summarizer-deep` | sonnet | high | Use to summarize long, dense, or high-stakes material where missing detail matters (do not miss anything, every detail), or explicitly thorough summaries. NOT: everyday summaries (summarizer). |
-| `summarizer-quick` | sonnet | low | Use for quick or rough summary/gist/skim of a file, diff, log, or transcript (roughly what is in X). NOT: standard summaries (summarizer), huge raw logs/diffs where gist suffices (local-llm skill). |
-| `summarizer` | sonnet | medium | Use PROACTIVELY to summarize, condense, recap, or TL;DR files, diffs, logs, or transcripts — what changed, catch me up, key points. NOT: quick gists (summarizer-quick), long/nuanced material where missing detail matters (summarizer-deep), huge raw logs/diffs where gist suffices (local-llm skill). |
-| `writer-deep` | opus | medium | Use for ADRs, design docs, proposals, runbooks, postmortems, onboarding guides, and documents where quality and completeness matter most. NOT: everyday docs (writer). |
-| `writer-quick` | sonnet | low | Use for PR descriptions, commit messages, changelogs, release notes, and short routine text. NOT: READMEs/reports/diagrams (writer), ADRs or high-stakes documents (writer-deep). |
-| `writer` | sonnet | medium | Use PROACTIVELY to write, write up, or document — READMEs, reports, diagrams (draw, mermaid), charts, dashboards, visualizations. NOT: short routine text (writer-quick), ADRs or high-stakes documents (writer-deep). |
+| `analyzer-deep` | opus | high | Analyze architecture, dependencies, and the impact of cross-cutting changes. |
+| `analyzer-quick` | sonnet | low | Answer a narrow question about how a piece of code works. |
+| `analyzer` | sonnet | medium | Explain code behavior, control flow, and data flow. |
+| `auditor-deep` | opus | xhigh | Investigate sensitive paths and high-stakes security or correctness risks in depth. |
+| `auditor` | opus | high | Audit correctness and security, including dependencies and identified compliance requirements. |
+| `cleaner` | haiku | low | Apply requested mechanical cleanup: formatting, imports, dead code, and straightforward renames. |
+| `debugger-deep` | opus | xhigh | Investigate intermittent, cross-cutting, or high-stakes failures and unsuccessful prior fixes. |
+| `debugger-quick` | sonnet | medium | Investigate a small, reproducible failure with a likely local cause. |
+| `debugger` | sonnet | high | Investigate failures, identify root causes, and verify requested fixes. |
+| `explorer-deep` | sonnet | medium | Trace references and discover relevant code across a large or unfamiliar codebase. |
+| `explorer` | haiku | low | Locate files, symbols, definitions, and usages in a codebase. |
+| `implementer-deep` | opus | high | Implement migrations, substantial rewrites, performance improvements, and cross-cutting changes. |
+| `implementer-quick` | sonnet | low | Make small self-contained edits, stubs, and scaffolding. |
+| `implementer` | sonnet | medium | Implement features, bug fixes, tests, and refactors. |
+| `operator-quick` | sonnet | low | Run builds, tests, or scripts and monitor their results. |
+| `operator` | sonnet | medium | Set up environments, tooling, CI, and pipelines; perform requested operational tasks. |
+| `planner-deep` | opus | xhigh | Develop architecture and plans for complex or high-stakes changes. |
+| `planner-quick` | sonnet | medium | Draft specifications, tickets, acceptance criteria, and effort estimates. |
+| `planner` | opus | high | Develop implementation plans, designs, and trade-off analyses. |
+| `researcher-deep` | opus | high | Research a complex question across sources and verify consequential claims. |
+| `researcher-quick` | sonnet | low | Retrieve and summarize a specified external resource, ticket, or documentation page. |
+| `researcher` | sonnet | medium | Research external documentation, current practices, and technical alternatives. |
+| `reviewer-quick` | sonnet | medium | Check a small change for clear problems or triage reported issues. |
+| `reviewer` | sonnet | xhigh | Review code, plans, or documentation for actionable correctness and quality issues. |
+| `summarizer-deep` | sonnet | high | Summarize dense or consequential material with particular care for qualifications and evidence. |
+| `summarizer-quick` | sonnet | low | Produce a brief gist of supplied material. |
+| `summarizer` | sonnet | medium | Summarize files, diffs, logs, or transcripts while preserving relevant details. |
+| `writer-deep` | opus | medium | Write substantial design documents, proposals, runbooks, and postmortems. |
+| `writer-quick` | sonnet | low | Write short routine text, including PR descriptions, commit messages, and release notes. |
+| `writer` | sonnet | medium | Write documentation, reports, diagrams, and explanations. |
 
 ## OpenCode delegation wrappers
 

@@ -3,7 +3,6 @@ description: "Diagnose failures, reproduce bugs, and investigate errors with edi
 mode: all
 hidden: true
 # model: managed in opencode.json agent block. Re-run install.sh after changes.
-steps: 40
 permission:
   edit: allow
   # deny list below fully replaces (doesn't merge with) opencode.json's top-level
