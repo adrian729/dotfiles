@@ -1,17 +1,20 @@
-# Better ls
-alias ls='eza --icons'
+# Better ls. Only when eza exists: an alias to a missing command would break
+# plain `ls` on a machine where the installer could not provide it.
+if (( $+commands[eza] )); then
+  alias ls='eza --icons'
 
-# Detailed listing
-alias ll='eza -lh --icons --git'
+  # Detailed listing
+  alias ll='eza -lh --icons --git'
 
-# Detailed listing including hidden files
-alias la='eza -lah --icons --git'
+  # Detailed listing including hidden files
+  alias la='eza -lah --icons --git'
 
-# Tree view
-alias tree='eza --tree --icons'
+  # Tree view
+  alias tree='eza --tree --icons'
 
-# Reuse ls completions for eza (avoids defining a separate completion function)
-compdef eza=ls
+  # Reuse ls completions for eza (avoids defining a separate completion function)
+  compdef eza=ls
+fi
 
 # Better cat. Debian/Ubuntu package bat as `batcat` to avoid a name clash, so
 # fall back to that name before giving up and leaving plain cat alone.
@@ -25,7 +28,7 @@ fi
 # Core utilities
 # =========================================================
 
-alias grep='rg --color=auto'
+(( $+commands[rg] )) && alias grep='rg --color=auto'
 alias diff='diff --color=auto'
 alias df='df -h'
 

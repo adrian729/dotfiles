@@ -1,6 +1,8 @@
 """Offline Ollama regressions: never start services, download, or infer."""
 import json
+from pathlib import Path
 import subprocess
+import unittest
 from test_claude_config import Fixture, ROOT
 
 SCRIPTS = ROOT / 'ollama/.local/scripts'
@@ -73,6 +75,7 @@ else: raise SystemExit('Unexpected Ollama invocation')
             self.assertNotEqual(p.returncode, 0, data)
             self.assertEqual(self.calls(), [])
 
+    @unittest.skipUnless(Path('/proc/meminfo').is_file(), 'reads the real /proc/meminfo')
     def test_linux_memory_fallback_survives_broken_nvidia(self):
         (self.home / '.local/state/agents/local-llm.json').unlink()
         self.fake('uname', 'print("Linux")')
@@ -180,6 +183,7 @@ else: raise SystemExit('Unexpected systemctl call')
         self.fake('brew', '''import os, sys
 if sys.argv[1:3] == ['services', 'info']:
     print('[{"name":"ollama","running":true,"pid":456,"status":"started"}]')
+elif sys.argv[1:2] == ['list']: pass
 else: raise SystemExit(int(os.environ.get('OLLAMA_TEST_CHANGE_EXIT', 0)))
 ''')
         p = self.run_script('ollama-ctl')
@@ -187,6 +191,63 @@ else: raise SystemExit(int(os.environ.get('OLLAMA_TEST_CHANGE_EXIT', 0)))
         self.assertIn('PID: 456', p.stdout)
         self.env['OLLAMA_TEST_CHANGE_EXIT'] = '8'
         self.assertEqual(self.run_script('ollama-ctl', 'restart').returncode, 8)
+
+    QUIT = 'osascript -e with timeout of 5 seconds -e quit app "Ollama" -e end timeout'
+
+    def app_fixture(self, brew=True, app=True, running=True, osascript_rc=0):
+        self.env['OLLAMA_TEST_OS'] = 'Darwin'
+        self.env['OLLAMA_CTL_WAIT_TRIES'] = '1'
+        self.env['OLLAMA_CTL_APPS_DIR'] = str(self.home / 'no-system-apps')
+        if app:
+            (self.home / 'Applications/Ollama.app').mkdir(parents=True)
+        if brew:
+            self.fake('brew', 'raise SystemExit(1)')
+        log = 'import os, sys\nfrom pathlib import Path\n' \
+              "Path(os.environ['HOME'], 'app-calls').open('a').write('%s ' + ' '.join(sys.argv[1:]) + '\\n')\n"
+        self.fake('open', log % 'open')
+        self.fake('osascript', log % 'osascript' + f'raise SystemExit({osascript_rc})\n')
+        self.fake('pkill', log % 'pkill')
+        # A real regex match over a process list that always holds a decoy.
+        procs = [(999, 'vim notes-ollama serve.md')]
+        if running:
+            procs.append((654, '/Applications/Ollama.app/Contents/Resources/ollama serve'))
+        self.fake('pgrep', f'import re, sys\nhits = [p for p, c in {procs!r} if re.search(sys.argv[-1], c)]\n'
+                           'print(*hits, sep="\\n") if hits else sys.exit(1)\n')
+
+    def app_calls(self):
+        return (self.home / 'app-calls').read_text().splitlines()
+
+    def test_app_mode_status_start_stop_restart(self):
+        self.app_fixture()
+        p = self.run_script('ollama-ctl')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('ollama: running', p.stdout)
+        self.assertIn('PID: 654', p.stdout)
+        self.assertEqual(self.run_script('ollama-ctl', 'start').returncode, 0)
+        self.assertEqual(self.app_calls(), ['open -g -a Ollama'])
+        self.assertEqual(self.run_script('ollama-ctl', 'stop').returncode, 0)
+        self.assertEqual(self.app_calls()[-1], self.QUIT)
+        self.assertEqual(self.run_script('ollama-ctl', 'restart').returncode, 0)
+        self.assertEqual(self.app_calls()[-2:], [self.QUIT, 'open -g -a Ollama'])
+
+    def test_app_mode_stop_falls_back_to_sigterm(self):
+        self.app_fixture(osascript_rc=1)
+        self.assertEqual(self.run_script('ollama-ctl', 'stop').returncode, 0)
+        self.assertEqual(self.app_calls(), [self.QUIT, 'pkill -TERM -x Ollama'])
+
+    def test_app_mode_without_brew_and_stopped_status(self):
+        self.app_fixture(brew=False, running=False)
+        self.fake('curl', 'raise SystemExit(7)')
+        p = self.run_script('ollama-ctl')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('ollama: stopped', p.stdout)
+
+    def test_no_install_found_fails(self):
+        self.app_fixture(app=False)
+        p = self.run_script('ollama-ctl', 'start')
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn('no Ollama install found', p.stderr)
+        self.assertFalse((self.home / 'app-calls').exists())
 
 
 class TmuxAndEnv(OllamaFixture):

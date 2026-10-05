@@ -1,8 +1,18 @@
--- Prefer the Homebrew/Linuxbrew LLVM binary; fall back to PATH. Absolute path so
--- it resolves even when nvim is launched with a minimal (GUI) PATH.
+-- clangd/install.sh puts a working clangd/clang-format in ~/.local/bin: a link
+-- into Homebrew's keg-only llvm, or the PyPI build where no keg can be poured
+-- (Intel macOS) or the keg no longer runs. Absolute so it resolves even when nvim
+-- is launched with a minimal (GUI) PATH. Then PATH, which the installer leaves
+-- alone when it already works; an unlinked keg only if the installer never ran.
 local function llvm_bin(name)
+	local own = vim.fn.expand("~/.local/bin/") .. name
+	if vim.uv.fs_stat(own) then
+		return own
+	end
+	if vim.fn.executable(name) == 1 then
+		return name
+	end
 	for _, dir in ipairs({
-		"/opt/homebrew/opt/llvm/bin", -- macOS Homebrew
+		"/opt/homebrew/opt/llvm/bin", -- macOS Homebrew (Apple Silicon)
 		"/home/linuxbrew/.linuxbrew/opt/llvm/bin", -- Linux Linuxbrew
 	}) do
 		local p = dir .. "/" .. name

@@ -131,7 +131,8 @@ def main():
     finally:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
+        # macOS reports EPERM rather than ESRCH once the group leader has exited.
+        except (ProcessLookupError, PermissionError):
             pass
         proc.wait()
 

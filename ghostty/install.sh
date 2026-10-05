@@ -44,13 +44,7 @@ install_ghostty_linux() {
 }
 
 if is_macos; then
-	# `brew --prefix` is only safe once brew is known to exist; on a failed
-	# bootstrap it errors out and the -d test would silently read as "missing".
-	if have brew; then
-		[ -d "$(brew --prefix)/Caskroom/ghostty" ] || brew install --cask ghostty
-	else
-		warn "brew unavailable — install ghostty manually"
-	fi
+	ensure_cask ghostty Ghostty.app
 elif is_linux; then
 	have ghostty || install_ghostty_linux
 else

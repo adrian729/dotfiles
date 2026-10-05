@@ -3,7 +3,7 @@
 . "$(dirname "$0")/../lib/common.sh"
 
 brew_shellenv 2>/dev/null
-ensure_node || { warn "Playwright requires Node.js 18+ and npm"; exit 1; }
+ensure_node 18 || { warn "Playwright requires Node.js 18+ and npm"; exit 1; }
 
 if ! have playwright-cli; then
 	npm install -g @playwright/cli@latest || { warn "Playwright CLI installation failed"; exit 1; }

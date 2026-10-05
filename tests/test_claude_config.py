@@ -23,7 +23,9 @@ class Fixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.home = Path(self.tmp.name)
+        # Resolve symlinked temp roots (macOS /var -> /private/var) so paths
+        # the scripts print through getcwd() or realpath match the fixture.
+        self.home = Path(self.tmp.name).resolve()
         self.bin = self.home / 'bin'
         self.bin.mkdir()
         self.env = {**os.environ, 'HOME': str(self.home), 'PATH': f'{self.bin}:/usr/bin:/bin',
@@ -140,6 +142,15 @@ run_remote_installer() { echo "unexpected installation" >&2; return 1; }
         self.assertFalse(target.is_symlink())
         self.assertEqual(json.loads(target.read_text()), {'portable': True})
         self.assertEqual(original.read_text(), '{"local":true}\n')
+        # A reinstall resets repo-managed keys but keeps the /model choice.
+        target.write_text(json.dumps({'portable': False, 'hooks': {'old': 1}, 'model': 'opus',
+                                      'modelSettings': {'claude-opus-5-5': {'effortLevel': 'xhigh'}}}))
+        p = subprocess.run(['bash', str(package / 'install.sh')], env=self.env,
+                           text=True, capture_output=True, timeout=5)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(target.read_text()), {
+            'portable': True, 'model': 'opus',
+            'modelSettings': {'claude-opus-5-5': {'effortLevel': 'xhigh'}}})
 
     def test_worktree_names_and_failed_claude_exit(self):
         repo = self.repo()
@@ -366,9 +377,12 @@ for line in sys.stdin:
         self.assertEqual(result['content'][0]['text'], 'hello world')
 
     def test_timeouts_eof_rpc_errors_and_invalid_input(self):
-        for mode, code in [('partial', 124), ('flood', 124), ('eof', 6), ('bad_params', 6)]:
+        # Only the modes meant to time out get a short timeout; under load the
+        # others could otherwise time out before the fake agent has started.
+        for mode, code, timeout in [('partial', 124, '0.1'), ('flood', 124, '0.1'),
+                                    ('eof', 6, '10'), ('bad_params', 6, '10')]:
             self.env['ACP_MODE'] = mode
-            p = self.call(timeout='0.1')
+            p = self.call(timeout=timeout)
             self.assertEqual(p.returncode, code, p.stderr)
         self.env.pop('ACP_MODE')
         self.assertEqual(self.call([{'id': 1, 'method': 'invalid'}]).returncode, 6)
@@ -419,9 +433,14 @@ class Statusline(Fixture):
         self.env['CURL_LOG'] = str(log)
         self.fake('curl', 'import os\nwith open(os.environ["CURL_LOG"], "a") as f: f.write("call\\n")\nraise SystemExit(22)')
         self.render({})
+        # The fetch runs detached; wait for it rather than for a fixed time,
+        # which a loaded machine overruns.
+        deadline = time.monotonic() + 10
+        while not log.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
         time.sleep(0.15)
         self.render({})
-        time.sleep(0.15)
+        time.sleep(0.3)
         self.assertEqual(log.read_text().splitlines(), ['call'])
         self.assertEqual((self.home / '.cache/ai-status/credit-currency').read_text(), 'EUR\n')
 

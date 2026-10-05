@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manage the local Homebrew (macOS) or systemd (Linux) Ollama service.
+# Manage the local Ollama server: Homebrew service or Ollama.app (macOS), systemd (Linux).
 set -eo pipefail
 
 usage() {
@@ -7,7 +7,8 @@ usage() {
 Usage: ollama-ctl [status|start|stop|restart|log]
 
 No argument shows local service status, daemon PID/RSS, and loaded models.
-macOS uses Homebrew services; Linux prefers a user systemd unit if present.
+macOS uses Homebrew services when the ollama formula is installed, otherwise the
+Ollama.app menu-bar app (Intel Macs). Linux prefers a user systemd unit if present.
 log tails the service log. API details use the default local port 11434.
 USAGE
 }
@@ -23,21 +24,69 @@ SCOPE=()
 SUDO=()
 case "$(uname -s)" in
     Darwin)
-        command -v brew >/dev/null 2>&1 || fail 'Homebrew is required to manage this service'
-        command -v jq >/dev/null 2>&1 || fail 'jq is required; run ollama/install.sh'
-        svc_change() { brew services "$1" ollama; }
-        svc_info() {
-            local info
-            info=$(brew services info ollama --json) || return
-            jq -e 'length == 1 and (.[0].running | type) == "boolean"' >/dev/null <<<"$info" || return 1
-            STATE=$(jq -r '.[0] | if .running then "active" elif .status == "error" then "failed" else "inactive" end' <<<"$info")
-            PID=$(jq -r '.[0].pid // 0' <<<"$info")
-        }
-        svc_log() {
-            local prefix
-            prefix=$(brew --prefix) || return
-            tail -f "$prefix/var/log/ollama.log"
-        }
+        APP=''
+        for dir in "${OLLAMA_CTL_APPS_DIR:-/Applications}" "$HOME/Applications"; do
+            if [ -d "$dir/Ollama.app" ]; then APP=$dir/Ollama.app; break; fi
+        done
+        if command -v brew >/dev/null 2>&1 && brew list --formula ollama >/dev/null 2>&1; then
+            command -v jq >/dev/null 2>&1 || fail 'jq is required; run ollama/install.sh'
+            svc_change() { brew services "$1" ollama; }
+            svc_info() {
+                local info
+                info=$(brew services info ollama --json) || return
+                jq -e 'length == 1 and (.[0].running | type) == "boolean"' >/dev/null <<<"$info" || return 1
+                STATE=$(jq -r '.[0] | if .running then "active" elif .status == "error" then "failed" else "inactive" end' <<<"$info")
+                PID=$(jq -r '.[0].pid // 0' <<<"$info")
+            }
+            svc_log() {
+                local prefix
+                prefix=$(brew --prefix) || return
+                tail -f "$prefix/var/log/ollama.log"
+            }
+        elif [ -n "$APP" ]; then
+            # Anchored: the app runs .../Contents/Resources/ollama serve, and a bare
+            # 'ollama serve' would also match an editor with notes-ollama serve.md open.
+            app_pid() { pgrep -f '(^|/)ollama serve( |$)' 2>/dev/null | head -n 1 || true; }
+            # Poll up to OLLAMA_CTL_WAIT_TRIES quarter-seconds for the server to appear ("up") or exit ("down").
+            app_wait() {
+                local i
+                for ((i = 0; i < ${OLLAMA_CTL_WAIT_TRIES:-20}; i++)); do
+                    if [ "$1" = up ] && [ -n "$(app_pid)" ]; then return 0; fi
+                    if [ "$1" = down ] && [ -z "$(app_pid)" ]; then return 0; fi
+                    sleep 0.25
+                done
+                echo "ollama-ctl: the server is not $1 yet; the status below may lag" >&2
+            }
+            # A hidden Ollama.app answers AppleScript's quit with "User cancelled"
+            # (-128); SIGTERM shuts down the app and its server cleanly. The
+            # timeout bounds a hung app, which would otherwise block for minutes.
+            app_stop() {
+                osascript -e 'with timeout of 5 seconds' -e 'quit app "Ollama"' -e 'end timeout' \
+                    >/dev/null 2>&1 || pkill -TERM -x Ollama || true
+                app_wait down
+            }
+            app_start() { open -g -a Ollama; app_wait up; }
+            svc_change() {
+                case "$1" in
+                    start) app_start ;;
+                    stop) app_stop ;;
+                    restart) app_stop; app_start ;;
+                esac
+            }
+            svc_info() {
+                PID=$(app_pid)
+                if [ -n "$PID" ]; then
+                    STATE=active
+                elif command -v curl >/dev/null 2>&1 && curl -fsS --max-time 1 http://localhost:11434/api/version >/dev/null 2>&1; then
+                    STATE=active; PID=0
+                else
+                    STATE=inactive; PID=0
+                fi
+            }
+            svc_log() { tail -f "$HOME/.ollama/logs/server.log"; }
+        else
+            fail "no Ollama install found; run ollama/install.sh or use 'ollama serve'"
+        fi
         ;;
     Linux)
         command -v systemctl >/dev/null 2>&1 || fail "systemd is unavailable; use 'ollama serve'"

@@ -182,8 +182,10 @@ enabled = false
         shutil.copytree(CODEX, package)
         self.write('farm/lib/common.sh', '''
 brew_shellenv() { :; }
+brew_can_pour() { command -v brew >/dev/null; }
 ensure_cmd() { command -v "$1" >/dev/null; }
 ensure_node() { return 1; }
+ensure_uv() { command -v uv >/dev/null; }
 have() { command -v "$1" >/dev/null; }
 info() { echo "$*"; }
 warn() { echo "$*" >&2; }
@@ -215,6 +217,19 @@ if sys.argv[1:] == ['--prefix', 'python']:
 elif sys.argv[1:] != ['install', 'python']:
     raise SystemExit('Unexpected brew call')
 ''')
+        p = subprocess.run(['bash', str(package / 'install.sh')], env=self.env, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(tomllib.loads(target.read_text())['mcp_servers']['local']['command'], 'keep')
+
+        # Without a pourable python (Intel macOS), a uv-managed one runs the merge.
+        (self.bin / 'brew').unlink()
+        self.fake('uv', f'''import os, sys
+args = sys.argv[1:]
+assert args[:5] == ['run', '--quiet', '--no-project', '--python', '3.13'], args
+assert args[5] == 'python', args
+os.execv({sys.executable!r}, [{sys.executable!r}, *args[6:]])
+''')
+        target.write_text('[mcp_servers.local]\ncommand = "keep"\n')
         p = subprocess.run(['bash', str(package / 'install.sh')], env=self.env, capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(tomllib.loads(target.read_text())['mcp_servers']['local']['command'], 'keep')

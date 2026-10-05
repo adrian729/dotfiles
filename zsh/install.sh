@@ -16,39 +16,25 @@ if ! have zsh; then
 	fi
 fi
 
-MISSING=()
-command -v bat &>/dev/null || MISSING+=(bat)
-command -v eza &>/dev/null || MISSING+=(eza)
-command -v fd &>/dev/null || MISSING+=(fd)
-command -v fzf &>/dev/null || MISSING+=(fzf)
-command -v jq &>/dev/null || MISSING+=(jq)
-command -v rg &>/dev/null || MISSING+=(ripgrep)
-command -v starship &>/dev/null || MISSING+=(starship)
-command -v zoxide &>/dev/null || MISSING+=(zoxide)
-if [ ${#MISSING[@]} -gt 0 ]; then
-	if have brew; then
-		brew install "${MISSING[@]}"
-	else
-		warn "brew unavailable — missing: ${MISSING[*]}"
-	fi
-fi
+# One at a time, so each tool can take its own route: a bottle, its release
+# build, or (eza on a Mac without either) cargo.
+for spec in bat eza fd fzf jq rg:ripgrep starship zoxide; do
+	ensure_cmd "${spec%%:*}" "${spec#*:}" || warn "${spec%%:*} unavailable — the shell skips what needs it"
+done
 
-# fzf's key-binding installer lives inside the brew keg. An fzf that came from
-# apt has no such script (its bindings ship in /usr/share/doc/fzf/examples, and
-# .zshrc already sources that path), so only run this for a brew fzf.
-if command -v fzf &>/dev/null && [ ! -f ~/.fzf.zsh ] && have brew &&
-	fzf_prefix=$(brew --prefix fzf 2>/dev/null) && [ -x "$fzf_prefix/install" ]; then
-	echo "Installing fzf key bindings and completion..."
-	"$fzf_prefix"/install --key-bindings --completion --no-fish --no-update-rc
-fi
+# claude-agent-acp needs node 22+. Owned by the shared helper so
+# claude/install.sh, which runs earlier, gets the same nvm node.
+ensure_node 22 || warn "node/npm unavailable — nvm-backed tooling will not work"
 
-# nvm + node. Owned by the shared helper so claude/install.sh — which runs
-# earlier and needs npm for claude-agent-acp — gets the same node rather than
-# racing a second one onto PATH.
-ensure_node || warn "node/npm unavailable — nvm-backed tooling will not work"
-
-mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/zsh"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/zsh"
+mkdir -p "$state_dir"
 mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
+
+# .zshrc keeps history under XDG_STATE_HOME; start it from the old file so
+# history search survives the move.
+if [ ! -s "$state_dir/history" ] && [ -s "$HOME/.zsh_history" ]; then
+	cp "$HOME/.zsh_history" "$state_dir/history" && chmod 600 "$state_dir/history"
+fi
 
 # starship's prompt, `eza --icons`, lf's icons and the tmux status bar are all
 # Nerd Font glyphs — without a patched font every one of them renders as tofu.

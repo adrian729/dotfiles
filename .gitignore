@@ -8,3 +8,5 @@ tmux-client-*.log
 .playwright-cli/
 
 .stow_blacklist.local
+
+__pycache__/

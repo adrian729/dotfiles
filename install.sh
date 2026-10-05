@@ -28,7 +28,7 @@ if [ -z "$stow_all" ] && [ ! -t 0 ]; then
 	exit 1
 fi
 
-brew_bootstrap || echo "⚠️  Continuing without Homebrew — most package installers will fail." >&2
+brew_bootstrap || echo "⚠️  Continuing without Homebrew — tools without an upstream release build will be skipped." >&2
 
 # stow is the one hard requirement: without it nothing gets linked at all, so
 # fall back to apt when the Homebrew bootstrap did not work out.
@@ -147,7 +147,12 @@ stow_pkg() {
 	# config.json): each tool then writes its state into the repo, dirtying it,
 	# and their .stow-local-ignore entries do not help — ignoring a file stops
 	# stow linking it individually, not the parent fold that exposes it anyway.
-	if stow --no-folding -t "$HOME" "$dir"; then
+	#
+	# -R (restow) because --no-folding alone leaves a fold made by an older
+	# install in place: stow sees the directory link as already its own. Restow
+	# unstows first, which removes such a fold — and links to files since
+	# deleted from the repo — before stowing file by file.
+	if stow --no-folding -R -t "$HOME" "$dir"; then
 		echo "✅ $dir stowed successfully!"
 	else
 		echo "❌ Failed to stow $dir (see warnings above)."

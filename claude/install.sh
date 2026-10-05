@@ -44,13 +44,10 @@ fi
 # every ACP chat and inline request dies at spawn with ENOENT. npm-only: there is
 # no brew formula, and neither the cask nor claude.ai/install.sh bundles it.
 #
-# ensure_node rather than a bare `command -v npm`: npm only happens to be on
-# PATH here because the opencode package installs first and brew's `opencode`
-# formula depends on node. Blacklist opencode, or run this script on its own,
-# and the bare check silently skips the install — this makes the dependency
-# explicit instead of load-bearing on the order of an array in install.sh.
+# The package requires node 22+; ensure_node brings an older nvm setup up to
+# the current LTS rather than letting npm install it on an unsupported node.
 if ! command -v claude-agent-acp &>/dev/null; then
-	if ensure_node; then
+	if ensure_node 22; then
 		echo "Installing claude-agent-acp (ACP bridge for nvim)..."
 		npm install -g @agentclientprotocol/claude-agent-acp ||
 			echo "claude/install.sh: claude-agent-acp install failed — nvim ACP chat and inline will not work" >&2
@@ -102,12 +99,25 @@ fi
 
 # Copy settings.json as a regular file (not symlink), so Claude Code can
 # modify it freely without dirtying the dotfiles repo.  Re-run install.sh
-# to reset from the repo version.
+# to reset from the repo version — except the model and effort picked with
+# /model, which are this machine's choice and which the repo does not set.
 settings_target="$HOME/.claude/settings.json"
+settings_source="$(dirname "$0")/.claude/settings.json"
 tmp_settings=""
+copy_settings() {
+    # Without jq nothing can be merged; the repo copy alone still works.
+    have jq || { cat "$settings_source"; return; }
+    jq -e . "$settings_source" >/dev/null 2>&1 || return 1
+    if jq -e 'type == "object"' "$settings_target" >/dev/null 2>&1; then
+        jq -s '.[1] + (.[0] | {model, modelSettings, effortLevel}
+            | with_entries(select(.value != null)))' "$settings_target" "$settings_source"
+    else
+        cat "$settings_source"
+    fi
+}
 if ! { mkdir -p "$(dirname "$settings_target")" &&
     tmp_settings=$(mktemp "$settings_target.XXXXXX") &&
-    /bin/cp "$(dirname "$0")/.claude/settings.json" "$tmp_settings" &&
+    copy_settings > "$tmp_settings" &&
     chmod 644 "$tmp_settings" && mv "$tmp_settings" "$settings_target"; }; then
     rm -f "$tmp_settings"
     echo "claude/install.sh: failed to copy settings.json — leaving existing $settings_target untouched" >&2

@@ -42,12 +42,19 @@ export EZA_CONFIG_DIR="$XDG_CONFIG_HOME/eza"
 [[ -f "$HOME/.claude/claude.env" ]] && . "$HOME/.claude/claude.env"
 
 # ---------- PATH ----------
-export PATH="$HOME/.local/bin:$PATH"
-export PATH="$HOME/.local/scripts:$PATH"
-export PATH="$HOME/.opencode/bin:$PATH"
-# ---------- Homebrew ----------
-if [[ -d /opt/homebrew/bin ]]; then
-	export PATH="/opt/homebrew/bin:$PATH"
-elif [[ -d /home/linuxbrew/.linuxbrew/bin ]]; then
-	export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
-fi
+# Personal bins first, then Homebrew, then the system. A function because on
+# macOS /etc/zprofile runs path_helper after this file and moves the system
+# directories back in front for login shells; .zprofile re-applies it with
+# --force. Without it, a Homebrew already on PATH keeps its place, so a child
+# shell does not push Homebrew back ahead of the nvm node its parent chose.
+typeset -U path
+_dotfiles_path() {
+  local p brew_prefix
+  for p in /opt/homebrew /usr/local /home/linuxbrew/.linuxbrew "$HOME/.linuxbrew"; do
+    [[ -x $p/bin/brew ]] && { brew_prefix=$p; break; }
+  done
+  local -a brew_dirs=(${brew_prefix:+$brew_prefix/bin} ${brew_prefix:+$brew_prefix/sbin})
+  [[ $1 == --force ]] || brew_dirs=(${brew_dirs:|path})
+  path=("$HOME/.local/scripts" "$HOME/.local/bin" "$HOME/.opencode/bin" $brew_dirs $path)
+}
+_dotfiles_path

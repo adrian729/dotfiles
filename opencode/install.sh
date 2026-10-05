@@ -6,13 +6,10 @@ brew_shellenv 2>/dev/null
 
 ensure_cmd jq
 
-# The opencode formula has x86_64_linux/arm64_linux bottles, so brew covers both
-# platforms; fall back to opencode's own installer if brew never came up.
-if ! have opencode; then
-	ensure_cmd opencode ||
-		run_remote_installer https://opencode.ai/install ||
-		warn "opencode install failed — see https://opencode.ai/docs"
-fi
+# A bottle where Homebrew has one, else opencode's own installer (into
+# ~/.opencode/bin, already on the dotfiles PATH) — never a source build, which
+# needs bun, zig and rust.
+ensure_cmd opencode || warn "opencode install failed — see https://opencode.ai/docs"
 
 config_target="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json"
 config_dir=$(dirname "$config_target")

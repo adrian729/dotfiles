@@ -14,25 +14,38 @@ nvim_ge_012() {
   [ "$major" -gt 0 ] || [ "$minor" -ge 12 ]
 }
 
-nvim_present=0
-command -v nvim &>/dev/null && nvim_present=1
+# Neovim 0.12+: Homebrew when it can pour it, else the official release build
+# (~/.local/opt/nvim, linked into ~/.local/bin ahead of an older brew nvim).
+if ! nvim_ge_012; then
+  if brew_can_pour neovim; then
+    if brew list --formula neovim &>/dev/null; then
+      brew upgrade neovim
+    else
+      brew install neovim
+    fi
+  fi
+  hash -r
+  nvim_ge_012 || prebuilt_install nvim
+  hash -r
+fi
 
-MISSING=()
-command -v lua-language-server &>/dev/null || MISSING+=(lua-language-server)
-command -v marksman &>/dev/null || MISSING+=(marksman)
-command -v nvim &>/dev/null || MISSING+=(neovim)
-command -v rust-analyzer &>/dev/null || MISSING+=(rust-analyzer)
-command -v stylua &>/dev/null || MISSING+=(stylua)
-command -v rg &>/dev/null || MISSING+=(ripgrep)
-command -v ruff &>/dev/null || MISSING+=(ruff)
-command -v ty &>/dev/null || MISSING+=(ty)
-command -v tree-sitter &>/dev/null || MISSING+=(tree-sitter-cli)
-if [ ${#MISSING[@]} -gt 0 ]; then
-  if have brew; then
-    brew install "${MISSING[@]}" || install_status=1
+for spec in lua-language-server marksman stylua rg:ripgrep ruff ty tree-sitter:tree-sitter-cli; do
+  ensure_cmd "${spec%%:*}" "${spec#*:}" || install_status=1
+done
+
+# rustup puts a rust-analyzer proxy on PATH that fails until the component is
+# added, so test that it runs rather than that it exists.
+if ! rust-analyzer --version &>/dev/null; then
+  if have rustup && rustup component add rust-analyzer &>/dev/null &&
+    rust-analyzer --version &>/dev/null; then
+    :
   else
-    warn "brew unavailable — missing: ${MISSING[*]}"
-    install_status=1
+    # Release build into ~/.local/bin, which is ahead of ~/.cargo/bin here.
+    if brew_can_pour rust-analyzer; then
+      brew install rust-analyzer
+    else
+      prebuilt_install rust-analyzer
+    fi || install_status=1
   fi
 fi
 
@@ -54,17 +67,31 @@ done
 ensure_clipboard || install_status=1
 
 if command -v nvim &>/dev/null && ! nvim_ge_012; then
-  cur="$(nvim --version | head -1)"
-  if [ "$nvim_present" -eq 1 ]; then
-    echo "WARNING: existing $cur predates 0.12 — this config needs 0.12+. Upgrade with: brew upgrade neovim" >&2
-  else
-    echo "WARNING: installed $cur predates 0.12 — this config needs 0.12+." >&2
-  fi
+  echo "WARNING: $(command -v nvim) is $(nvim --version | head -1); this config needs 0.12+." >&2
   install_status=1
 fi
 
 if command -v nvim &>/dev/null && nvim_ge_012; then
   echo "Installing Neovim plugins (lazy.nvim)..."
+  # Plugins left in ~/.local/share/nvim/lazy by an older setup stay at their
+  # old commits unless restored, and lazy records whatever is checked out
+  # whenever it installs a missing plugin — so a plain first start would both
+  # run stale plugins (nvim-treesitter before its rewrite) and write their
+  # commits into the repo's lockfile. Install what is missing, put the
+  # lockfile back, restore every plugin to it, and leave the lockfile as found.
+  lockfile="$(dirname "$0")/.config/nvim/lazy-lock.json"
+  saved_lock=$(mktemp "${TMPDIR:-/tmp}/lazy-lock.XXXXXX") && cp "$lockfile" "$saved_lock" || saved_lock=""
+  nvim --headless "+Lazy! restore" +qa >/dev/null 2>&1
+  if [ -n "$saved_lock" ]; then
+    cp "$saved_lock" "$lockfile"
+    nvim --headless "+Lazy! restore" +qa >/dev/null 2>&1 || install_status=1
+    cp "$saved_lock" "$lockfile"
+    rm -f "$saved_lock"
+  fi
+  # nvim-treesitter stages each parser download in the cache and renames it
+  # into place; one interrupted by an exiting nvim (the restores above start
+  # downloads) leaves a directory the next rename cannot replace.
+  rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/nvim/tree-sitter-"*
   DOTFILES_NVIM_BOOTSTRAP=1 nvim --headless -c "qa" 2>&1 || install_status=1
 
   # Repair plugins left without a binary by the old autoload build callback.

@@ -9,18 +9,15 @@ brew_shellenv 2>/dev/null
 # every package detects the platform the same way.
 is_macos || { echo "bettercmdtab is macOS-only, skipping"; exit 0; }
 
-# Test the Caskroom entry, not `command -v`: the cask installs an .app bundle
-# and puts no binary on PATH, so a `command -v bettercmdtab` guard is always
-# false and reinstalls the cask on every run — which then kills and relaunches
-# the running app for no reason.
+# Test for the app, not `command -v`: the cask installs an .app bundle and
+# puts no binary on PATH, so a `command -v bettercmdtab` guard is always false
+# and reinstalls the cask on every run — which then kills and relaunches the
+# running app for no reason.
 #
 # Warn rather than exit: the config copy and `defaults write` calls below are
-# still worth running on a machine where only the brew install is unavailable.
-if have brew; then
-	[ -d "$(brew --prefix)/Caskroom/bettercmdtab" ] || brew install --cask bettercmdtab
-else
-	warn "brew unavailable — install bettercmdtab manually; still applying its config"
-fi
+# still worth running on a machine where only the app install failed.
+ensure_cask bettercmdtab BetterCmdTab.app ||
+	warn "BetterCmdTab not installed; still applying its config"
 
 # Copy config and schema as regular files so app writes stay outside the repo.
 # Re-run install.sh to reset from the repo version.

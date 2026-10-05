@@ -17,13 +17,7 @@ is_macos || {
 	exit 0
 }
 
-if have brew; then
-	# `brew --prefix` errors when brew is missing, which would make the -d test
-	# read as "already installed" and silently skip the install.
-	[ -d "$(brew --prefix)/Caskroom/kitty" ] || brew install --cask kitty
-else
-	warn "brew unavailable — install kitty manually"
-fi
+ensure_cask kitty kitty.app
 
 # kitty.conf asks for the plain "Fira Code" family; the Nerd Font build
 # supplies the glyphs starship/eza/lf/tmux need via kitty's font fallback.
