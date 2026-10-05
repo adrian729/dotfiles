@@ -559,6 +559,38 @@ if os.environ.get('STOW_CONFLICT'):
         self.assertEqual(p.stdout.splitlines(), ["ls='eza --icons'", "grep='rg --color=auto'"])
 
 
+class TmuxInstall(DotfilesFixture):
+    def test_stale_catppuccin_clone_moves_to_the_pinned_release(self):
+        # install_plugins never updates a clone; a 1.x catppuccin ignores this
+        # tmux.conf's options and renders the status bar as raw style text.
+        farm = self.home / 'farm'
+        shutil.copytree(ROOT / 'tmux', farm / 'tmux', symlinks=True)
+        self.write('farm/lib/common.sh', 'brew_shellenv() { :; }; ensure_cmd() { :; }\n'
+                   'ensure_clipboard() { :; }; warn() { echo "$*" >&2; }\n')
+        self.write('.tmux/plugins/tpm/bin/install_plugins', '#!/bin/sh\n').chmod(0o755)
+        pinned = next(w for w in (ROOT / 'tmux/.config/tmux/tmux.conf').read_text().split()
+                      if w.startswith('catppuccin/tmux#')).split('#')[1]
+        upstream = self.home / 'upstream'
+        upstream.mkdir()
+        self.git(upstream, 'init', '-q')
+        for tag in ('v1.0.1', pinned):
+            self.git(upstream, '-c', 'user.name=t', '-c', 'user.email=t@t',
+                     'commit', '-q', '--allow-empty', '-m', tag)
+            self.git(upstream, 'tag', tag)
+        clone = self.home / '.tmux/plugins/tmux'
+        subprocess.run(['git', 'clone', '-q', '-b', 'v1.0.1', str(upstream), str(clone)],
+                       env=self.env, check=True, capture_output=True)
+        for expected in ('Moving catppuccin', None):
+            p = self.run_command('bash', farm / 'tmux/install.sh')
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertEqual(self.git(clone, 'rev-parse', 'HEAD'),
+                             self.git(upstream, 'rev-parse', pinned))
+            if expected:
+                self.assertIn(expected, p.stdout)
+            else:
+                self.assertNotIn('Moving catppuccin', p.stdout)
+
+
 class Llvm(DotfilesFixture):
     def test_dead_keg_link_is_replaced_and_foreign_files_kept(self):
         bin_dir = self.home / '.local/bin'

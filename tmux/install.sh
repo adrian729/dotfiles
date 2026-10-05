@@ -17,6 +17,20 @@ if [ ! -d ~/.tmux/plugins/tpm ]; then
 	git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
 fi
 
+# install_plugins only clones missing plugins and never moves an existing one.
+# A catppuccin clone older than the version tmux.conf pins does not know the
+# options it uses, and renders the status bar as raw style text, so move it.
+ctp_dir="$HOME/.tmux/plugins/tmux"
+ctp_ref=$(grep -o 'catppuccin/tmux#[^[:space:]\\]*' "$(dirname "$0")/.config/tmux/tmux.conf")
+ctp_ref=${ctp_ref#*#}
+if [ -n "$ctp_ref" ] && [ -d "$ctp_dir/.git" ] &&
+	[ "$(git -C "$ctp_dir" rev-parse HEAD)" != \
+		"$(git -C "$ctp_dir" rev-parse -q --verify "refs/tags/$ctp_ref^{commit}")" ]; then
+	echo "Moving catppuccin to $ctp_ref..."
+	git -C "$ctp_dir" fetch -q origin tag "$ctp_ref" && git -C "$ctp_dir" checkout -q "$ctp_ref" ||
+		warn "could not move catppuccin to $ctp_ref — delete $ctp_dir and re-run"
+fi
+
 # tmux.conf's @tpm_plugins are fetched by prefix+I normally; do it here so a
 # fresh machine (or an update) gets catppuccin/cpu/battery/etc. without anyone
 # remembering to hit prefix+I. install_plugins is idempotent and offline-safe,
