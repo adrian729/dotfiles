@@ -566,7 +566,8 @@ class TmuxInstall(DotfilesFixture):
         farm = self.home / 'farm'
         shutil.copytree(ROOT / 'tmux', farm / 'tmux', symlinks=True)
         self.write('farm/lib/common.sh', 'brew_shellenv() { :; }; ensure_cmd() { :; }\n'
-                   'ensure_clipboard() { :; }; warn() { echo "$*" >&2; }\n')
+                   'ensure_clipboard() { :; }; warn() { echo "$*" >&2; }\n'
+                   'is_macos() { [ -n "$MACOS" ]; }\n')
         self.write('.tmux/plugins/tpm/bin/install_plugins', '#!/bin/sh\n').chmod(0o755)
         pinned = next(w for w in (ROOT / 'tmux/.config/tmux/tmux.conf').read_text().split()
                       if w.startswith('catppuccin/tmux#')).split('#')[1]
@@ -589,6 +590,21 @@ class TmuxInstall(DotfilesFixture):
                 self.assertIn(expected, p.stdout)
             else:
                 self.assertNotIn('Moving catppuccin', p.stdout)
+
+    def test_macos_frees_ctrl_space_for_the_tmux_prefix(self):
+        self.write('farm/lib/common.sh', 'brew_shellenv() { :; }; ensure_cmd() { :; }\n'
+                   'ensure_clipboard() { :; }; warn() { echo "$*" >&2; }\n'
+                   'is_macos() { [ -n "$MACOS" ]; }\n')
+        shutil.copytree(ROOT / 'tmux', self.home / 'farm/tmux', symlinks=True)
+        self.write('.tmux/plugins/tpm/bin/install_plugins', '#!/bin/sh\n').chmod(0o755)
+        self.fake('defaults', "import sys; open(__import__('os').environ['HOME'] + '/defaults', 'a')"
+                              ".write(' '.join(sys.argv[1:]) + '\\n')")
+        for macos, expected in (('', False), ('1', True)):
+            self.env['MACOS'] = macos
+            p = self.run_command('bash', self.home / 'farm/tmux/install.sh')
+            self.assertEqual(p.returncode, 0, p.stderr)
+            calls = (self.home / 'defaults').read_text() if (self.home / 'defaults').exists() else ''
+            self.assertEqual('AppleSymbolicHotKeys -dict-add 60 { enabled = 0;' in calls, expected)
 
 
 class Llvm(DotfilesFixture):

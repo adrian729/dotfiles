@@ -8,6 +8,18 @@ ensure_cmd tmux
 ensure_cmd fzf
 ensure_cmd bc
 
+# The tmux prefix is C-Space, which macOS takes by default for "Select the
+# previous input source" (hotkey 60) once a second keyboard layout exists, so
+# the key never reaches the terminal. Ctrl+Option+Space (61) still switches.
+# The running session picks this up after logging out and back in.
+if is_macos; then
+	defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 60 \
+		'{ enabled = 0; value = { parameters = (32, 49, 262144); type = standard; }; }' &&
+		/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u \
+			>/dev/null 2>&1 ||
+		warn "could not free Ctrl+Space from macOS input-source switching"
+fi
+
 # tmux.conf binds copy-mode `y` to ~/.local/scripts/tmux-clipboard, which needs
 # one of pbcopy/wl-copy/xclip/xsel to exist or copying silently does nothing.
 ensure_clipboard
