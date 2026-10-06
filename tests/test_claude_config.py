@@ -408,13 +408,112 @@ for line in sys.stdin:
 
 
 class Statusline(Fixture):
-    def render(self, payload):
-        p = subprocess.run(['bash', str(CLAUDE / '.claude/statusline.sh')], env=self.env,
-                           cwd=self.home, input=json.dumps(payload), text=True,
-                           capture_output=True, timeout=5)
+    # Must match LAYOUT_MARGIN in statusline.sh.
+    MARGIN = 4
+
+    SESSION = '0123abcd-4567-89ef-0123-456789abcdef'
+
+    def render(self, payload, columns=200, path=None):
+        # Compact separators, as Claude Code sends it; the render-reuse key relies on them.
+        env = {**self.env, 'COLUMNS': str(columns)}
+        if path is not None:
+            env['PATH'] = path
+        p = subprocess.run([shutil.which('bash'), str(CLAUDE / '.claude/statusline.sh')], env=env,
+                           cwd=self.home, input=json.dumps(payload, separators=(',', ':')),
+                           text=True, capture_output=True, timeout=5)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(p.stderr, '')
         return re.sub(r'\x1b\[[0-9;]*m', '', p.stdout)
+
+    def wait_for(self, path, seconds=10):
+        deadline = time.monotonic() + seconds
+        while not path.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        return path.exists()
+
+    def test_idle_timer_runs_reuse_the_render_until_the_width_changes(self):
+        repo = self.repo()
+        payload = {**self.full_payload(repo), 'cost': {'total_cost_usd': 1.5, 'total_duration_ms': 1000}}
+        first = self.render(payload, 200)
+        # Only the session clock moved: served from the saved render, so it needs neither jq
+        # nor git (PATH holds only the fixture fakes).
+        payload['cost']['total_duration_ms'] = 3000
+        self.assertEqual(self.render(payload, 200, path=str(self.bin)), first)
+        narrow = self.render(payload, 60)
+        self.assertGreater(len(narrow.splitlines()), len(first.splitlines()))
+
+    def test_idle_sessions_do_not_poll_the_usage_endpoint(self):
+        self.write('.claude/.credentials.json', {'claudeAiOauth': {'accessToken': 'fixture-token'}})
+        log = self.home / 'curl-log'
+        self.env['CURL_LOG'] = str(log)
+        self.fake('curl', 'import os\nwith open(os.environ["CURL_LOG"], "a") as f: f.write("call\\n")\nraise SystemExit(22)')
+        payload = {'session_id': self.SESSION, 'cost': {'total_duration_ms': 1000}}
+        body = json.dumps(payload, separators=(',', ':')).replace(':1000', ':')
+        # A saved render with this exact key, too old to reuse: the session is idle.
+        self.write(f'.cache/ai-status/render-{self.SESSION}', f'0\n200|{body}\nstale\n')
+        self.render(payload)
+        self.assertFalse(self.wait_for(log, 1))
+        payload['context_window'] = {'used_percentage': 5}
+        self.render(payload)
+        self.assertTrue(self.wait_for(log))
+
+    def full_payload(self, repo):
+        now = int(time.time())
+        return {'model': {'display_name': 'Opus 5.5'}, 'workspace': {'current_dir': str(repo)},
+                'session_id': self.SESSION,
+                'effort': {'level': 'high'}, 'thinking': {'enabled': True},
+                'context_window': {'used_percentage': 42.7}, 'cost': {'total_cost_usd': 1.5},
+                'rate_limits': {'five_hour': {'used_percentage': 30, 'resets_at': now + 9000},
+                                'seven_day': {'used_percentage': 12, 'resets_at': now + 3 * 86400 + 60}}}
+
+    def test_layout_fills_wide_panes_and_wraps_narrow_ones(self):
+        repo = self.repo()
+        (repo / 'file').write_text('changed\n')
+        payload = self.full_payload(repo)
+        self.assertEqual(len(self.render(payload, 250).splitlines()), 1)
+        for columns in (120, 80, 60, 45):
+            with self.subTest(columns=columns):
+                lines = self.render(payload, columns).splitlines()
+                self.assertGreater(len(lines), 1)
+                for line in lines:
+                    self.assertLessEqual(len(line), columns - self.MARGIN, line)
+                text = '\n'.join(lines)
+                for part in ('[Opus 5.5]', '✱high', '42%', 'fixture-main', '●1', 'w12% 3d', 'h30%'):
+                    self.assertIn(part, text)
+                self.assertIn('0123abcd', text)
+
+    def test_home_directory_is_abbreviated(self):
+        repo = self.repo()
+        output = self.render({'workspace': {'current_dir': str(repo)}})
+        self.assertIn('~/repo', output)
+        self.assertNotIn(str(self.home), output)
+
+    def test_rolled_over_windows_show_empty(self):
+        past = int(time.time()) - 60
+        self.write('.cache/ai-status/statusline-rate-limits', f'70|60|{past}|{past}\n')
+        output = self.render({})
+        self.assertIn('h0%', output)
+        self.assertIn('w0%', output)
+
+    def test_usage_token_never_reaches_disk_or_argv(self):
+        self.write('.claude/.credentials.json', {'claudeAiOauth': {'accessToken': 'fixture-token'}})
+        log = self.home / 'curl-log.json'
+        self.env['CURL_LOG'] = str(log)
+        self.fake('curl', 'import json, os, sys\n'
+                          'record = {"argv": sys.argv[1:], "stdin": sys.stdin.read()}\n'
+                          'tmp = os.environ["CURL_LOG"] + ".tmp"\n'
+                          'open(tmp, "w").write(json.dumps(record))\n'
+                          'os.rename(tmp, os.environ["CURL_LOG"])\n'
+                          'raise SystemExit(22)')
+        self.render({})
+        deadline = time.monotonic() + 10
+        while not log.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        record = json.loads(log.read_text())
+        self.assertIn('Authorization: Bearer fixture-token', record['stdin'])
+        self.assertFalse(any('fixture-token' in arg for arg in record['argv']))
+        cache = self.home / '.cache/ai-status'
+        self.assertFalse([p for p in cache.rglob('*') if p.is_file() and b'fixture-token' in p.read_bytes()])
 
     def test_payload_directory_and_zero_usage(self):
         repo = self.repo()
@@ -447,9 +546,12 @@ class Statusline(Fixture):
     def test_malformed_fields_and_corrupt_cache(self):
         self.write('.cache/ai-status/statusline-rate-limits', 'bad|bad|bad|bad\n')
         output = self.render({'model': {'display_name': 7}, 'workspace': {'current_dir': 1},
-                              'session_id': {}, 'effort': {'level': 'high\nescape'}})
+                              'session_id': {}, 'effort': {'level': 'high\nescape'},
+                              'thinking': 'yes', 'agent': ['x']}, columns=60)
         self.assertIn('[?]', output)
-        self.assertEqual(len(output.splitlines()), 4)
+        self.assertIn('highescape', output)
+        self.assertIn('h0%', output)
+        self.assertNotIn('\x1b', output)
 
 
 if __name__ == '__main__':
