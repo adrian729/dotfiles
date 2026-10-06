@@ -480,6 +480,77 @@ if os.environ.get('STOW_CONFLICT'):
         self.assertFalse(self.profile.exists())
         self.assertEqual(list((self.home / '.local/state/dotfiles/backups').iterdir()), [])
 
+    PNPM = ("\n# pnpm\nexport PNPM_HOME='/fixture/pnpm'\ncase \":$PATH:\" in\n"
+            "  *\":$PNPM_HOME/bin:\"*) ;;\n  *) export PATH=\"$PNPM_HOME/bin:$PATH\" ;;\nesac\n# pnpm end\n")
+
+    def moved_block(self, name):
+        lines = self.profile.read_text().splitlines()
+        start = lines.index(f'# >>> moved from {self.home}/.config/zsh/{name} by dotfiles zsh/pre_stow.sh')
+        return lines[start + 1:lines.index(f'# <<< end of {self.home}/.config/zsh/{name}', start)]
+
+    def test_pre_stow_moves_what_a_tool_added_to_a_stowed_file_into_the_profile(self):
+        repo_zshrc = (ROOT / 'zsh/.config/zsh/.zshrc').read_text()
+        # `pnpm setup` replaces the link with a rewritten copy, and does it again when rerun.
+        for _ in range(2):
+            self.write('.config/zsh/.zshrc', repo_zshrc + self.PNPM)
+            p = self.pre_stow()
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertFalse((self.home / '.config/zsh/.zshrc').exists())
+        self.assertEqual(self.moved_block('.zshrc'), self.PNPM.splitlines())
+        self.assertEqual(self.profile.read_text().count('PNPM_HOME='), 1)
+        backups = list((self.home / '.local/state/dotfiles/backups').glob('config-zsh.*/.zshrc'))
+        self.assertEqual(len(backups), 2)
+
+    def test_stale_copy_carries_only_its_own_lines(self):
+        head = (ROOT / 'zsh/.config/zsh/.zshrc').read_text()
+        old = next((text for rev in self.git(ROOT, 'log', '--format=%H', '--', 'zsh/.config/zsh/.zshrc').split()
+                    if (text := self.git(ROOT, 'show', f'{rev}:zsh/.config/zsh/.zshrc') + '\n') != head), None)
+        if old is None:
+            self.skipTest('needs an older committed .zshrc')
+        self.write('.config/zsh/.zshrc', old + 'export FROM_TOOL=1\n')
+        p = self.pre_stow()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.moved_block('.zshrc'), ['export FROM_TOOL=1'])
+
+    def test_changed_non_shell_file_blocks_the_package_untouched(self):
+        self.write('.config/zsh/starship.toml', 'format = "$all"\n')
+        self.write('.config/zsh/.zshrc', 'export LOCAL=1\n')
+        p = self.pre_stow()
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('starship.toml is a regular file', p.stderr)
+        self.assertEqual((self.home / '.config/zsh/.zshrc').read_text(), 'export LOCAL=1\n')
+        self.assertFalse(self.profile.exists())
+
+    def test_stow_conflict_puts_stray_copies_back(self):
+        self.write('.config/zsh/.zshrc', 'export LOCAL=1\n')
+        self.env['STOW_CONFLICT'] = '1'
+        p = self.pre_stow()
+        self.assertEqual(p.returncode, 1)
+        self.assertEqual((self.home / '.config/zsh/.zshrc').read_text(), 'export LOCAL=1\n')
+        self.assertFalse(self.profile.exists())
+        self.assertEqual(list((self.home / '.local/state/dotfiles/backups').iterdir()), [])
+
+    def test_folded_config_dir_is_never_moved(self):
+        # Through a fold the repo's own files look like regular files; use a copy of the package.
+        package = self.home / 'farm/zsh'
+        shutil.copytree(ROOT / 'zsh', package, symlinks=True)
+        (self.home / '.config').mkdir()
+        (self.home / '.config/zsh').symlink_to(package / '.config/zsh')
+        before = sorted(p.name for p in (package / '.config/zsh').iterdir())
+        p = self.run_command('bash', package / 'pre_stow.sh')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(sorted(p.name for p in (package / '.config/zsh').iterdir()), before)
+        self.assertFalse(self.profile.exists())
+
+    def test_identical_copy_is_dropped(self):
+        shutil.copy(ROOT / 'zsh/.config/zsh/aliases.zsh', self.home / 'aliases.zsh')
+        self.write('.config/zsh/aliases.zsh', (self.home / 'aliases.zsh').read_text())
+        p = self.pre_stow()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertFalse((self.home / '.config/zsh/aliases.zsh').exists())
+        self.assertFalse(self.profile.exists())
+        self.assertEqual(list((self.home / '.local/state/dotfiles/backups').iterdir()), [])
+
     def brew_prefix(self):
         """The prefix .zshenv picks: the first with an executable bin/brew.
         ~/.linuxbrew is faked so that every host has one."""
