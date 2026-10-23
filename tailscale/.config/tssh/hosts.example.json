@@ -1,0 +1,13 @@
+{
+  "example-server": {
+    "address": "server.example-tailnet.ts.net",
+    "user": "your-remote-user",
+    "port": 22,
+    "identity_file": "~/.ssh/id_ed25519"
+  },
+  "example-existing-alias": {
+    "address": "another-server.example-tailnet.ts.net",
+    "ssh_host": "your-existing-ssh-alias",
+    "host_key_alias": "your-existing-known-host-name"
+  }
+}

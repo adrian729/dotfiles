@@ -58,6 +58,7 @@ directories=(
   "zsh"
 
   # Utilities
+  "tailscale"
   "lf"
   "bettercmdtab"
 )

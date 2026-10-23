@@ -1,0 +1,4 @@
+^/install\.sh
+^/README\.md
+^/\.gitignore
+^/\.config/tssh/hosts\.json

@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Pick a named host and connect with ordinary SSH over Tailscale."""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import sys
+
+
+CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "tssh" / "hosts.json"
+
+
+def fail(message):
+    print(f"tssh: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=f"Hosts: {CONFIG}\nExamples: tssh | tssh server | tssh server hostname",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("-l", "--list", action="store_true", help="list configured hosts")
+    parser.add_argument("-n", "--dry-run", action="store_true", help="print the SSH command")
+    parser.add_argument("host", nargs="?", help="host name; omit to open the picker")
+    parser.add_argument("command", nargs=argparse.REMAINDER, help="optional remote command")
+    args = parser.parse_args()
+
+    try:
+        hosts = json.loads(CONFIG.read_text())
+    except (OSError, ValueError) as exc:
+        fail(f"cannot read {CONFIG}: {exc}")
+    if not isinstance(hosts, dict):
+        fail(f"{CONFIG} must contain an object of named hosts")
+    if not hosts:
+        fail(f"no hosts configured; add your private hosts to {CONFIG} (see hosts.example.json in the dotfiles tailscale package)")
+    allowed = {"address", "ssh_host", "host_key_alias", "user", "port", "identity_file"}
+    for name, host in hosts.items():
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name):
+            fail(f"invalid host name: {name!r}")
+        if not isinstance(host, dict) or set(host) - allowed:
+            fail(f"invalid settings for {name}; allowed fields: {', '.join(sorted(allowed))}")
+        if not isinstance(host.get("address"), str) or not host["address"].strip():
+            fail(f"{name} needs a Tailscale address")
+        for key, value in host.items():
+            if key == "port":
+                if type(value) is not int or not 1 <= value <= 65535:
+                    fail(f"{name}: port must be an integer between 1 and 65535")
+            elif not isinstance(value, str) or not value.strip() or any(c in value for c in "\r\n\0"):
+                fail(f"{name}: {key} must be a nonempty single-line string")
+        if host.get("ssh_host", name).startswith("-"):
+            fail(f"{name}: ssh_host cannot start with '-'")
+
+    names = sorted(hosts)
+    if args.list:
+        for name in names:
+            print(f"{name:20} {hosts[name]['address']}")
+        return
+    selected = args.host
+    if selected is None:
+        if not sys.stdin.isatty():
+            fail("specify a host name, or run tssh in a terminal to use the picker")
+        for number, name in enumerate(names, 1):
+            print(f"  {number}. {name:20} {hosts[name]['address']}")
+        try:
+            selected = input("Host name or number (q to quit): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if selected.lower() in {"q", "quit", "exit", ""}:
+            return
+        if selected not in hosts and selected.isdecimal() and 1 <= int(selected) <= len(names):
+            selected = names[int(selected) - 1]
+    if selected not in hosts:
+        fail(f"unknown host {selected!r}; available: {', '.join(names)}")
+
+    host = hosts[selected]
+    command = ["ssh", "-o", "ConnectTimeout=10", "-o", f"Hostname={host['address']}"]
+    for field, option in (("host_key_alias", "HostKeyAlias"), ("user", "User"), ("port", "Port")):
+        if field in host:
+            command.extend(["-o", f"{option}={host[field]}"])
+    if "identity_file" in host:
+        command.extend(["-i", os.path.expanduser(host["identity_file"])])
+    command.extend(["--", host.get("ssh_host", selected), *args.command])
+    if args.dry_run:
+        print(shlex.join(command))
+        return
+    try:
+        os.execvp(command[0], command)
+    except OSError as exc:
+        fail(f"could not start SSH: {exc}")
+
+
+if __name__ == "__main__":
+    main()

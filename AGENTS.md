@@ -20,6 +20,7 @@ GNU Stow packages deploy files to `~`. `install.sh` selects packages, stows them
 | Terminal, file manager and clangd | `{ghostty,kitty,lf,clangd}/.config/` |
 | Ollama client config and scripts | `ollama/.config/ollama/`, `ollama/.local/scripts/` |
 | BetterCmdTab | `bettercmdtab/.config/bettercmdtab/` |
+| Tailscale and SSH host picker | `tailscale/` (see `tailscale/README.md`) |
 
 Root `.claude/` holds project instructions only; it is not Claude's deployment directory. Shared skills have one original under `agents/` and symlinks in other tools' discovery directories. Codex discovers `~/.agents/skills/` directly and deliberately has no global `AGENTS.md` link, custom agents, or hooks.
 
@@ -32,6 +33,7 @@ Root `.claude/` holds project instructions only; it is not Claude's deployment d
 - Source `lib/common.sh` for platform and dependency helpers. Use `is_macos`/`is_linux`, `ensure_cmd` for CLI tools, `ensure_cask` for macOS apps, and `pkg_install`/`pkg_available` for distro integration; do not hardcode a Linux package manager at call sites.
 - Homebrew no longer builds bottles for Intel macOS, where a source build can pull in rust, llvm or go. `ensure_cmd` pours a bottle only when `brew_can_pour` confirms one for this machine, otherwise installs the project's release build through `prebuilt_install` into `~/.local/bin`, and builds from source only for tools without one. `prebuilt_install` returns 2 only for a tool without an entry and 1 for any failure, so a failed download never starts a source build. A new tool with a heavy build needs a `prebuilt_install` entry covering macOS and Linux on both x86_64 and arm64.
 - Packages support macOS and Linux. The intentional macOS-only packages (`bettercmdtab`, `kitty`) require both an entry in root `install.sh`'s `macos_only` and their own platform guard.
+- Tailscale installation preserves existing clients, login and preferences. Never run `tailscale up`, `set`, `down`, logout or service restarts from its installer. `tssh` hosts live only in `${XDG_CONFIG_HOME:-$HOME/.config}/tssh/hosts.json`; never stow or track that file, SSH keys/config, known hosts or Tailscale state.
 - Root installation runs a package's `pre_stow.sh` before stowing, skips failed packages, and reports failures while continuing others. Keep package-specific preparation in that package.
 
 ## Cross-file dependencies

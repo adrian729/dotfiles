@@ -33,7 +33,7 @@ class DotfilesFixture(Fixture):
 
 class Bootstrap(DotfilesFixture):
     packages = ('opencode', 'claude', 'codex', 'agents', 'ollama', 'ghostty',
-                'kitty', 'nvim', 'clangd', 'tmux', 'zsh', 'lf', 'bettercmdtab')
+                'kitty', 'nvim', 'clangd', 'tmux', 'zsh', 'tailscale', 'lf', 'bettercmdtab')
 
     def setUp(self):
         super().setUp()
