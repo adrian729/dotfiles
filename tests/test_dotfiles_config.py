@@ -795,24 +795,35 @@ class TmuxStatusWatcher(DotfilesFixture):
     def update(self):
         return self.run_command('bash', ROOT / 'tmux/.local/scripts/tmux-status', 'update')
 
-    def test_update_sets_options_and_takes_over_continuum(self):
+    def test_update_sets_values_and_takes_over_continuum(self):
         repo = self.home / 'repo'
         repo.mkdir()
         self.git(repo, 'init', '-q', '-b', 'feature')
         self.git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x')
+        self.git(repo, 'worktree', 'add', '-q', '-b', 'other', self.home / 'wt')
+        self.git(repo, 'worktree', 'add', '-q', '--detach', self.home / 'detached')
+        (repo / 'sub').mkdir()
         save = self.write('continuum_save.sh', '#!/bin/sh\necho saved >>"$HOME/saves"\n')
         save.chmod(0o755)
-        self.tmux('new-session', '-d', '-c', repo)
-        self.tmux('split-window', '-d', '-c', self.home)
-        self.tmux('set', '-g', 'status-right', f'#({save})#{{E:@status_stats}}')
+        self.tmux('new-session', '-d', '-c', repo / 'sub')
+        for path in (self.home, self.home / 'wt', self.home / 'detached'):
+            self.tmux('split-window', '-d', '-c', path)
+            self.tmux('select-layout', 'tiled')
+        self.tmux('set', '-g', 'status-right', f'#({save})#{{E:TMUX_STATUS_STATS}}')
         self.env['TMUX'] = f'{self.socket},{self.tmux("display", "-p", "#{pid}")[0]},0'
 
         p = self.update()
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(self.tmux('show', '-gv', 'status-right'), ['#{E:@status_stats}'])
+        self.assertEqual(self.tmux('show', '-gv', 'status-right'), ['#{E:TMUX_STATUS_STATS}'])
         self.assertEqual(self.tmux('show', '-gv', '@status_continuum'), [str(save)])
-        self.assertEqual(self.tmux('list-panes', '-F', '#{@pane_branch}'), ['feature', ''])
-        self.assertRegex(self.tmux('show', '-gv', '@status_stats')[0], r'\d%')
+        # Read from .git without starting git, as rev-parse --abbrev-ref prints them.
+        self.assertEqual(sorted(self.tmux('list-panes', '-F', '#{@pane_branch}')),
+                         ['', 'HEAD', 'feature', 'other'])
+        # Hidden: shown in the status line, not passed to new shells.
+        stats = self.tmux('show-environment', '-gh', 'TMUX_STATUS_STATS')[0]
+        self.assertRegex(stats, r'^TMUX_STATUS_STATS=.*\d%')
+        self.assertEqual(self.run_command(TMUX, '-S', self.socket, 'show-environment', '-g',
+                                          'TMUX_STATUS_STATS').stdout, '')
         # Continuum's job keeps running from the watcher after the move.
         self.assertEqual(self.update().returncode, 0)
         self.assertEqual((self.home / 'saves').read_text(), 'saved\nsaved\n')

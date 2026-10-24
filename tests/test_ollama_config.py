@@ -1,5 +1,6 @@
 """Offline Ollama regressions: never start services, download, or infer."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import unittest
@@ -251,7 +252,36 @@ else: raise SystemExit(int(os.environ.get('OLLAMA_TEST_CHANGE_EXIT', 0)))
 
 
 class TmuxAndEnv(OllamaFixture):
+    def proc(self, processes):
+        # Linux reads /proc; each process is (pid, children, KiB, argv).
+        page = os.sysconf('SC_PAGESIZE') // 1024
+        root = self.home / 'proc'
+        self.write('proc/meminfo', 'MemTotal: 1000 kB\nMemAvailable: 500 kB\n')
+        for pid, children, kib, argv in processes:
+            self.write(f'proc/{pid}/cmdline', ''.join(arg + '\0' for arg in argv))
+            self.write(f'proc/{pid}/statm', f'0 {kib // page} 0 0 0 0 0\n')
+            self.write(f'proc/{pid}/task/{pid}/children', ''.join(f'{c} ' for c in children))
+        self.env['TMUX_STATUS_PROC'] = str(root)
+
+    def test_memory_counts_only_daemon_and_descendants_in_proc(self):
+        self.proc([(2, [], 0, []),
+                   (10, [11], 1024, ['/usr/local/bin/ollama', 'serve']),
+                   (11, [12], 1048576, ['/usr/local/bin/ollama', 'runner', '--model', 'fixture']),
+                   (12, [], 1024, ['llama-server']),
+                   (20, [], 2097152, ['llama-server']),
+                   (21, [], 2097152, ['/usr/local/bin/ollama', 'list'])])
+        self.fake('curl', 'print(\'{"models":[]}\')')
+        p = subprocess.run([str(ROOT / 'tmux/.local/scripts/tmux-status'), 'ollama', 'ram'],
+                           env=self.env, text=True, capture_output=True, timeout=3)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('id10', p.stdout)
+        self.assertIn(' 1.0GiB', p.stdout)
+        self.assertIn(' 50.0% ', p.stdout)
+        self.assertEqual(p.stderr, '')
+
     def test_memory_counts_only_daemon_and_descendants(self):
+        # Without /proc (macOS) the daemon and its descendants come from ps.
+        self.env['TMUX_STATUS_PROC'] = str(self.home / 'missing')
         self.fake('ps', '''print("""10 1 1024 /usr/local/bin/ollama serve
 11 10 1048576 /usr/local/bin/ollama runner --model fixture
 12 11 1024 llama-server
@@ -266,7 +296,7 @@ class TmuxAndEnv(OllamaFixture):
         self.assertEqual(p.stderr, '')
 
     def test_models_survive_a_failed_request(self):
-        self.fake('ps', 'print("10 1 1024 /usr/local/bin/ollama serve")')
+        self.proc([(10, [], 1024, ['/usr/local/bin/ollama', 'serve'])])
         self.fake('jq', '''import json, sys
 print(", ".join(m["name"] for m in json.load(sys.stdin)["models"]))''')
         status = lambda: subprocess.run([str(ROOT / 'tmux/.local/scripts/tmux-status'), 'ollama'],
