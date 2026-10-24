@@ -20,12 +20,16 @@ The selected defaults are `gpt-6.1-sol` with `high` reasoning, full filesystem a
 | --- | --- | --- |
 | `model` | A model available to your account, or omit the setting | Default model. The existing machine uses `gpt-6.1-sol`. |
 | `model_reasoning_effort` | `low`, `medium`, `high`, or other values supported by the model | Reasoning effort; higher effort usually spends more time on the task. |
+| `model_auto_compact_token_limit` | Token count, or omit for the model default | Currently `350000`, 70% of `gpt-6.1-sol`'s 500k window; compacts during a turn. Codex caps it at 90% of the window, which is the default. It is absolute, so a 272k-window model would fall back to that 90% cap. |
+| `model_post_turn_compact_threshold_percent` | `0`–`100`; omit or `0` to disable | Currently `70`; also compacts after a final response once usage reaches this share of the usable window (95% of the full window), so 332.5k on `gpt-6.1-sol`. It scales with the model. |
 | `approval_policy` | `on-request` or `never` | Whether Codex can ask to run commands beyond its current permissions. `never` alone does not grant additional access. |
 | `sandbox_mode` | `read-only`, `workspace-write`, `danger-full-access` | Which filesystem writes and command networking the sandbox allows. |
 | `sandbox_workspace_write.network_access` | `true` or `false` | Shell command networking in workspace mode; independent of web search. |
 | `web_search` | `live`, `cached`, `indexed`, `disabled` | Web retrieval mode. |
 | `tui.vim_mode_default` | `true` or `false` | Start the composer in Vim normal mode; `/vim` toggles it for the session. |
 | `tui.status_line` | Ordered list of footer item identifiers | The baseline shows model with reasoning, context used, five-hour limit, weekly limit, current directory, Git branch, branch changes, and thread name, in that order. |
+
+Compaction runs at about 70% of the context window to keep long sessions smaller than the default. Earlier compaction adds summary work and can reduce prompt-cache reuse. Check the window of a newly selected model with `jq '.models[] | {slug, context_window}' ~/.codex/models_cache.json` and rescale the token limit. See the [setting definitions](https://developers.openai.com/codex/config-schema.json).
 
 Use `/statusline` to change the footer interactively. Codex saves the selection in the live config; copy its `tui.status_line` list into this package's config to make those choices the defaults for future installs.
 

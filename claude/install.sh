@@ -101,6 +101,8 @@ fi
 # modify it freely without dirtying the dotfiles repo.  Re-run install.sh
 # to reset from the repo version — except the model and effort picked with
 # /model, which are this machine's choice and which the repo does not set.
+# /autocompact also saves into modelSettings, where a per-model window would
+# override the repo's top-level autoCompactWindow, so that key is dropped.
 settings_target="$HOME/.claude/settings.json"
 settings_source="$(dirname "$0")/.claude/settings.json"
 tmp_settings=""
@@ -109,7 +111,11 @@ copy_settings() {
     have jq || { cat "$settings_source"; return; }
     jq -e . "$settings_source" >/dev/null 2>&1 || return 1
     if jq -e 'type == "object"' "$settings_target" >/dev/null 2>&1; then
-        jq -s '.[1] + (.[0] | {model, modelSettings, effortLevel}
+        jq -s '.[1] + (.[0] | {model, effortLevel, modelSettings: (.modelSettings
+                | if type == "object" then
+                    map_values(if type == "object" then del(.autoCompactWindow) else . end)
+                    | with_entries(select(.value != {})) | if . == {} then null else . end
+                  else . end)}
             | with_entries(select(.value != null)))' "$settings_target" "$settings_source"
     else
         cat "$settings_source"

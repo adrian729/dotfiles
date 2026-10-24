@@ -142,15 +142,23 @@ run_remote_installer() { echo "unexpected installation" >&2; return 1; }
         self.assertFalse(target.is_symlink())
         self.assertEqual(json.loads(target.read_text()), {'portable': True})
         self.assertEqual(original.read_text(), '{"local":true}\n')
-        # A reinstall resets repo-managed keys but keeps the /model choice.
+        # A reinstall resets repo-managed keys but keeps the /model choice;
+        # /autocompact's per-model windows yield to the repo's autoCompactWindow.
         target.write_text(json.dumps({'portable': False, 'hooks': {'old': 1}, 'model': 'opus',
-                                      'modelSettings': {'claude-opus-5-5': {'effortLevel': 'xhigh'}}}))
+                                      'modelSettings': {
+                                          'claude-opus-5-5': {'effortLevel': 'xhigh', 'autoCompactWindow': 400000},
+                                          'claude-sonnet-5-5': {'autoCompactWindow': 'auto'}}}))
         p = subprocess.run(['bash', str(package / 'install.sh')], env=self.env,
                            text=True, capture_output=True, timeout=5)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(json.loads(target.read_text()), {
             'portable': True, 'model': 'opus',
             'modelSettings': {'claude-opus-5-5': {'effortLevel': 'xhigh'}}})
+        target.write_text(json.dumps({'modelSettings': {'claude-opus-5-5': {'autoCompactWindow': 400000}}}))
+        p = subprocess.run(['bash', str(package / 'install.sh')], env=self.env,
+                           text=True, capture_output=True, timeout=5)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(target.read_text()), {'portable': True})
 
     def test_worktree_names_and_failed_claude_exit(self):
         repo = self.repo()
