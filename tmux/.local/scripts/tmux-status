@@ -110,7 +110,7 @@ seg_ram() {
     local v
     v=$(ram_usage)
     if [[ -n "$v" ]]; then save ram "$v"; else load ram; v=$REPLY; fi
-    out+="#[bg=#{@thm_flamingo},fg=#{@thm_crust}]#[reverse]$SEP#[noreverse]󱀙 "
+    out+="#[fg=#{@thm_surface_0},bg=#{@thm_flamingo}]#[reverse]$SEP#[noreverse]#[fg=#{@thm_crust}]󱀙 "
     out+="#[fg=#{@thm_fg},bg=#{@thm_surface_0}] $(pct "${v:-0}") "
 }
 
