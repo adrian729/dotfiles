@@ -218,7 +218,7 @@ seg_cpu() {
     [[ -n "$REPLY" ]] && cpu_last=$REPLY
     ((${cpu_last:-0} >= 800)) && fg="#{@thm_crust}" bg="#{@thm_red}"
     pct "${cpu_last:-0}"
-    out+="#[fg=#{@thm_yellow}]$SEP#[fg=#{@thm_crust},bg=#{@thm_yellow}] "
+    out+="#[fg=#{@thm_yellow}]$SEP#[fg=#{@thm_crust},bg=#{@thm_yellow}] "
     out+="#[fg=$fg,bg=$bg] $REPLY#[fg=$bg]$SEP"
 }
 

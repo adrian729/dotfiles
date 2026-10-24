@@ -755,6 +755,8 @@ class TmuxStatus(DotfilesFixture):
             self.assertEqual(p.stderr, '')
             readings = re.findall(r'\]( [ \d.]+%)', p.stdout)
             self.assertEqual(len(readings), 2, p.stdout)
+            # Each segment starts with its Nerd Font icon.
+            self.assertEqual(re.findall(r'\]([^\x00-\x7f]) ', p.stdout), ['\U000f1019', '\uf2db'])
             for reading in readings:
                 self.assertRegex(reading, r'^ ([ \d]\d\.\d| 100)%$')
 
