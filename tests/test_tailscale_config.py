@@ -1,6 +1,8 @@
 """Offline Tailscale install and privacy regressions; no real services touched."""
 import json
+import os
 from pathlib import Path
+import pty
 import shutil
 import subprocess
 import unittest
@@ -189,3 +191,70 @@ raise SystemExit(7)
         self.assertIn('no hosts configured', self.tssh('-l').stderr)
         self.hosts().unlink()
         self.assertEqual(self.tssh('-h').returncode, 0)
+
+    def test_ping_uses_tailscale_address_and_returns_failure_status(self):
+        self.fake('tailscale', '''import json, sys
+print(json.dumps(sys.argv[1:]))
+raise SystemExit(3)
+''')
+        self.fake('ssh', 'raise SystemExit("Ping must not open SSH")')
+        for flag in ('-p', '--ping'):
+            p = self.tssh(flag, 'test-host')
+            self.assertEqual(p.returncode, 3, p.stderr)
+            self.assertEqual(json.loads(p.stdout),
+                             ['ping', '--c', '3', '--timeout', '5s', 'test.example-tailnet.ts.net'])
+
+    def test_ping_preview_and_invalid_combinations(self):
+        p = self.tssh('-n', '-p', 'test-host')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('tailscale ping', p.stdout)
+        for args in (('-p', '-l'), ('-p', '-i', 'test-host'),
+                     ('-p', 'test-host', 'hostname')):
+            self.assertEqual(self.tssh(*args).returncode, 2)
+
+    def terminal(self, *args):
+        master, slave = pty.openpty()
+        try:
+            p = subprocess.Popen([str(PACKAGE / '.local/scripts/tssh'), *args],
+                                 stdin=slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, env=self.env)
+            try:
+                out, err = p.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.communicate()
+                self.fail('remote command waited for keyboard EOF')
+            return p.returncode, out, err
+        finally:
+            os.close(master)
+            os.close(slave)
+
+    def test_terminal_command_delivers_eof_without_waiting_for_keyboard(self):
+        self.fake('ssh', '''import json, sys
+# Emulate SSH's -n option while keeping the parent terminal open.
+data = '' if '-n' in sys.argv else sys.stdin.read()
+print(json.dumps({'args': sys.argv[1:], 'input': data}))
+''')
+        rc, out, err = self.terminal('test-host', 'read-until-eof')
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(json.loads(out)['input'], '')
+        self.assertIn('-n', json.loads(out)['args'])
+
+    def test_piped_input_is_preserved(self):
+        self.fake('ssh', '''import sys
+assert '-n' not in sys.argv
+sys.stdout.write(sys.stdin.read())
+''')
+        p = subprocess.run([str(PACKAGE / '.local/scripts/tssh'), 'test-host', 'cat'],
+                           input='prompt with "quotes"\nand two lines\n', env=self.env,
+                           text=True, capture_output=True, timeout=5)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout, 'prompt with "quotes"\nand two lines\n')
+
+    def test_login_and_explicit_keyboard_input_do_not_close_stdin(self):
+        for args in (('test-host',), ('-i', 'test-host', 'cat'),
+                     ('--stdin', 'test-host', 'cat')):
+            with self.subTest(args=args):
+                rc, out, err = self.terminal(*args)
+                self.assertEqual(rc, 7, err)
+                self.assertNotIn('-n', json.loads(out))

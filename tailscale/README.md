@@ -63,11 +63,32 @@ tssh                  # Pick by name or number; q cancels
 tssh example-server   # Connect by name
 tssh -h               # --help
 tssh -l               # --list
+tssh -p example-server # --ping: check Tailscale connectivity without SSH
 tssh -n example-server # --dry-run
 tssh example-server hostname
 ```
 
 Flags go before the host; arguments after the host are the remote command.
+`-p` / `--ping` runs `tailscale ping` against the selected host's private
+`address`, with up to three probes and a five-second timeout per probe. It may
+finish early once a direct connection is found. Omit the host to pick one
+interactively, or combine with `-n` to preview. Ping requires the Tailscale CLI
+(enable CLI integration in the macOS app if needed). This tests the Tailscale
+path; it does not check whether the SSH server is running or accepting logins.
+
+For remote commands launched from a terminal, `tssh` closes remote stdin so
+programs that read piped input do not wait indefinitely for keyboard EOF.
+Actual pipes and redirected files are forwarded unchanged. Login sessions
+(`tssh example-server` without a command) keep their normal interactive input.
+Use `-i` / `--stdin` before the host to forward keyboard input to a command;
+finish input with Ctrl-D. This does not allocate a remote terminal.
+
+```sh
+tssh example-server 'hostname'
+printf '%s\n' 'hello from this machine' | tssh example-server 'cat'
+tssh -i example-server 'cat'  # Forward keyboard input; Ctrl-D finishes
+```
+
 On a machine with custom `XDG_CONFIG_HOME`, the example still stows under
 `~/.config/tssh`; the actual private config follows `XDG_CONFIG_HOME`.
 

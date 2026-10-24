@@ -18,17 +18,34 @@ def fail(message):
     sys.exit(1)
 
 
+def run(command, dry_run):
+    if dry_run:
+        print(shlex.join(command))
+        return
+    try:
+        os.execvp(command[0], command)
+    except OSError as exc:
+        fail(f"could not start {command[0]}: {exc}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__,
         epilog=f"Hosts: {CONFIG}\nExamples: tssh | tssh server | tssh server hostname",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("-l", "--list", action="store_true", help="list configured hosts")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("-l", "--list", action="store_true", help="list configured hosts")
+    action.add_argument("-p", "--ping", action="store_true",
+                        help="check Tailscale connectivity (up to 3 probes, 5s timeout each)")
     parser.add_argument("-n", "--dry-run", action="store_true", help="print the SSH command")
+    parser.add_argument("-i", "--stdin", action="store_true",
+                        help="forward keyboard input to a remote command (pipes/files are always forwarded)")
     parser.add_argument("host", nargs="?", help="host name; omit to open the picker")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="optional remote command")
     args = parser.parse_args()
+    if args.ping and (args.command or args.stdin):
+        parser.error("--ping cannot be combined with a remote command or --stdin")
 
     try:
         hosts = json.loads(CONFIG.read_text())
@@ -79,20 +96,22 @@ def main():
         fail(f"unknown host {selected!r}; available: {', '.join(names)}")
 
     host = hosts[selected]
+    if args.ping:
+        run(["tailscale", "ping", "--c", "3", "--timeout", "5s", host["address"]], args.dry_run)
+        return
     command = ["ssh", "-o", "ConnectTimeout=10", "-o", f"Hostname={host['address']}"]
+    # SSH forwards terminal stdin without allocating a remote PTY for commands.
+    # Programs that read until EOF then wait for the keyboard to close input.
+    # Close only terminal input, keeping real pipes/files and login shells intact.
+    if args.command and sys.stdin.isatty() and not args.stdin:
+        command.append("-n")
     for field, option in (("host_key_alias", "HostKeyAlias"), ("user", "User"), ("port", "Port")):
         if field in host:
             command.extend(["-o", f"{option}={host[field]}"])
     if "identity_file" in host:
         command.extend(["-i", os.path.expanduser(host["identity_file"])])
     command.extend(["--", host.get("ssh_host", selected), *args.command])
-    if args.dry_run:
-        print(shlex.join(command))
-        return
-    try:
-        os.execvp(command[0], command)
-    except OSError as exc:
-        fail(f"could not start SSH: {exc}")
+    run(command, args.dry_run)
 
 
 if __name__ == "__main__":
