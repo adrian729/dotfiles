@@ -258,12 +258,25 @@ class TmuxAndEnv(OllamaFixture):
 20 1 2097152 llama-server
 21 1 2097152 /usr/local/bin/ollama list""")''')
         self.fake('curl', 'print(\'{"models":[]}\')')
-        p = subprocess.run([str(ROOT / 'tmux/.local/scripts/tmux-ollama-status')],
+        p = subprocess.run([str(ROOT / 'tmux/.local/scripts/tmux-status'), 'ollama'],
                            env=self.env, text=True, capture_output=True, timeout=3)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('id10', p.stdout)
         self.assertIn('1.0GiB', p.stdout)
         self.assertEqual(p.stderr, '')
+
+    def test_models_survive_a_failed_request(self):
+        self.fake('ps', 'print("10 1 1024 /usr/local/bin/ollama serve")')
+        self.fake('jq', '''import json, sys
+print(", ".join(m["name"] for m in json.load(sys.stdin)["models"]))''')
+        status = lambda: subprocess.run([str(ROOT / 'tmux/.local/scripts/tmux-status'), 'ollama'],
+                                        env=self.env, text=True, capture_output=True, timeout=5)
+        self.fake('curl', 'print(\'{"models":[{"name":"fixture:1"}]}\')')
+        self.assertIn('fixture:1', status().stdout)
+        self.fake('curl', 'raise SystemExit(28)')
+        self.assertIn('fixture:1', status().stdout)
+        self.fake('curl', 'print(\'{"models":[]}\')')
+        self.assertNotIn('fixture:1', status().stdout)
 
     def test_blank_env_template_preserves_inherited_key(self):
         self.env['OLLAMA_API_KEY'] = 'fixture-key'

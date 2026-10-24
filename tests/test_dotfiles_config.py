@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import shlex
 import shutil
 import subprocess
@@ -740,6 +741,84 @@ if os.environ.get('FAIL_HELPER') == '{name}': raise SystemExit(1)
         self.assertEqual(p.returncode, 1)
         self.assertIn('no working clipboard helper', p.stderr)
         self.assertFalse((self.home / 'calls').exists())
+
+
+class TmuxStatus(DotfilesFixture):
+    def status(self, *segments):
+        return self.run_command('bash', ROOT / 'tmux/.local/scripts/tmux-status', *segments)
+
+    def test_readings_keep_a_fixed_width(self):
+        # tmux shifts the whole right side when a segment's width changes.
+        for _ in range(2):
+            p = self.status('ram', 'cpu')
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertEqual(p.stderr, '')
+            readings = re.findall(r'\]( [ \d.]+%)', p.stdout)
+            self.assertEqual(len(readings), 2, p.stdout)
+            for reading in readings:
+                self.assertRegex(reading, r'^ ([ \d]\d\.\d| 100)%$')
+
+    def test_unknown_segment_is_rejected(self):
+        p = self.status('cpu', 'disk')
+        self.assertEqual(p.returncode, 2)
+        self.assertIn('usage', p.stderr)
+
+    def test_status_line_and_pane_borders_run_no_jobs(self):
+        # tmux forks #() jobs while expanding the status line and draws what
+        # is left after 100ms as empty; the watcher sets options instead.
+        config = (ROOT / 'tmux/.config/tmux/tmux.conf').read_text()
+        lines = [line for line in config.splitlines()
+                 if re.match(r'set -\w+ (status-left|status-right|pane-border-format) ', line)]
+        self.assertTrue(lines)
+        for line in lines:
+            self.assertNotIn('#(', line)
+        # Started after TPM so it can take over the job continuum adds.
+        self.assertLess(config.index("run '~/.tmux/plugins/tpm/tpm'"),
+                        config.index("run -b '~/.local/scripts/tmux-status watch'"))
+
+
+@unittest.skipUnless(TMUX, 'tmux is required')
+class TmuxStatusWatcher(DotfilesFixture):
+    def setUp(self):
+        super().setUp()
+        self.socket = self.home / 'tmux.sock'
+        self.fake('tmux', f'import os, sys; os.execv({TMUX!r}, [{TMUX!r}, *sys.argv[1:]])')
+        self.fake('ps', 'pass')
+        self.addCleanup(lambda: subprocess.run([TMUX, '-S', str(self.socket), 'kill-server'],
+                                               capture_output=True, env=self.env))
+
+    def tmux(self, *args):
+        p = self.run_command(TMUX, '-S', self.socket, '-f', '/dev/null', *args)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p.stdout.splitlines()
+
+    def update(self):
+        return self.run_command('bash', ROOT / 'tmux/.local/scripts/tmux-status', 'update')
+
+    def test_update_sets_options_and_takes_over_continuum(self):
+        repo = self.home / 'repo'
+        repo.mkdir()
+        self.git(repo, 'init', '-q', '-b', 'feature')
+        self.git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x')
+        save = self.write('continuum_save.sh', '#!/bin/sh\necho saved >>"$HOME/saves"\n')
+        save.chmod(0o755)
+        self.tmux('new-session', '-d', '-c', repo)
+        self.tmux('split-window', '-d', '-c', self.home)
+        self.tmux('set', '-g', 'status-right', f'#({save})#{{E:@status_stats}}')
+        self.env['TMUX'] = f'{self.socket},{self.tmux("display", "-p", "#{pid}")[0]},0'
+
+        p = self.update()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.tmux('show', '-gv', 'status-right'), ['#{E:@status_stats}'])
+        self.assertEqual(self.tmux('show', '-gv', '@status_continuum'), [str(save)])
+        self.assertEqual(self.tmux('list-panes', '-F', '#{@pane_branch}'), ['feature', ''])
+        self.assertRegex(self.tmux('show', '-gv', '@status_stats')[0], r'\d%')
+        # Continuum's job keeps running from the watcher after the move.
+        self.assertEqual(self.update().returncode, 0)
+        self.assertEqual((self.home / 'saves').read_text(), 'saved\nsaved\n')
+
+        self.tmux('kill-server')
+        self.assertEqual(self.update().returncode, 1)
 
 
 class BetterCmdTab(DotfilesFixture):

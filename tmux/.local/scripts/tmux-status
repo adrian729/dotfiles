@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+# Status line readings for tmux.
+#   tmux-status watch     keep the options tmux.conf reads current (run -b)
+#   tmux-status update    refresh those options once
+#   tmux-status SEGMENT…  print ollama, ram, cpu or battery segments
+#
+# tmux gives the whole status line 100ms to expand and draws whatever is left
+# after that as empty, so on a loaded machine the forks of #() jobs alone made
+# segments vanish. The status line therefore reads tmux options that the
+# watcher sets from outside the server. Every reading has a fixed width, so the
+# bar does not shift, and falls back to its last good value rather than nothing.
+# Colors are tmux formats, expanded by tmux. Runs on macOS's bash 3.2.
+
+SEP=$'\xee\x82\xb6'
+TAB=$'\t'
+STATE="${TMPDIR:-/tmp}/tmux-status-$UID"
+[[ -d "$STATE" ]] || { mkdir -p "$STATE" && chmod 700 "$STATE"; } 2>/dev/null
+
+# State shared between runs; written atomically so a concurrent reader never
+# sees a partial value.
+save() { printf '%s\n' "$2" >"$STATE/$1.$$" 2>/dev/null && mv -f "$STATE/$1.$$" "$STATE/$1"; }
+load() { REPLY=; read -r REPLY 2>/dev/null <"$STATE/$1"; }
+
+# Five columns for any percentage: " 5.3%", "45.2%", " 100%".
+pct() { awk -v n="$1" 'BEGIN { if (n >= 99.95) print " 100%"; else printf "%4.1f%%\n", (n < 0 ? 0 : n) }'; }
+
+# Prints the cpu busy percentage, or nothing when no reading is possible.
+cpu_usage() {
+    if [[ -r /proc/stat ]]; then
+        # Busy share of the jiffies since the previous sample, which any client
+        # may have taken; samples less than half a second apart are too noisy.
+        local up _ user nice sys idle iowait irq softirq steal total
+        local pup ptotal pidle
+        read -r up _ </proc/uptime
+        up=${up/./}
+        read -r _ user nice sys idle iowait irq softirq steal _ </proc/stat
+        idle=$((idle + iowait))
+        total=$((user + nice + sys + idle + irq + softirq + steal))
+        load cpu_sample
+        read -r pup ptotal pidle <<<"$REPLY"
+        if [[ -z "$pup" ]]; then
+            save cpu_sample "$up $total $idle"
+            sleep 0.5
+            cpu_usage
+            return
+        fi
+        load cpu
+        if ((up - pup >= 50 && total > ptotal)) || [[ -z "$REPLY" ]]; then
+            ((total > ptotal)) || return
+            save cpu_sample "$up $total $idle"
+            REPLY=$(awk -v b=$((total - ptotal - idle + pidle)) -v t=$((total - ptotal)) 'BEGIN { print 100 * b / t }')
+            save cpu "$REPLY"
+        fi
+        printf '%s' "$REPLY"
+    else
+        # macOS has no cumulative counters without a one-second sample; ps
+        # reports each process's decaying average over the last minute.
+        load ncpu
+        [[ -n "$REPLY" ]] || { REPLY=$(sysctl -n hw.logicalcpu 2>/dev/null) && save ncpu "$REPLY"; }
+        ps -A -o %cpu= 2>/dev/null | awk -v n="${REPLY:-1}" '{ s += $1 } END { if (NR) print s / n }'
+    fi
+}
+
+ram_usage() {
+    if [[ -r /proc/meminfo ]]; then
+        awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { if (t) print 100 * (t - a) / t }' /proc/meminfo
+    else
+        # Same accounting as tmux-cpu: cached file pages count as available.
+        vm_stat 2>/dev/null | awk -F: '{ gsub(/[ .]/, "", $2) }
+            /^Pages (active|inactive|speculative|wired down|occupied by compressor)$/ { u += $2 }
+            /^Pages purgeable$|^File-backed pages$/ { c += $2 }
+            /^Pages free$/ { f += $2 }
+            END { if (u + f) print 100 * (u - c) / (u + f) }'
+    fi
+}
+
+# Prints "percent status" with status one of charged, charging, discharging,
+# attached or unknown; prints nothing without a battery.
+battery_state() {
+    if [[ -d /sys/class/power_supply ]]; then
+        local dir type cap st
+        for dir in /sys/class/power_supply/*; do
+            read -r type 2>/dev/null <"$dir/type" && [[ "$type" == Battery ]] || continue
+            read -r cap 2>/dev/null <"$dir/capacity" || continue
+            read -r st 2>/dev/null <"$dir/status"
+            case "$st" in
+                Full) st=charged ;;
+                Charging) st=charging ;;
+                Discharging) st=discharging ;;
+                "Not charging") st=attached ;;
+                *) st=unknown ;;
+            esac
+            echo "$cap $st"
+            return
+        done
+    elif command -v pmset >/dev/null; then
+        pmset -g batt 2>/dev/null | awk -F '; *' 'NR == 2 && /%/ {
+            p = $1; sub(/%.*/, "", p); sub(/.*[^0-9]/, "", p)
+            s = $2
+            if (s ~ /^(charged|finishing charge)/) s = "charged"
+            else if (s ~ /^charging/) s = "charging"
+            else if (s ~ /^discharging/) s = "discharging"
+            else if (s ~ /attached/) s = "attached"
+            else s = "unknown"
+            print p, s }'
+    fi
+}
+
+seg_ram() {
+    local v
+    v=$(ram_usage)
+    if [[ -n "$v" ]]; then save ram "$v"; else load ram; v=$REPLY; fi
+    out+="#[bg=#{@thm_flamingo},fg=#{@thm_crust}]#[reverse]$SEP#[noreverse]󱀙 "
+    out+="#[fg=#{@thm_fg},bg=#{@thm_surface_0}] $(pct "${v:-0}") "
+}
+
+seg_cpu() {
+    local v fg="#{@thm_fg}" bg="#{@thm_surface_0}"
+    v=$(cpu_usage)
+    [[ -n "$v" ]] || { load cpu; v=$REPLY; }
+    if awk -v n="${v:-0}" 'BEGIN { exit !(n >= 80) }'; then
+        fg="#{@thm_crust}" bg="#{@thm_red}"
+    fi
+    out+="#[fg=#{@thm_yellow}]$SEP#[fg=#{@thm_crust},bg=#{@thm_yellow}] "
+    out+="#[fg=$fg,bg=$bg] $(pct "${v:-0}")#[fg=$bg]$SEP"
+}
+
+seg_battery() {
+    local v cap st icon
+    v=$(battery_state)
+    if [[ -n "$v" ]]; then save battery "$v"; else load battery; v=$REPLY; fi
+    [[ -n "$v" ]] || return
+    read -r cap st <<<"$v"
+    case "$st" in
+        charged) icon=󰚥 ;;
+        charging) icon=󰂄 ;;
+        attached) icon=󱈑 ;;
+        discharging)
+            if ((cap >= 95)); then icon=󰁹
+            elif ((cap >= 80)); then icon=󰂁
+            elif ((cap >= 65)); then icon=󰁿
+            elif ((cap >= 50)); then icon=󰁾
+            elif ((cap >= 35)); then icon=󰁽
+            elif ((cap >= 20)); then icon=󰁼
+            elif ((cap > 5)); then icon=󰁻
+            else icon=󰁺
+            fi ;;
+        *) icon=󰂑 ;;
+    esac
+    out+="#[fg=#{@thm_lavender}]$SEP#[fg=#{@thm_crust},bg=#{@thm_lavender}]$icon "
+    out+="#[fg=#{@thm_fg},bg=#{@thm_surface_0}] $(printf '%3d%%' "$cap")#[fg=#{@thm_surface_0}]$SEP"
+}
+
+# Local Ollama daemon, its descendants' RSS and loaded models.
+seg_ollama() {
+    local BG="#4f8a8a" pid rss json models
+    # One snapshot avoids races between pgrep and ps. Count only this server's
+    # descendants, including current `ollama runner` and older llama-server runners.
+    read -r pid rss < <(ps -axo pid=,ppid=,rss=,args= 2>/dev/null | awk '
+        {parent[$1]=$2; rss[$1]=$3}
+        !server && $4 ~ /(^|\/)ollama$/ && $5 == "serve" {server=$1}
+        END {
+            if (!server) exit
+            child[server]=1
+            do {
+                changed=0
+                for (pid in parent) if (!child[pid] && child[parent[pid]]) {
+                    child[pid]=1; changed=1
+                }
+            } while (changed)
+            for (pid in child) if (child[pid]) total+=rss[pid]
+            print server, total
+        }')
+    out+="#[fg=#{@thm_surface_0},bg=$BG]#[reverse]$SEP#[noreverse]#[fg=#{@thm_fg}]🦙 "
+    if [[ -z "$pid" ]]; then
+        out+="#[fg=#{@thm_red},bg=#{@thm_surface_0}] ● "
+        return
+    fi
+    out+="#[fg=#{@thm_green},bg=#{@thm_surface_0}] ● #[fg=#{@thm_fg}]id$pid "
+    out+=$(awk -v n="$rss" 'BEGIN { if (n >= 1048576) printf "%4.1fGiB", n / 1048576; else printf "%4.0fMiB", n / 1024 }')
+    # A slow or failed request keeps the models last seen from this server.
+    if json=$(curl -fsS --max-time 1 http://localhost:11434/api/ps 2>/dev/null) &&
+        models=$(jq -r '[.models[]?.name] | join(", ")' <<<"$json" 2>/dev/null); then
+        save ollama_models "$pid $models"
+    else
+        load ollama_models
+        [[ "$REPLY" == "$pid "* ]] && models=${REPLY#"$pid "}
+    fi
+    [[ -n "$models" ]] && out+=" $models"
+    out+=" "
+}
+
+# Continuum puts its save job at the front of status-right when it is the only
+# tmux server; the watcher runs it instead, so nothing forks inside the status line.
+CONTINUUM_JOB='#\(([^)]*/continuum_save\.sh)\)'
+prev_stats=- prev_battery=-
+
+# Sets @status_stats, @status_battery and each pane's @pane_branch when they
+# changed: every set-option makes tmux redraw all clients. Fails only when the
+# server is gone.
+update() {
+    local panes sr continuum stats battery id cur path branch
+    local cmds=() pane_cmds=()
+    panes=$(tmux list-panes -a -F "#{pane_id}$TAB#{pane_current_path}$TAB#{@pane_branch}") || return 1
+    sr=$(tmux show -gv status-right) || return 1
+    continuum=$(tmux show -gqv @status_continuum)
+    if [[ "$sr" =~ $CONTINUUM_JOB ]]; then
+        continuum=${BASH_REMATCH[1]}
+        cmds+=(set -g @status_continuum "$continuum" \; set -g status-right "${sr/"${BASH_REMATCH[0]}"/}" \;)
+    fi
+    out=; seg_ollama; seg_ram; seg_cpu
+    stats=$out
+    out=; seg_battery
+    battery=$out
+    [[ "$stats" == "$prev_stats" ]] || cmds+=(set -g @status_stats "$stats" \;)
+    [[ "$battery" == "$prev_battery" ]] || cmds+=(set -g @status_battery "$battery" \;)
+    while IFS=$TAB read -r id path cur; do
+        [[ -n "$id" ]] || continue
+        branch=$(git -C "$path" rev-parse --abbrev-ref HEAD 2>/dev/null)
+        [[ "$branch" == "$cur" ]] && continue
+        if [[ -n "$branch" ]]; then
+            pane_cmds+=(set -p -t "$id" @pane_branch "$branch" \;)
+        else
+            pane_cmds+=(set -pu -t "$id" @pane_branch \;)
+        fi
+    done <<<"$panes"
+    # Panes last: one closed since the listing stops the rest of the list.
+    cmds+=("${pane_cmds[@]}")
+    ((${#cmds[@]} == 0)) || tmux "${cmds[@]}"
+    prev_stats=$stats prev_battery=$battery
+    [[ -z "$continuum" ]] || "$continuum"
+    return 0
+}
+
+watch() {
+    local server=${TMUX#*,}
+    server=${server%%,*}
+    [[ -n "$server" ]] || { echo "tmux-status watch: run it from tmux" >&2; exit 2; }
+    # run -b shows a job's output, and reports a killed one. A config reload
+    # starts a new watcher, so the previous one exits at its next pass instead.
+    exec >/dev/null 2>&1
+    save "watch-$server" $$
+    while update; do
+        sleep 0.2
+        load "watch-$server"
+        [[ "$REPLY" == "$$" ]] || break
+    done
+}
+
+case "$1" in
+    watch | update) "$1"; exit ;;
+esac
+out=
+for seg in "$@"; do
+    case "$seg" in
+        ollama | ram | cpu | battery) "seg_$seg" ;;
+        *) echo "usage: tmux-status watch | update | [ollama|ram|cpu|battery]..." >&2; exit 2 ;;
+    esac
+done
+printf '%s\n' "$out"
