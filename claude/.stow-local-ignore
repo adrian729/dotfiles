@@ -1,7 +1,6 @@
 ^/worktree-guide\.md
 ^/claude-wt-guide\.md
 ^/claude-wt-quickstart\.md
-^/agents-reference\.md
 ^/agent-optimization-analysis\.md
 ^/standalone_quick_setup\.sh
 ^/install\.sh

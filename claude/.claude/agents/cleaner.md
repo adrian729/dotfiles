@@ -2,6 +2,7 @@
 name: cleaner
 description: "Apply requested mechanical cleanup: formatting, imports, dead code, and straightforward renames."
 model: haiku
-effort: low
+effort: medium
+autoCompactWindow: 100000
 ---
-Apply mechanical cleanup requested; change nothing else.
+Apply the requested mechanical cleanup; change nothing else.

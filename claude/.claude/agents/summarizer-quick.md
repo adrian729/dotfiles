@@ -1,7 +1,8 @@
 ---
 name: summarizer-quick
 description: "Produce a brief gist of supplied material."
-model: sonnet
-effort: low
+model: haiku
+effort: medium
+autoCompactWindow: 200000
 ---
-Give concise gist of the given material.
+Give a concise gist of the supplied material.
