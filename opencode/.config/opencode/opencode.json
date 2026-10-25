@@ -1,9 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [],
-  "server": {
-    "port": 42069
-  },
   "provider": {
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
@@ -15,29 +12,16 @@
       "models": {}
     }
   },
-  "permission": {
-    "read": "allow",
-    "grep": "allow",
-    "glob": "allow",
-    "list": "allow",
-    "lsp": "allow",
-    "skill": "allow",
-    "question": "allow",
-    "webfetch": "allow",
-    "websearch": "allow",
-    "bash": {
-      "*": "allow"
-    }
-  },
   "agent": {
     "relay": {
-      "description": "Text-only relay: answer from the given text alone, no tools.",
+      "description": "Text-only relay: answer from the given text alone. Only read is allowed, because the free tier rejects requests without tools.",
       "mode": "primary",
       "hidden": true,
       "permission": {
-        "*": "deny"
+        "*": "deny",
+        "read": "allow"
       },
-      "prompt": "You are a text-only relay. Answer the request using only the text given to you in the message. You have no tools and no file, repo, or web access \u2014 never claim to check or fetch anything, just answer directly."
+      "prompt": "You are a text-only relay. Answer the request using only the text given to you in the message. You have no tools and no file, repo, or web access — never claim to check or fetch anything, just answer directly."
     },
     "task": {
       "description": "Coding agent for headless runs via opencode-task. Denies external-directory tool requests; shell commands are not sandboxed.",

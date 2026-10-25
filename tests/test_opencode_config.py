@@ -14,54 +14,12 @@ class OpenCodeConfig(Fixture):
         return subprocess.run([str(SCRIPTS / name), *map(str, args)], input=data, text=True,
                               capture_output=True, cwd=cwd or self.home, env=self.env, timeout=timeout)
 
-    def catalog(self, available=None, config=None):
-        self.write('.local/config/opencode-models.json', config or {
-            'free_models': ['opencode/a-free', 'opencode/b-free'],
-            'relay': ['paid/model', 'opencode/b-free', 'opencode/a-free'],
-            'agents': {'relay': ['paid/model', 'opencode/b-free'],
-                       'task': ['opencode-go/a-free', 'opencode/a-free']},
-        })
-        self.fake('opencode', 'import sys\nassert sys.argv[1:] == ["models", "opencode"]\n'
-                  + ('raise SystemExit(1)' if available is None else f'print({available!r})'))
-
-    def test_exact_free_ids_and_deployed_catalog(self):
-        self.catalog('opencode-go/a-free\nopencode/a-free\nopencode/b-free\nwarning: stray output')
-        p = self.run_script('opencode-agent-models-probe')
-        self.assertEqual(p.returncode, 0, p.stderr)
-        state = json.loads((self.home / '.local/state/agents/opencode-agent-model-overrides.json').read_text())
-        self.assertEqual(state['agent'], {'relay': {'model': 'opencode/b-free'}, 'task': {'model': 'opencode/a-free'}})
-        p = self.run_script('opencode-llm-probe')
-        self.assertEqual(p.returncode, 0, p.stderr)
-        state = json.loads((self.home / '.local/state/agents/opencode-llm.json').read_text())
-        self.assertEqual(state['models'], ['opencode/b-free', 'opencode/a-free'])
-
-    def test_unavailable_catalog_cannot_unpin_agents_or_discover_unapproved_models(self):
-        for available in (None, 'opencode-go/a-free\nopencode/unapproved-free'):
-            self.catalog(available)
-            p = self.run_script('opencode-agent-models-probe')
-            self.assertNotEqual(p.returncode, 0)
-            pins = json.loads((self.home / '.local/state/agents/opencode-agent-model-overrides.json').read_text())
-            self.assertEqual(pins['agent']['task']['model'], 'opencode/a-free')
-            self.assertNotIn('ambient', p.stderr)
-            p = self.run_script('opencode-llm-probe')
-            self.assertNotEqual(p.returncode, 0)
-            state = json.loads((self.home / '.local/state/agents/opencode-llm.json').read_text())
-            self.assertEqual(state['models'], [])
-
-    def test_unconfigured_free_pin_rejected_without_overwriting_state(self):
-        self.catalog('opencode/a-free', {'free_models': ['opencode/a-free'], 'relay': [],
-                     'agents': {'task': ['opencode-go/a-free']}})
-        old = self.write('.local/state/agents/opencode-agent-model-overrides.json', 'old pins')
-        p = self.run_script('opencode-agent-models-probe')
-        self.assertNotEqual(p.returncode, 0)
-        self.assertEqual(old.read_text(), 'old pins')
-
     def installer_fixture(self):
         package = self.home / 'installer/opencode'
         package.mkdir(parents=True)
         shutil.copy2(PACKAGE / 'install.sh', package / 'install.sh')
-        for relative in ('.config/opencode/opencode.json', '.local/config/opencode-models.json'):
-            self.write('installer/opencode/' + relative, (PACKAGE / relative).read_text())
+        relative = '.config/opencode/opencode.json'
+        self.write('installer/opencode/' + relative, (PACKAGE / relative).read_text())
         self.write('installer/lib/common.sh', '''
 brew_shellenv() { :; }
 ensure_cmd() { command -v "$1" >/dev/null; }
@@ -75,42 +33,21 @@ run_remote_installer() { return 1; }
         return subprocess.run(['bash', str(package / 'install.sh')], env=self.env,
                               text=True, capture_output=True, timeout=5)
 
-    def test_offline_install_has_free_pins_and_preserves_symlink_source(self):
+    def test_install_copies_config_and_preserves_symlink_source(self):
         package = self.installer_fixture()
         old = self.write('tracked.json', '{"keep":true}')
         target = self.home / '.config/opencode/opencode.json'
         target.parent.mkdir(parents=True)
         target.symlink_to(old)
-        # A stale override from a previous successful probe must not be merged.
-        self.write('.local/state/agents/opencode-agent-model-overrides.json', {'agent': {'task': {'model': 'paid/model'}}})
-        self.fake_probe('opencode-agent-models-probe', 'exit 1')
         p = self.install(package)
         self.assertEqual(p.returncode, 0, p.stderr)
         cfg = json.loads(target.read_text())
-        free = json.loads((PACKAGE / '.local/config/opencode-models.json').read_text())['free_models']
-        self.assertEqual(len(cfg['agent']), 10)
-        self.assertTrue(all(agent['model'] in free for agent in cfg['agent'].values()))
-        self.assertIn(cfg['small_model'], free)
+        self.assertEqual(cfg, json.loads((PACKAGE / '.config/opencode/opencode.json').read_text()))
+        self.assertEqual(set(cfg['agent']), {'relay', 'task'})
+        self.assertEqual(cfg['agent']['relay']['permission'], {'*': 'deny', 'read': 'allow'})
         self.assertFalse(target.is_symlink())
         self.assertEqual(old.read_text(), '{"keep":true}')
         self.assertEqual(target.stat().st_mode & 0o777, 0o600)
-
-    def fake_probe(self, name, body):
-        p = self.write('.local/scripts/' + name, '#!/bin/bash\n' + body + '\n')
-        p.chmod(0o755)
-
-    def test_install_merges_verified_pins(self):
-        package = self.installer_fixture()
-        free = json.loads((PACKAGE / '.local/config/opencode-models.json').read_text())
-        pins = {'agent': {name: {'model': 'opencode/big-pickle'} for name in free['agents']}}
-        self.write('.local/state/agents/opencode-agent-model-overrides.json', pins)
-        self.fake_probe('opencode-agent-models-probe', 'exit 0')
-        p = self.install(package)
-        self.assertEqual(p.returncode, 0, p.stderr)
-        cfg = json.loads((self.home / '.config/opencode/opencode.json').read_text())
-        self.assertEqual(cfg['agent']['task']['model'], 'opencode/big-pickle')
-        self.assertEqual(cfg['small_model'], 'opencode/big-pickle')
-        self.assertEqual(cfg['agent']['relay']['permission'], {'*': 'deny'})
 
     def test_installer_leaves_existing_config_on_bad_source_or_folded_directory(self):
         package = self.installer_fixture()
@@ -198,12 +135,3 @@ else:
         self.assertEqual(p.returncode, 7)
         self.assertEqual(json.loads((self.home / 'cli-args').read_text()), ['--session', 'parent'])
         self.assertNotIn('Push and open', p.stdout)
-
-    def test_plugin_failure_paths(self):
-        node = shutil.which('node')
-        if not node:
-            self.skipTest('node not installed')
-        self.catalog()
-        p = subprocess.run([node, str(ROOT / 'tests/test_opencode_fallback.mjs')], env=self.env,
-                           text=True, capture_output=True, timeout=10)
-        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)

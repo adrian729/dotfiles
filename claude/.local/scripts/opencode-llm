@@ -5,11 +5,6 @@ set -euo pipefail
 
 AGENT="relay"
 NEUTRAL_DIR="$HOME/.local/state/agents/opencode-llm-cwd"
-STATE_FILE="$HOME/.local/state/agents/opencode-llm.json"
-CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode-models.json"
-if [ ! -f "$CONFIG_FILE" ]; then
-  CONFIG_FILE="$HOME/.local/config/opencode-models.json"
-fi
 
 die() { echo "opencode-llm: $*" >&2; exit 1; }
 
@@ -120,24 +115,21 @@ fi
 [ -n "$FULL_PROMPT" ] || { echo "opencode-llm: empty prompt and empty stdin" >&2; exit 2; }
 
 
-# The probe orders candidates per machine. Only explicitly configured free
-# models participate in the default walk; -m is an explicit model choice.
+# Free models come from the live catalog's pricing, so no model list needs upkeep.
+free_models() {
+  opencode models opencode --verbose 2>/dev/null | grep -v '^[^ {}]' |
+    jq -r 'select(.cost.input == 0 and .cost.output == 0 and .status != "deprecated") | "\(.providerID)/\(.id)"'
+}
+# Only free models participate in the default walk; -m is an explicit model choice.
 MODELS=()
 load_models() {
   if [ -n "$FORCE_MODEL" ]; then
     MODELS=("$FORCE_MODEL")
     return
   fi
-  if [ -f "$STATE_FILE" ]; then
-    while IFS= read -r m; do [ -n "$m" ] && MODELS+=("$m"); done \
-      < <(jq -r --slurpfile cfg "$CONFIG_FILE" '.models[]? | select(. as $m | $cfg[0].free_models | index($m))' "$STATE_FILE" 2>/dev/null)
-  fi
-  if [ ${#MODELS[@]} -eq 0 ] && [ -f "$CONFIG_FILE" ]; then
-    while IFS= read -r m; do [ -n "$m" ] && MODELS+=("$m"); done \
-      < <(jq -r '. as $cfg | .relay[]? | select(. as $m | $cfg.free_models | index($m))' "$CONFIG_FILE" 2>/dev/null)
-  fi
+  while IFS= read -r m; do [ -n "$m" ] && MODELS+=("$m"); done < <(free_models || true)
   if [ ${#MODELS[@]} -eq 0 ]; then
-    echo "opencode-llm: no relay models found in $CONFIG_FILE or $STATE_FILE" >&2
+    echo "opencode-llm: no free models in the OpenCode catalog" >&2
     exit 5
   fi
 }

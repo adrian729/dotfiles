@@ -15,8 +15,6 @@
       "Bash(ollama show*)",
       "Bash(opencode-task*)",
       "Bash(opencode-llm*)",
-      "Bash(opencode-models *)",
-      "Bash(opencode-agent-models-probe *)",
       "Bash(cat *)",
       "Bash(bat *)",
       "Bash(ls *)",

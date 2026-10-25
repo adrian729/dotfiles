@@ -240,17 +240,20 @@ print('200', end='')
 class OpenCode(Fixture):
     def setUp(self):
         super().setUp()
-        self.write('.config/opencode/opencode-models.json', {'free_models': ['opencode/free-fixture'],
-                   'relay': ['paid/fixture', 'opencode/free-fixture'],
-                   'agents': {'task': ['paid/fixture', 'opencode/free-fixture']}})
-        self.write('.local/state/agents/opencode-llm.json', {'models': ['paid/fixture', 'opencode/free-fixture']})
         self.env['CALL_LOG'] = str(self.home / 'calls')
         self.fake('opencode', '''import json, os, pathlib, signal, subprocess, sys, time
 args = sys.argv[1:]
 if args[:2] == ['agent', 'list']:
     print('task (primary)'); sys.exit(0)
-if args[:2] == ['models', 'opencode']:
-    print('opencode/free-fixture'); sys.exit(0)
+if args == ['models', 'opencode', '--verbose']:
+    catalog = [('paid/fixture', 1, 'active'), ('opencode/old-free', 0, 'deprecated')]
+    if os.environ.get('OC_MODE') != 'paid-only': catalog.append(('opencode/free-fixture', 0, 'active'))
+    for model, cost, status in catalog:
+        provider, model_id = model.split('/')
+        print(model)
+        print(json.dumps({'id': model_id, 'providerID': provider, 'status': status,
+                          'cost': {'input': cost, 'output': cost}}, indent=2))
+    sys.exit(0)
 assert os.environ.get('DOTFILES_OPENCODE_NO_FALLBACK') == '1'
 with open(os.environ['CALL_LOG'], 'a') as f: f.write(json.dumps(args)+'\\n')
 print(json.dumps({'type':'text','sessionID':'session-fixture','part':{'id':'part1','text':'answer'}}), flush=True)
@@ -273,6 +276,7 @@ print(json.dumps({'type':'step_finish','sessionID':'session-fixture','part':{'re
         calls = (self.home / 'calls').read_text()
         self.assertIn('opencode/free-fixture', calls)
         self.assertNotIn('paid/fixture', calls)
+        self.assertNotIn('old-free', calls)
         p = self.run_script('opencode-llm', '-m', 'paid/fixture', 'summarize')
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('paid/fixture', (self.home / 'calls').read_text())
@@ -295,12 +299,13 @@ print(json.dumps({'type':'step_finish','sessionID':'session-fixture','part':{'re
             p = self.run_script('opencode-task', 'work', '-m', 'fixture', 'fix it', cwd=repo)
             self.assertEqual(p.returncode, 6, p.stderr)
 
-    def test_deployed_catalog_fallback(self):
-        catalog = self.home / '.config/opencode/opencode-models.json'
-        self.write('.local/config/opencode-models.json', catalog.read_text())
-        catalog.unlink()
+    def test_no_free_model_never_uses_ambient_default(self):
+        self.env['OC_MODE'] = 'paid-only'
         p = self.run_script('opencode-llm', 'summarize')
-        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.returncode, 5, p.stderr)
+        p = self.run_script('opencode-task', 'work', 'fix it', cwd=self.repo())
+        self.assertEqual(p.returncode, 5, p.stderr)
+        self.assertFalse((self.home / 'calls').exists())
 
     def test_task_reports_committed_changes_from_start(self):
         repo = self.repo()
@@ -312,6 +317,7 @@ print(json.dumps({'type':'step_finish','sessionID':'session-fixture','part':{'re
         self.assertIn('agent-change', p.stdout)
         self.assertIn('1 file changed', p.stdout)
         self.assertEqual(self.git(repo, 'config', 'wt.work.session'), 'session-fixture')
+        self.assertIn('opencode/free-fixture', (self.home / 'calls').read_text())
 
     def test_timeout_preserves_session_and_worktree(self):
         self.env['OC_MODE'] = 'timeout'

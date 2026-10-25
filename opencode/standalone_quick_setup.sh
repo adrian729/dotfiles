@@ -125,4 +125,4 @@ if have gh && ! gh auth status >/dev/null 2>&1; then
 fi
 echo "- smoke test:  cd <some-git-repo> && opencode-wt hello green"
 echo ""
-echo "Docs: opencode-wt-quickstart.md / opencode-wt-guide.md"
+echo "Docs: opencode-wt-guide.md"

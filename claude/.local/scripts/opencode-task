@@ -14,7 +14,7 @@ usage() {
   cat >&2 <<'EOF'
 Usage: opencode-task NAME PROMPT...
   NAME         worktree/branch/session name (same convention as opencode-wt)
-  -m MODEL     provider/model (overrides the agent's pinned model in opencode.json)
+  -m MODEL     provider/model (default: first free model in the live catalog)
   --agent A    agent to run (default: task — bash/edit/read; worktree is not a sandbox)
   -T SECS      timeout (default 1800)
 Runs in <repo>/.worktrees/NAME; re-running the same NAME resumes that
@@ -63,19 +63,12 @@ case "$agent_mode" in
   *) die "agent '$AGENT' is unavailable for opencode run" ;;
 esac
 
-# No explicit model: select from the configured free set and the live catalog.
+# No explicit model: take the first free model in the live catalog's pricing.
 # Never fall through to OpenCode's ambient (possibly paid) default.
 if [ -z "$MODEL" ]; then
-  config="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode-models.json"
-  [ -f "$config" ] || config="$HOME/.local/config/opencode-models.json"
-  [ -f "$config" ] || { echo "opencode-task: no model catalog; pass -m MODEL explicitly" >&2; exit 5; }
-  candidates=$(jq -r --arg agent "$AGENT" '. as $cfg | .agents[$agent][]? | select(. as $m | $cfg.free_models | index($m))' "$config") || die "invalid model catalog"
-  available=$(opencode models opencode 2>/dev/null) || die "could not query available models"
-  while IFS= read -r candidate; do
-    [ -n "$candidate" ] || continue
-    if printf '%s\n' "$available" | grep -qxF "$candidate"; then MODEL="$candidate"; break; fi
-  done <<< "$candidates"
-  [ -n "$MODEL" ] || { echo "opencode-task: no configured free model available for $AGENT; refresh the catalog or pass -m MODEL" >&2; exit 5; }
+  MODEL=$(opencode models opencode --verbose 2>/dev/null | grep -v '^[^ {}]' |
+    jq -r 'select(.cost.input == 0 and .cost.output == 0 and .status != "deprecated") | "\(.providerID)/\(.id)"' | head -n 1) || true
+  [ -n "$MODEL" ] || { echo "opencode-task: no free model in the OpenCode catalog; pass -m MODEL" >&2; exit 5; }
 fi
 
 case "$NAME" in *'@{'*) echo "opencode-task: invalid worktree name: $NAME" >&2; exit 2 ;; esac

@@ -9,7 +9,7 @@ description: Invoke or inspect OpenCode from a shell, script, or another agent. 
 
 1. Choose the working directory, agent, model, and session. Supply the task and necessary context explicitly; a separate process does not inherit the caller's conversation. Do not launch recursive OpenCode delegation from inside OpenCode; diagnostic commands remain useful there.
 2. Check `opencode run --help` or the relevant subcommand's help for installed options. Use the [CLI reference](https://opencode.ai/docs/cli/) for additional commands and environment variables.
-3. For delegation, use a currently available free model unless explicitly asked to use a paid one, including by an invoked workflow. For free selection, compare `opencode-models free` with `opencode models opencode`; resolve stale catalog entries before relying on them. Pass the selected model with `-m` rather than assuming an agent has a valid pin.
+3. For delegation, use a currently available free model unless explicitly asked to use a paid one, including by an invoked workflow. For free selection, list free models with `opencode models opencode --verbose` and pick IDs whose `cost.input` and `cost.output` are 0. Pass the selected model with `-m` rather than assuming an agent has a valid pin.
 4. Check `opencode agent list` for the intended agent. Direct `run --agent` calls need a `primary` or `all` agent; do not rely on a subagent-only definition to constrain the run. The dotfiles `task` agent can edit and run shell commands; `relay` is intended for supplied-text responses.
 5. Run with `--format json` when a script needs structured events. Check exit status, error events, and actual task results before accepting the response. Retain the session ID when follow-up work is needed.
 

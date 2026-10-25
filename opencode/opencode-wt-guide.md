@@ -39,7 +39,7 @@ bash opencode/standalone_quick_setup.sh
 
 Standalone setup backs up differing local scripts and writes PATH additions to `~/.local/.local_profile`. The dotfiles shell loads this file; other shell setups need to source it.
 
-For the complete configuration, run root `install.sh` and select `agents` and `opencode`. A manual Stow install from the repo root must use `stow --no-folding --target="$HOME" agents opencode`, followed by `bash opencode/install.sh` to copy settings and resolve model pins. If standalone script copies already exist, run `bash opencode/pre_stow.sh` before stowing.
+For the complete configuration, run root `install.sh` and select `agents` and `opencode`. A manual Stow install from the repo root must use `stow --no-folding --target="$HOME" agents opencode`, followed by `bash opencode/install.sh` to copy settings. If standalone script copies already exist, run `bash opencode/pre_stow.sh` before stowing.
 
 ### 3. Permissions
 
@@ -70,9 +70,6 @@ cd my-repo && opencode-wt feature-auth blue
 # tmux pane 2
 cd my-repo && opencode-wt bugfix-login red
 ```
-
-`prefix+w t` in tmux opens a picker over all worktrees — select one, then
-choose claude or opencode at the follow-up prompt.
 
 Two sessions in separate working directories, each pane tinted with its color. The tint resets when the session ends.
 

@@ -11,8 +11,8 @@ GNU Stow packages deploy files to `~`. `install.sh` selects packages, stows them
 | Claude config, agents, skills and hooks | `claude/.claude/` |
 | Claude and local LLM scripts | `claude/.local/scripts/` |
 | Claude's local plugin marketplace | `claude/marketplace/` |
-| OpenCode config and agents | `opencode/.config/opencode/` |
-| OpenCode model selection and scripts | `opencode/.local/{config,scripts}/` |
+| OpenCode config | `opencode/.config/opencode/` |
+| OpenCode scripts | `opencode/.local/scripts/` |
 | Codex defaults and installation | `codex/` (see `codex/README.md`) |
 | Neovim | `nvim/.config/nvim/` |
 | Shell | `zsh/.config/zsh/` |
@@ -39,8 +39,7 @@ Root `.claude/` holds project instructions only; it is not Claude's deployment d
 ## Cross-file dependencies
 
 - Claude and OpenCode share named worktrees at `.worktrees/<name>/`, but retain separate AI sessions.
-- Translate shared permission changes between Claude's `permissions` and OpenCode's `permission` schemas. Preserve intentional tool-specific exceptions. OpenCode agent-level bash permissions replace the top-level block; keep the deny lists in `debugger`, `implementer`, and `implementer-quick` aligned.
-- OpenCode's model map is `opencode/.local/config/opencode-models.json`. Keep every pinned agent covered, free candidates explicit, and the relay preferences aligned. Probes must retain explicit free pins on failure instead of falling through to a potentially paid default. Update the dated `MODELS.md` reference when changing the catalog. Adding a provider requires checking its authorization and limits.
+- OpenCode has no pinned model list. `opencode-task` and `opencode-llm` pick free models from the live catalog's pricing (`opencode models opencode --verbose`, zero `cost`) and never fall through to OpenCode's ambient, potentially paid default. Its only agents are `relay` and `task` in `opencode.json`, which those wrappers need; otherwise OpenCode runs on its default permissions. `relay` must keep `read` allowed: the free tier rejects requests that carry no tools.
 - Claude's `skillOverrides: name-only` saves discovery context; it does not enforce explicit invocation. The four workflow skills (`audit-loop`, `autonomous-process`, `best-of-n`, `evaluator-optimizer`) require an explicit request in their instructions. Current settings register no steering hooks; old hook files are compatibility stubs.
 - Keep Neovim's lazy.nvim `dev.fallback = true`: `adrian729/ducktape.nvim` uses `~/projects/ducktape.nvim` when present and otherwise clones from GitHub. `_ducktape/STATE.md` and `PLAN.md` describe that extraction; read them when working on it.
 
