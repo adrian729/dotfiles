@@ -93,9 +93,9 @@ ram_usage() {
     else
         # Same accounting as tmux-cpu: cached file pages count as available.
         REPLY=$(vm_stat 2>/dev/null | awk -F: '{ gsub(/[ .]/, "", $2) }
-            /^Pages (active|inactive|speculative|wired down|occupied by compressor)$/ { u += $2 }
-            /^Pages purgeable$|^File-backed pages$/ { c += $2 }
-            /^Pages free$/ { f += $2 }
+            $1 ~ /^Pages (active|inactive|speculative|wired down|occupied by compressor)$/ { u += $2 }
+            $1 ~ /^(Pages purgeable|File-backed pages)$/ { c += $2 }
+            $1 == "Pages free" { f += $2 }
             END { if (u + f) printf "%d\n", 1000 * (u - c) / (u + f) + 0.5 }')
     fi
 }
