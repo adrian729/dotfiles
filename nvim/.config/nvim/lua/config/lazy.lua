@@ -26,6 +26,9 @@ require("lazy").setup({
 	},
 	install = { colorscheme = { "catppuccin" } },
 	checker = { enabled = true },
+	-- No plugin here needs luarocks; enabled, :checkhealth lazy reports a missing
+	-- hererocks build as an error. Re-enable if a plugin spec ever adds `rocks`.
+	rocks = { enabled = false },
 	dev = {
 		path = "~/projects",
 		patterns = { "adrian729" },

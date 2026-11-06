@@ -49,6 +49,23 @@ if ! rust-analyzer --version &>/dev/null; then
   fi
 fi
 
+# conform formats Markdown with prettierd (prettier as fallback) and warns
+# "Formatters unavailable" on every save without either. npm under nvm, as in
+# claude/install.sh: the brew formula depends on brew's node, which has no
+# Intel macOS bottle. prettierd 0.29 requires node 22+.
+if ! have prettierd && ! have prettier; then
+  if ensure_node 22; then
+    echo "Installing prettierd (Markdown formatter)..."
+    npm install -g @fsouza/prettierd || {
+      warn "prettierd install failed — Markdown files will not be formatted on save"
+      install_status=1
+    }
+  else
+    warn "node 22+ unavailable — skipping prettierd; Markdown files will not be formatted on save"
+    install_status=1
+  fi
+fi
+
 # nvim-treesitter compiles every parser with a C compiler and
 # telescope-fzf-native's spec is `build = "make"`. macOS gets both from the
 # Command Line Tools; a fresh Debian/Ubuntu has neither.
@@ -92,6 +109,18 @@ if command -v nvim &>/dev/null && nvim_ge_012; then
   # into place; one interrupted by an exiting nvim (the restores above start
   # downloads) leaves a directory the next rename cannot replace.
   rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/nvim/tree-sitter-"*
+  # nvim-treesitter's old master branch compiled parsers into its own plugin
+  # directory; the main branch installs them under site/ and leaves those
+  # untracked. That directory is on the runtimepath ahead of Neovim's bundled
+  # parsers, so the stale vim parser breaks the current vim highlight query
+  # (Invalid node type "tab") in .vim files and every vim.cmd injection.
+  # master tracks parser/; main is recognised by its runtime/queries layout.
+  ts_plugin="${XDG_DATA_HOME:-$HOME/.local/share}/nvim/lazy/nvim-treesitter"
+  if [ -d "$ts_plugin/parser" ] && [ -d "$ts_plugin/runtime/queries" ] &&
+    git -C "$ts_plugin" rev-parse --git-dir >/dev/null 2>&1 &&
+    [ -z "$(git -C "$ts_plugin" ls-files -- parser parser-info)" ]; then
+    rm -rf "$ts_plugin/parser" "$ts_plugin/parser-info"
+  fi
   DOTFILES_NVIM_BOOTSTRAP=1 nvim --headless -c "qa" 2>&1 || install_status=1
 
   # Repair plugins left without a binary by the old autoload build callback.
