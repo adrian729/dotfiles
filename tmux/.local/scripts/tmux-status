@@ -403,9 +403,15 @@ update() {
     update_slow all && update_fast
 }
 
-# Whether this watcher is still the one the server should run.
+# Whether this watcher is still the one the server should run. macOS deletes
+# $TMPDIR files that go unmodified for days, and a reload replaces the token
+# atomically, so a missing token means the sweep: write it again.
 current() {
     load "watch-$server"
+    if [[ -z "$REPLY" ]]; then
+        [[ -d "$STATE" ]] || mkdir -p -m 700 "$STATE" 2>/dev/null
+        save "watch-$server" "$token" && REPLY=$token
+    fi
     [[ "$REPLY" == "$token" ]] && kill -0 "$server" 2>/dev/null
 }
 

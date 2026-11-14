@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import tarfile
+import time
 import unittest
 
 from test_claude_config import Fixture, ROOT
@@ -832,6 +833,32 @@ class TmuxStatusWatcher(DotfilesFixture):
 
         self.tmux('kill-server')
         self.assertEqual(self.update().returncode, 1)
+
+    def test_watcher_survives_a_swept_token_and_yields_to_a_new_one(self):
+        self.tmux('new-session', '-d')
+        server = self.tmux('display', '-p', '#{pid}')[0]
+        self.env['TMUX'] = f'{self.socket},{server},0'
+        watcher = subprocess.Popen(['bash', str(ROOT / 'tmux/.local/scripts/tmux-status'), 'watch'],
+                                   env=self.env, cwd=self.home, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL)
+        self.addCleanup(lambda: watcher.poll() is None and watcher.kill())
+        token = self.home / f'tmux-status-{os.getuid()}' / f'watch-{server}'
+
+        def wait_for(check):
+            deadline = time.monotonic() + 10
+            while not check():
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.1)
+
+        wait_for(token.exists)
+        # macOS deletes $TMPDIR files that go unmodified for days.
+        token.unlink()
+        wait_for(token.exists)
+        self.assertEqual(token.read_text(), f'{watcher.pid}\n')
+        self.assertIsNone(watcher.poll())
+        # A config reload starts a watcher with its own token.
+        token.write_text('1\n')
+        self.assertEqual(watcher.wait(timeout=10), 0)
 
 
 class BetterCmdTab(DotfilesFixture):
