@@ -1,0 +1,72 @@
+#!/bin/bash
+# Stop macOS from switching keyboard layout/input source from the keyboard, so
+# Ctrl+Space (tmux prefix) and friends reach the terminal.
+#
+#   no-input-switch          disable everything now (and in saved prefs)
+#   no-input-switch --check  show the live state without changing anything
+#
+# Disables symbolic hotkeys 60 (Ctrl+Space, "Select the previous input
+# source") and 61 (Ctrl+Option+Space, "Select next source in Input menu"), and
+# sets the Globe/fn key to "Do Nothing". The saved prefs only apply at login and
+# macOS updates have been seen re-enabling the hotkeys live while the prefs
+# still said "off", so the live window-server state is set too, through the
+# private call System Settings itself makes. A LaunchAgent installed by
+# tmux/install.sh runs this at every login.
+
+set -u
+HOTKEYS=(60 61)
+helper_dir="${XDG_CACHE_HOME:-$HOME/.cache}/no-input-switch"
+helper="$helper_dir/hotkeys"
+
+command -v defaults >/dev/null || exit 0  # not macOS
+
+# Compiled once and cached: at login, or right after an update that broke the
+# Command Line Tools, calling cc would pop the "install developer tools" dialog.
+build_helper() {
+	[ -x "$helper" ] && return 0
+	[ -x /Library/Developer/CommandLineTools/usr/bin/cc ] || xcode-select -p >/dev/null 2>&1 || return 1
+	mkdir -p "$helper_dir" || return 1
+	cat >"$helper_dir/hotkeys.c" <<'EOF'
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+extern bool CGSIsSymbolicHotKeyEnabled(int);
+extern int CGSSetSymbolicHotKeyEnabled(int, bool);
+/* hotkeys check|off ID... ; prints "ID=0|1" per hotkey, exit 1 if any still on */
+int main(int argc, char **argv) {
+	if (argc < 3) return 2;
+	int off = strcmp(argv[1], "off") == 0, rc = 0;
+	for (int i = 2; i < argc; i++) {
+		int id = atoi(argv[i]);
+		if (off) CGSSetSymbolicHotKeyEnabled(id, false);
+		bool on = CGSIsSymbolicHotKeyEnabled(id);
+		printf("%d=%d\n", id, on);
+		if (on) rc = 1;
+	}
+	return rc;
+}
+EOF
+	cc -o "$helper" "$helper_dir/hotkeys.c" -framework ApplicationServices 2>/dev/null
+}
+
+if [ "${1:-}" = --check ]; then
+	build_helper || { echo "cannot build helper (no Command Line Tools?)" >&2; exit 1; }
+	"$helper" check "${HOTKEYS[@]}" | sed 's/=1$/ = ON (macOS steals it)/; s/=0$/ = off/; s/^/hotkey /'
+	echo "Globe key action: $(defaults read com.apple.HIToolbox AppleFnUsageType 2>/dev/null || echo 'default (not set)') (0 = do nothing)"
+	exit 0
+fi
+
+rc=0
+defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 60 \
+	'{ enabled = 0; value = { parameters = (32, 49, 262144); type = standard; }; }' || rc=1
+defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 61 \
+	'{ enabled = 0; value = { parameters = (32, 49, 786432); type = standard; }; }' || rc=1
+defaults write com.apple.HIToolbox AppleFnUsageType -int 0 || rc=1
+
+if build_helper; then
+	"$helper" off "${HOTKEYS[@]}" >/dev/null || { echo "macOS still has an input-source hotkey enabled" >&2; rc=1; }
+else
+	echo "Ctrl+Space is freed after the next login (could not build the live-update helper)"
+fi
+exit $rc

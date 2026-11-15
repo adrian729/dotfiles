@@ -8,26 +8,28 @@ ensure_cmd tmux
 ensure_cmd fzf
 ensure_cmd bc
 
-# The tmux prefix is C-Space, which macOS takes by default for "Select the
-# previous input source" (hotkey 60) once a second keyboard layout exists, so
-# the key never reaches the terminal. Ctrl+Option+Space (61) still switches.
-# The preference takes effect at the next login; the window server only applies
-# it to the running session through the private call System Settings makes, so
-# that is compiled and run once (cc comes with the Command Line Tools).
+# The tmux prefix is C-Space, which macOS takes for "Select the previous input
+# source" (hotkey 60) once a second keyboard layout exists, so the key never
+# reaches the terminal. no-input-switch turns off every keyboard input-source
+# switch (60, 61 and the Globe key), both in the prefs and live; macOS updates
+# have re-enabled them live, so a LaunchAgent re-runs it at every login.
 if is_macos; then
-	if defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 60 \
-		'{ enabled = 0; value = { parameters = (32, 49, 262144); type = standard; }; }'; then
-		hotkey_tmp=$(mktemp -d)
-		printf '%s\n' '#include <stdbool.h>' \
-			'extern int CGSSetSymbolicHotKeyEnabled(int, bool);' \
-			'int main(void) { return CGSSetSymbolicHotKeyEnabled(60, false); }' >"$hotkey_tmp/hotkey.c"
-		cc -o "$hotkey_tmp/hotkey" "$hotkey_tmp/hotkey.c" -framework ApplicationServices 2>/dev/null &&
-			"$hotkey_tmp/hotkey" ||
-			info "Ctrl+Space reaches tmux after the next login"
-		rm -rf "$hotkey_tmp"
-	else
+	"$(dirname "$0")/.local/scripts/no-input-switch" ||
 		warn "could not free Ctrl+Space from macOS input-source switching"
-	fi
+	agent=~/Library/LaunchAgents/local.no-input-switch.plist
+	mkdir -p ~/Library/LaunchAgents
+	cat >"$agent" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key><string>local.no-input-switch</string>
+	<key>ProgramArguments</key><array><string>$HOME/.local/scripts/no-input-switch</string></array>
+	<key>RunAtLoad</key><true/>
+	<key>LimitLoadToSessionType</key><string>Aqua</string>
+</dict>
+</plist>
+EOF
 fi
 
 # tmux.conf binds copy-mode `y` to ~/.local/scripts/tmux-clipboard, which needs
