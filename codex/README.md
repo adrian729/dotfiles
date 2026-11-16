@@ -39,7 +39,7 @@ Optional later additions include `personality`, TUI themes and status lines, MCP
 
 The `agents/` Stow package owns the original `agents/.agents/skills/markdown-no-wrap/SKILL.md` and deploys it to `~/.agents/skills/`, where Codex discovers it. Claude's `markdown-no-wrap/SKILL.md` is a symlink to the same original. The skill keeps each Markdown paragraph, list item, or blockquote on one physical line while preserving code fences, tables, and headings. Codex can choose it for Markdown edits, or you can invoke it with `$markdown-no-wrap`.
 
-This package does not add a global `AGENTS.md`, custom agents, or hooks.
+This package does not add a global `AGENTS.md`, custom agents, or hooks. The only shared instruction it carries is `developer_instructions`, which forbids AI attribution in commits, PRs, issues and comments; the `agents` package's global git `commit-msg` hook strips any that slips through.
 
 `ai-instruction-file-authoring` also lives under `agents/.agents/skills/` with a Claude discovery symlink. It provides the same instruction-file review workflow to Codex, Claude and OpenCode. Edit the shared original to keep them consistent.
 

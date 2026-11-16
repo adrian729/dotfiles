@@ -5,6 +5,7 @@ model_post_turn_compact_threshold_percent = 70
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 web_search = "live"
+developer_instructions = "Never add co-author, attribution, \"Generated with\" or session-link lines to commits, pull requests, issues or comments."
 
 [tui]
 vim_mode_default = true

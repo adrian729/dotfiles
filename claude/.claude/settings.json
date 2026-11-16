@@ -65,6 +65,20 @@
     "clangd-lsp@claude-plugins-official": true,
     "ty-lsp@dotfiles": true
   },
+  "attribution": { "commit": "", "pr": "", "sessionUrl": false },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"$HOME/.local/scripts/ai-attribution-guard\"; [ -x \"$f\" ] || exit 0; exec \"$f\" claude-hook"
+          }
+        ]
+      }
+    ]
+  },
   "effortLevel": "high",
   "autoCompactWindow": 400000,
   "autoMemoryEnabled": false,

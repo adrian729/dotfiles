@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Keep AI tools from crediting themselves in commits, PRs, issues and comments.
+
+  ai-attribution-guard commit-msg FILE   strip attribution lines from a commit
+                                         message (git's commit-msg hook)
+  ai-attribution-guard claude-hook       Claude Code PreToolUse hook: deny git/gh
+                                         commands and GitHub MCP calls whose text
+                                         carries attribution
+  ai-attribution-guard check             exit 1 if stdin carries attribution
+"""
+import json
+import re
+import shlex
+import sys
+
+AGENTS = r'\b(?:claude|codex|opencode|chatgpt)\b'
+# A line start, or a "\n" escape inside a quoted shell argument.
+LINE_START = r'(?:^|\\n|["\'])'
+PATTERNS = [
+    # Co-author trailers naming an AI agent or its noreply address; a human
+    # co-author who merely works at those companies is left alone.
+    re.compile(r'co-authored-by:[^\n<]*' + AGENTS + r'|co-authored-by:[^\n]*noreply@(?:anthropic|openai)\.com', re.I),
+    # "🤖 Generated with [Claude Code](...)" footers, not prose that mentions a model.
+    re.compile(LINE_START + r'[^\w\n]{0,8}(?:generated|created|written)\s+(?:with|by|using)\s+\[?'
+               r'(?:claude code|claude|codex|opencode|chatgpt)\b', re.I | re.M),
+    # Links back to the agent session or task.
+    re.compile(r'claude\.ai/code/session|chatgpt\.com/codex/tasks|opencode\.ai/s/', re.I),
+]
+
+
+def has_attribution(text):
+    return any(p.search(text) for p in PATTERNS)
+
+
+def strip(text):
+    lines = [l for l in text.split('\n') if not has_attribution(l)]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return '\n'.join(lines) + '\n' if lines else ''
+
+
+def commit_msg(path):
+    with open(path, encoding='utf-8', errors='surrogateescape') as f:
+        text = f.read()
+    if not has_attribution(text):
+        return 0
+    with open(path, 'w', encoding='utf-8', errors='surrogateescape') as f:
+        f.write(strip(text))
+    print('ai-attribution-guard: removed AI attribution lines from the commit message', file=sys.stderr)
+    return 0
+
+
+# Commands that publish text: commit messages, tags, notes, and GitHub writes.
+OUTWARD = re.compile(r'\bgit\b[^|;&]*?\b(?:commit|tag|notes|merge)\b|\bgh\b[^|;&]*?\b(?:pr|issue|release|api|gist)\b')
+FILE_FLAGS = {'-F', '--file', '--body-file', '--notes-file'}
+
+
+def referenced_files(command):
+    try:
+        words = shlex.split(command, posix=True)
+    except ValueError:
+        return []
+    files = []
+    for i, w in enumerate(words):
+        if w in FILE_FLAGS and i + 1 < len(words):
+            files.append(words[i + 1])
+        elif '=' in w and w.split('=', 1)[0] in FILE_FLAGS:
+            files.append(w.split('=', 1)[1])
+    return [f for f in files if f != '-']
+
+
+def tool_text(name, tool_input):
+    if name == 'Bash':
+        command = tool_input.get('command', '')
+        if not OUTWARD.search(command):
+            return ''
+        parts = [command]
+        for path in referenced_files(command):
+            try:
+                with open(path, encoding='utf-8', errors='replace') as f:
+                    parts.append(f.read(1_000_000))
+            except OSError:
+                pass
+        return '\n'.join(parts)
+    if name.startswith('mcp__') and re.search(r'github|gitlab', name, re.I):
+        return json.dumps(tool_input, ensure_ascii=False).replace('\\n', '\n')
+    return ''
+
+
+def claude_hook():
+    try:
+        event = json.load(sys.stdin)
+    except ValueError:
+        return 0
+    text = tool_text(event.get('tool_name', ''), event.get('tool_input') or {})
+    if not text or not has_attribution(text):
+        return 0
+    json.dump({'hookSpecificOutput': {
+        'hookEventName': 'PreToolUse',
+        'permissionDecision': 'deny',
+        'permissionDecisionReason': (
+            'Blocked by ai-attribution-guard: remove every co-author, "Generated with" '
+            'and session-link line crediting an AI tool, then retry. The user never '
+            'wants AI attribution in commits, PRs, issues or comments.'),
+    }}, sys.stdout)
+    return 0
+
+
+def main(argv):
+    if len(argv) == 3 and argv[1] == 'commit-msg':
+        # A broken guard must never block a commit.
+        try:
+            return commit_msg(argv[2])
+        except Exception as e:
+            print(f'ai-attribution-guard: skipped ({e})', file=sys.stderr)
+            return 0
+    if len(argv) == 2 and argv[1] == 'claude-hook':
+        return claude_hook()
+    if len(argv) == 2 and argv[1] == 'check':
+        return 1 if has_attribution(sys.stdin.read()) else 0
+    print(__doc__.strip(), file=sys.stderr)
+    return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))
